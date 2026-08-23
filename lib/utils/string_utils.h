@@ -2,8 +2,10 @@
 #define STRING_UTILS_H_INCLUDED
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <climits>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <string>
