@@ -248,6 +248,14 @@ public:
    */
   virtual void fillPath(i32 id) = 0;
 
+
+  /**
+   * Set glyph info for the next path to be drawn. Called before beginPath()
+   * to associate a glyph ID and codepoint with the upcoming path record.
+   * Default implementation is a no-op.
+   */
+  virtual void setPathGlyphInfo(i32 glyphId, c32 codepoint) {}
+
   // endregion
 
   // region shape commands

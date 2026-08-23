@@ -75,6 +75,69 @@ public:
   /** Test if this atom is a single character */
   virtual bool isChar() const { return false; }
 
+
+  /**
+   * Append the text this atom represents, for resolving bidirectional
+   * embedding levels. A row needs the text of its whole subtree, not just
+   * of the characters that happen to be its direct children: `\text{a}`
+   * and `\textbf{b}` are sibling wrappers, and a row that saw neither of
+   * them collected an empty string and was never reordered.
+   *
+   * The default appends nothing, so an atom that does not override this
+   * simply takes no part in reordering -- which is what every atom did
+   * before the hook existed.
+   */
+  virtual void collectBidiText(std::vector<c32>& out) const { (void)out; }
+
+  /**
+   * The embedding level this atom sits at, resolved once per parse over
+   * the whole formula's text -- see the pre-pass in src/parse_latex.cpp.
+   *
+   * Resolving per row instead would ask FriBidi to judge each group's
+   * direction from that group's text alone, so `\textbf{abc}` inside a
+   * right-to-left paragraph came out level 0 where UAX #9 says 2, and a
+   * neutral run spanning a group boundary was resolved twice against two
+   * different contexts.
+   */
+  std::uint8_t _bidiLevel = 0;
+
+  /**
+   * Write levels onto this atom and its subtree, in document order.
+   *
+   * `cursor` indexes the text that collectBidiText() produced, so the two
+   * traversals must visit the same atoms in the same order -- they are
+   * written next to each other in each file for that reason. The default
+   * takes a level but does not advance, which is right for an atom that
+   * contributes no text.
+   */
+  virtual void assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t& cursor) {
+    if (cursor < lv.size()) _bidiLevel = lv[cursor];
+  }
+
+  /**
+   * The level a container takes for itself: the **lowest** in its subtree.
+   *
+   * Not its first character's level. Rule L2 reverses runs at or above
+   * the lowest odd level, and a container is reversed as a unit by its
+   * parent, so it must join every run its contents belong to. Labelling
+   * `\text{alpha }\textbf{...}` by its first character gave two adjacent
+   * groups level 2 in a right-to-left paragraph; the parent then saw no
+   * odd level at all and reversed nothing, while the words inside each
+   * group reversed happily. Taking the minimum puts the container in the
+   * run its right-to-left content belongs to, and the levels above that
+   * minimum are resolved inside it, one level down.
+   */
+  static std::uint8_t subtreeLevel(
+    const std::vector<std::uint8_t>& lv, std::size_t start, std::size_t end
+  ) {
+    if (start >= end) return start < lv.size() ? lv[start] : 0;
+    std::uint8_t m = lv[start];
+    for (std::size_t i = start + 1; i < end && i < lv.size(); i++) {
+      if (lv[i] < m) m = lv[i];
+    }
+    return m;
+  }
+
   virtual ~Atom() = default;
 };
 
