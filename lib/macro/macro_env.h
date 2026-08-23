@@ -1,12 +1,14 @@
 #ifndef MICROTEX_MACRO_ENV_H
 #define MICROTEX_MACRO_ENV_H
 
+#include "atom/atom_basic.h"
 #include "atom/atom_matrix.h"
 #include "core/formula.h"
 #include "core/parser.h"
 #include "macro/macro.h"
 #include "macro/macro_decl.h"
 #include "utils/exceptions.h"
+#include "utils/string_utils.h"
 
 namespace microtex {
 

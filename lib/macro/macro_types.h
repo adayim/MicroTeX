@@ -1,6 +1,7 @@
 #ifndef MICROTEX_MACRO_TYPES_H
 #define MICROTEX_MACRO_TYPES_H
 
+#include "atom/atom_basic.h"
 #include "macro/macro_decl.h"
 
 namespace microtex {

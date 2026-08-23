@@ -1,7 +1,11 @@
 #ifndef MICROTEX_MACRO_SIZES_H
 #define MICROTEX_MACRO_SIZES_H
 
+#include "atom/atom_basic.h"
+#include "atom/atom_char.h"
+#include "atom/atom_misc.h"
 #include "macro/macro_decl.h"
+#include "utils/string_utils.h"
 
 namespace microtex {
 
