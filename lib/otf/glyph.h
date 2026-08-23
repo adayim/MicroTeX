@@ -9,7 +9,7 @@ namespace microtex {
 
 class CLMReader;
 
-class Glyph;
+struct Glyph;
 
 /** Represents metrics for one glyph. */
 struct Metrics final {

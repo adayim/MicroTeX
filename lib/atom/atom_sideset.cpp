@@ -83,7 +83,7 @@ sptr<Box> SideSetsAtom::createBox(Env& env) {
 
   if (limits == nullptr) return hbox;
 
-  const ZStackArgs hargs{Alignment::left, ml - shift, UnitType::none};
+  const ZStackArgs hargs{Alignment::left, {ml - shift, UnitType::none}};
   const ZStackArgs vargs{Alignment::none};
   const auto anchor = sptrOf<PlaceholderAtom>(hbox);
   const auto atom = sptrOf<PlaceholderAtom>(limits);
