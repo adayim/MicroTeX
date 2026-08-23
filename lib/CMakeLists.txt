@@ -103,6 +103,12 @@ set(
     render/render.cpp
     render/builder.cpp
 
+    # additions carried by this fork
+    graphic/graphic_recorder.cpp
+    atom/font_family_atom.cpp
+    atom/mark_atom.cpp
+    atom/image_atom.cpp
+
     microtex.cpp
 )
 
@@ -119,6 +125,30 @@ if (DEFINED HAVE_CWRAPPER AND HAVE_CWRAPPER)
     target_compile_definitions(microtex PUBLIC -DHAVE_CWRAPPER)
 endif ()
 
+
+# Optional: synthesise CLM font metrics from an OpenType MATH table in
+# memory, instead of shipping .clm2 files produced ahead of time with
+# FontForge / otf2clm.py. Off by default because it needs FreeType.
+option(MICROTEX_OTF_MATH_READER "Build the in-memory OTF -> CLM synthesiser (needs FreeType)" OFF)
+if (MICROTEX_OTF_MATH_READER)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FREETYPE2 REQUIRED freetype2)
+    set(_SRCS ${_SRCS} otf/otf_math_reader.cpp)
+    target_include_directories(microtex PRIVATE ${FREETYPE2_INCLUDE_DIRS})
+    target_link_libraries(microtex PRIVATE ${FREETYPE2_LINK_LIBRARIES})
+endif ()
+
+# Optional: bidirectional (right-to-left) reordering via FriBidi. Off by
+# default because it needs FriBidi; without it text keeps logical order.
+option(MICROTEX_BIDI "Build bidirectional text reordering (needs FriBidi)" OFF)
+if (MICROTEX_BIDI)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FRIBIDI REQUIRED fribidi)
+    set(_SRCS ${_SRCS} utils/bidi.cpp)
+    target_include_directories(microtex PRIVATE ${FRIBIDI_INCLUDE_DIRS})
+    target_link_libraries(microtex PRIVATE ${FRIBIDI_LINK_LIBRARIES})
+    target_compile_definitions(microtex PUBLIC -DHAVE_FRIBIDI)
+endif ()
 # source files
 target_sources(microtex PRIVATE ${_SRCS})
 target_include_directories(
