@@ -21,6 +21,7 @@
 // `\Temp` mid-path if a user had defined a macro by that name.
 
 #include <string>
+#include <vector>
 
 #include "atom/atom.h"
 #include "box/box.h"
@@ -66,18 +67,26 @@ private:
 // built-in `\includegraphics`.
 //
 // The override is a backstop, not the main path. R's resolver reaches an
-// \includegraphics written literally anywhere in the string, including
-// inside a \newcommand's replacement text -- that is just characters as
-// far as it is concerned. What it declines rather than guess at is
-// malformed input: no braces (`x\includegraphics y`) or unbalanced ones
-// (`\includegraphics{oops`). Those reach the parser, where the vendored
-// stub returns nullptr and draws nothing at all. This draws the argument
-// instead, so a broken \includegraphics is visible rather than a silent
-// gap. Verified reachable; see test-images.R.
+// \includegraphics written literally anywhere in the string. What reaches
+// the parser instead is malformed input -- no braces (`x\includegraphics
+// y`) or unbalanced ones (`\includegraphics{oops`) -- and one that a
+// \newcommand or \def in the string produces, since MicroTeX expands those
+// after R has read the images. The vendored stub returned nullptr and drew
+// nothing at all. This draws the argument, so the gap is visible, and
+// records it in unresolved_images() for R to refuse. Verified reachable;
+// see test-images.R.
 //
 // Idempotent, and registered for the life of the process:
 // microtex_release() deliberately leaves the macro registry standing
 // (see init.cpp), so this never needs re-running.
 void register_image_macros();
+
+// The \includegraphics arguments the override met during the current
+// parse. The R binding clears this before each parse and returns it with
+// the layout, and R refuses them like any other image it cannot draw.
+// Throwing would not do: R decides whether an unreadable image is an error
+// or only a warning (base graphics, and a markdown box as it is drawn --
+// see .images_lenient()), and a throw leaves it no choice.
+std::vector<std::string>& unresolved_images();
 
 }  // namespace microtex

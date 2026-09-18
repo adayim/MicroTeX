@@ -38,14 +38,15 @@ std::string basename_of(const std::string& path) {
     return cut == std::string::npos ? path : path.substr(cut + 1);
 }
 
-// \includegraphics[opts]{path} that R did not get to -- which in practice
-// means a \newcommand or \def expanded it inside the parser, after both
-// resolver passes had run. Draw the file's name so the gap is visible
-// rather than silent; the vendored stub returns nullptr and draws nothing.
+// \includegraphics[opts]{path} that R did not get to: malformed input the
+// R scanner leaves alone, or one a \newcommand or \def expanded inside the
+// parser, after both resolver passes had run. Draw the file's name so the
+// gap is visible, and record it so R can refuse it (see the header).
 //
 // The name is appended codepoint by codepoint rather than re-parsed, so a
 // `_` or `%` in it is a literal and cannot open a subscript or a comment.
 sptr<Atom> includegraphics_macro_delegate(Parser&, std::vector<std::string>& args) {
+    unresolved_images().push_back(args[1]);
     const std::string name = basename_of(args[1]);
     auto txt = sptrOf<TextAtom>(false);
     int i = 0;
@@ -71,6 +72,11 @@ void register_image_macros() {
     // supersedes, which is why this must run at most once (see init.cpp).
     MacroInfo::add("includegraphics", new PreDefMacro(1, 1, includegraphics_macro_delegate));
     s_registered = true;
+}
+
+std::vector<std::string>& unresolved_images() {
+    static std::vector<std::string> images;
+    return images;
 }
 
 }  // namespace microtex
