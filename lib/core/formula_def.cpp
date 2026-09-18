@@ -99,6 +99,8 @@ map<string, string> Formula::_predefFormulaStrs{
   {"llless",           "\\lll"},
   {"gggtr",            "\\ggg"},
   {"copyright",        "\\circledR"},
+  {"hbar",             "\\hslash"},
+  {"mathstrut",        "\\vphantom{(}"},
   {"micro",            "\\mu"},
   {"rVert",            "\\Vert"},
   {"lVert",            "\\Vert"},

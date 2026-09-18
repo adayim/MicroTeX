@@ -85,7 +85,12 @@ sptr<Box> AccentedAtom::createBox(Env& env) {
   if (_fakeAccent) {
     delta = Units::fsize(UnitType::mu, 1, env);
   } else if (accenter->_depth <= 0) {
-    delta = -min(accentee->_height, (float)env.mathConsts().accentBaseHeight());
+    // accentBaseHeight is a raw font-design value; scale it like every other
+    // MathConsts read (axisHeight, fractionRuleThickness, overbarVerticalGap,
+    // ...) so it stays comparable to accentee->_height in cramped/script
+    // styles. Without this, accents collide with the base inside fractions.
+    const auto abh = env.mathConsts().accentBaseHeight() * env.scale();
+    delta = -min(accentee->_height, abh);
   } else {
     // if accent has depth (e.g. \not), we need to align the accentee and accenter
     // by its baseline

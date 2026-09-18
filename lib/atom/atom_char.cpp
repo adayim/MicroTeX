@@ -84,7 +84,11 @@ std::string CharAtom::name() const {
 
 sptr<Box> CharAtom::createBox(Env& env) {
   const auto& chr = getChar(env);
-  if (chr.isValid()) return sptrOf<CharBox>(chr);
+  // In math mode, always use CharBox (glyph rendering from the math font).
+  // In text mode (\text{}, \mbox{}), fall through to TextBox so that the
+  // platform's text-rendering system (R's textGrob) handles the output.
+  // This lets users control the font via gpar(fontfamily = ...).
+  if (chr.isValid() && _mathMode) return sptrOf<CharBox>(chr);
   FontStyle fontStyle;
   if (_fontStyle != FontStyle::invalid) {
     fontStyle = _fontStyle;
@@ -96,4 +100,10 @@ sptr<Box> CharAtom::createBox(Env& env) {
 
 sptr<Box> BreakMarkAtom::createBox(Env& env) {
   return StrutBox::empty();
+}
+
+sptr<Box> HyphenMarkAtom::hyphen(Env& env) const {
+  // A TextBox, not a CharBox, so the hyphen comes from the same font as
+  // the word it ends -- these marks only ever sit inside text.
+  return sptrOf<TextBox>("-", env.textFontStyle(), Env::fixedTextSize() * env.scale());
 }

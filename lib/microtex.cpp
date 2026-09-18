@@ -6,6 +6,8 @@
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
 #include "render/builder.h"
+#include "atom/atom_row.h"
+#include "utils/bidi.h"
 
 #include <clocale>
 
@@ -178,6 +180,20 @@ Render* MicroTeX::parse(
   const string& mathFontName, const string& mainFontFamily
 ) {
   Formula formula(latex);
+  // Bidirectional levels, resolved once over the whole formula while the
+  // atoms still hold their text -- a box keeps only an opaque layout. It
+  // has to be one pass over the whole tree, not one per row: a group's
+  // direction follows the paragraph it sits in, not its own contents.
+  //
+  // Independent of _mergeText, which is a different question. Merging
+  // decides how much text goes into one run; levelling decides what order
+  // the runs sit in. Gating this on !_mergeText meant no reordering at
+  // all whenever max_width was 0 -- the default -- so a right-to-left
+  // label came out in logical order the moment it held a second child
+  // (any emphasis, colour or font change). The merged run is still handed
+  // to the backend whole and still ordered internally by it; this orders
+  // the runs around it.
+  RowAtom::_levelled = microtex::bidi_assign_levels(formula._root);
   const auto isInline = !startsWith(latex, "$$") && !startsWith(latex, "\\[");
   const auto align = isInline ? Alignment::left : Alignment::center;
   TexStyle style = isInline ? TexStyle::text : TexStyle::display;

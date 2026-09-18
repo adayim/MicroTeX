@@ -214,6 +214,12 @@ sptr<Box> CancelAtom::createBox(Env& env) {
       0,
       box->_height + box->_depth,
     };
+  } else if (_cancelType == HORIZONTAL) {
+    // Strike through the visible middle of lowercase letters: half of
+    // x-height above the baseline. Box coords run y=0 at the top with y
+    // increasing downward, so y_line = height - xHeight/2.
+    const float y = box->_height - env.xHeight() / 2;
+    lines = {0, y, box->_width, y};
   } else {
     return box;
   }

@@ -2,6 +2,7 @@
 #define MACRO_H_INCLUDED
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "atom/atom.h"
@@ -10,6 +11,7 @@
 namespace microtex {
 
 class Parser;
+class MacroInfo;
 
 class Macro {
 public:
@@ -24,14 +26,29 @@ protected:
   static std::map<std::string, std::string> _replacements;
   static Macro* _instance;
 
-  // Set once _init_() has defined the built-ins, which are the baseline
-  // rather than a user's definition: from then on a built-in command such
-  // as \frac counts as defined (see checkNew()).
+  // What a definition made during the current parse displaced, so that
+  // clearUserMacros() can put it back: the name's previous code and
+  // replacement, and the MacroInfo it replaced -- a built-in such as
+  // \frac, owned here until it is restored. Only a name's first definition
+  // in a parse is recorded, since that is the state to return to.
+  struct Displaced {
+    bool hadCode = false;
+    std::string code;
+    bool hadReplacement = false;
+    std::string replacement;
+    MacroInfo* info = nullptr;
+  };
+  static std::map<std::string, Displaced> _displaced;
+
+  // Set by snapshotBuiltins() once _init_() has defined the built-ins,
+  // which are the baseline rather than something a parse did.
   static bool _sealed;
 
   static void checkNew(const std::string& name);
 
   static void checkRenew(const std::string& name);
+
+  static void save(const std::string& name);
 
 public:
   /**
@@ -57,7 +74,33 @@ public:
     const std::string& def
   );
 
+  /**
+   * Define or silently overwrite a macro with plain-TeX \def semantics.
+   * Supports the sequential parameter form \def\foo#1#2{body} (argc 0..9).
+   * No conflict check is performed.
+   */
+  static void addDefCommand(const std::string& name, const std::string& code, int argc);
+
   static bool isMacro(const std::string& name);
+
+  /**
+   * Undo every definition made since the last call (\newcommand,
+   * \renewcommand, \def): a new name is removed, and a redefined one --
+   * a built-in included -- gets back what it had.
+   *
+   * Call this between independent parses so that the static state
+   * doesn't leak macros across calls and so that the typeface/path
+   * double-parse for a single grob doesn't hit "already exists"
+   * errors on the second pass.
+   */
+  static void clearUserMacros();
+
+  /**
+   * Mark the definitions made so far as the built-in baseline, which
+   * clearUserMacros() never undoes. Idempotent, so multiple init paths
+   * can call it safely.
+   */
+  static void snapshotBuiltins();
 
   static void _init_();
 
@@ -94,6 +137,14 @@ public:
   /** Get the macro info from given name, return nullptr if not found. */
   static MacroInfo* get(const std::string& name);
 
+  /** Remove and delete the macro info entry for the given name. No-op
+   *  if the name is not registered. */
+  static void remove(const std::string& name);
+
+  /** Remove the entry for the given name *without* deleting it, and hand
+   *  it to the caller; nullptr if the name is not registered. */
+  static MacroInfo* release(const std::string& name);
+
   // Number of arguments
   const int argc;
   // Options' position, can be  0, 1 and 2
@@ -127,10 +178,10 @@ private:
 public:
   no_copy_assign(InflationMacroInfo);
 
-  InflationMacroInfo(Macro* macro, int argc) : _macro(macro), MacroInfo(argc) {}
+  InflationMacroInfo(Macro* macro, int argc) : MacroInfo(argc), _macro(macro) {}
 
   InflationMacroInfo(Macro* macro, int argc, int posOpts)
-      : _macro(macro), MacroInfo(argc, posOpts) {}
+      : MacroInfo(argc, posOpts), _macro(macro) {}
 
   sptr<Atom> invoke(Parser& tp, std::vector<std::string>& args) override {
     _macro->execute(tp, args);

@@ -16,7 +16,8 @@
 #endif
 
 // The clm data major version
-#define CLM_VER_MAJOR 5
+// v6: added per-glyph xMin (leftmost ink x in design units) to metrics block
+#define CLM_VER_MAJOR 6
 
 // The clm data minor version, must be 1 or 2
 #ifdef HAVE_GLYPH_RENDER_PATH

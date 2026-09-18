@@ -78,7 +78,7 @@ static sptr<Box> createDelim(
 
   auto run = [&](int i) {
     const auto& part = assembly[i];
-    const auto b = sptrOf<CharBox>(chr.assemblyPart(part.glyph()));
+    auto b = sptrOf<CharBox>(chr.assemblyPart(part.glyph()));
     const auto l = isVertical ? b->vlen() : b->_width;
     if (part.startConnectorLength() != 0) {
       max = std::min(max, (float)part.startConnectorLength());

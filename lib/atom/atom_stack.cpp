@@ -110,7 +110,10 @@ StackResult StackAtom::createStack(Env& env) {
 
   // if is under accent, adjust with kerning
   if (_adjustBottom) {
-    vbox->add(sptrOf<StrutBox>(0.f, -env.mathConsts().accentBaseHeight(), 0.f, 0.f));
+    // Scale accentBaseHeight to match the convention used everywhere else
+    // for MathConsts reads; otherwise under-accents kerning is wrong in
+    // cramped/script styles. See atom_accent.cpp for the same fix.
+    vbox->add(sptrOf<StrutBox>(0.f, -env.mathConsts().accentBaseHeight() * env.scale(), 0.f, 0.f));
   }
 
   return {vbox, center->_shift - vbox->leftMostPos()};

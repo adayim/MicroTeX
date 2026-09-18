@@ -43,10 +43,12 @@ void _drawWithPath(const Char& chr, Graphics2D& g2, float x, float y) {
   const auto old = g2.getColor();
   if (!chr.isValid()) g2.setColor(red);
   const auto scale = chr.scale;
+  const bool do_scale = (scale != 1.f && scale != 0.f);
   g2.translate(x, y);
-  if (scale != 1.f) g2.scale(scale, scale);
+  if (do_scale) g2.scale(scale, scale);
+  g2.setPathGlyphInfo(chr.glyphId, chr.mappedCode);
   chr.glyph()->path().draw(g2);
-  if (scale != 1.f) g2.scale(1 / scale, 1 / scale);
+  if (do_scale) g2.scale(1 / scale, 1 / scale);
   g2.translate(-x, -y);
   if (!chr.isValid()) g2.setColor(old);
 }

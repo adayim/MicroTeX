@@ -35,8 +35,6 @@ private:
 
   sptr<Atom> getScripts(char first);
 
-  std::string getCmd();
-
   sptr<Atom> processEscape();
 
   void insert(int beg, int end, const std::string& formula);
@@ -69,6 +67,19 @@ private:
 
 public:
   Formula* _formula;
+
+  /**
+   * Read a bare control-sequence name from the current position (without
+   * expanding it if it happens to be defined). Returns the name minus the
+   * leading backslash, or "" at EOF. Advances _pos past the name.
+   */
+  std::string getCmd();
+
+  /** True if the parser cursor is past the end of the input. */
+  bool atEnd() const { return _pos >= _len; }
+
+  /** Peek at the character under the cursor without advancing. */
+  char peek() const { return _pos < _len ? _latex[_pos] : '\0'; }
 
   /**
    * Create a new TeXParser

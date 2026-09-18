@@ -20,7 +20,7 @@ public:
   FontStyleAtom() = delete;
 
   FontStyleAtom(FontStyle style, bool isMathMode, const sptr<Atom>& atom, bool nested = false)
-      : _style(style), _mathMode(isMathMode), _atom(atom), _nested(nested) {
+      : _style(style), _mathMode(isMathMode), _nested(nested), _atom(atom) {
         if (_atom == nullptr)
 	        _atom = sptrOf<EmptyAtom>();
       }
@@ -28,6 +28,19 @@ public:
   AtomType leftType() const override { return _atom->leftType(); }
 
   AtomType rightType() const override { return _atom->rightType(); }
+
+  // \text, \textbf, \textit, \textsf, \texttt and \textrm are all built
+  // from this one type, so forwarding here is what lets a row see the
+  // text of a sibling group at all.
+  void collectBidiText(std::vector<c32>& out) const override {
+    if (_atom != nullptr) _atom->collectBidiText(out);
+  }
+
+  void assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t& cursor) override {
+    const std::size_t start = cursor;
+    if (_atom != nullptr) _atom->assignBidiLevels(lv, cursor);
+    _bidiLevel = subtreeLevel(lv, start, cursor);
+  }
 
   sptr<Box> createBox(Env& env) override;
 };

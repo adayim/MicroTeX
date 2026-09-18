@@ -60,6 +60,11 @@ Render* RenderBuilder::build(const sptr<Atom>& fc) {
     }
     render = new Render(sptr<Box>(hb), _textSize, isBoxSplit);
   } else {
+    // No width limit, so the splitter -- which is where a line is put into
+    // visual order -- never runs, and the formula still has to be ordered.
+    // A no-op unless a row carried levels, so left-to-right layout takes an
+    // unchanged path.
+    BoxSplitter::reorderLine(box);
     render = new Render(box, _textSize);
   }
 

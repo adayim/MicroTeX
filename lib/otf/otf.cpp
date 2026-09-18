@@ -17,9 +17,10 @@ pair<bool, i16> ClassKerning::operator()(u16 left, u16 right) const {
 }
 
 ClassKerning::~ClassKerning() {
-  delete _lefts;
-  delete _rights;
-  delete _table;
+  // Allocated with new[] in CLMReader::readClassKerning().
+  delete[] _lefts;
+  delete[] _rights;
+  delete[] _table;
 }
 
 Otf* Otf::fromFile(const char* filePath) {

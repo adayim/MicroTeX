@@ -1,25 +1,25 @@
 #include "graphic/graphic_basic.h"
 
 #include "atom/atom_basic.h"
-#include "utils/string_utils.h"
 
+// "#RRGGBB", or "#AARRGGBB". Parsed a digit at a time into the unsigned
+// colour: strtol() overflows on eight hex digits wherever long is 32 bits
+// (Windows), which turned every colour with alpha of 0x80 or more black.
 microtex::color microtex::decodeColor(const std::string& s) {
-  if (s[0] == '#') {
-    const std::string x = s.substr(1);
-    color c = black;
-    auto success = str2int(s.c_str() + 1, s.length() - 1, reinterpret_cast<int&>(c), 16);
-    if (!success) {
-      return black;
-    }
-    if (s.size() == 7) {
-      // set alpha value
-      c |= 0xff000000;
-    } else if (s.size() != 9) {
-      return black;
-    }
-    return c;
+  const size_t n = s.size();
+  if ((n != 7 && n != 9) || s[0] != '#') return black;
+  color c = 0;
+  for (size_t i = 1; i < n; i++) {
+    const char ch = s[i];
+    color d;
+    if (ch >= '0' && ch <= '9') d = ch - '0';
+    else if (ch >= 'a' && ch <= 'f') d = ch - 'a' + 10;
+    else if (ch >= 'A' && ch <= 'F') d = ch - 'A' + 10;
+    else return black;
+    c = (c << 4) | d;
   }
-  return black;
+  if (n == 7) c |= 0xff000000;
+  return c;
 }
 
 microtex::color microtex::getColor(const std::string& name) {

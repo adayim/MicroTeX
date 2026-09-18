@@ -127,12 +127,44 @@ private:
 
   sptr<TextAtom> processContinues(int& i, bool isMathMode);
 
+  sptr<TextAtom> processTextRun(int& i, bool isMathMode);
+
 public:
+  /** Every element's text, in order, so a parent row sees this whole row. */
+  void collectBidiText(std::vector<c32>& out) const override;
+
+  /** The mirror of collectBidiText: same atoms, same order, writing back. */
+  void assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t& cursor) override;
+
   static bool _breakEverywhere;
+
+  /**
+   * Fold a whole row of text -- words and the spaces between them -- into
+   * a single run, so the graphics backend receives a phrase rather than a
+   * sequence of words.
+   *
+   * Only correct when nothing will wrap, because the spaces a line breaks
+   * at stop being separate boxes. Set from `max_width <= 0`, where the
+   * splitter is not called at all (see builder.cpp), and guarded per parse
+   * like BoxSplitter::_justify.
+   *
+   * This is what makes right-to-left text come out in the right order:
+   * ordering is the device's job once it can see the whole string, and it
+   * implements the bidirectional algorithm that MicroTeX does not.
+   */
+  static bool _mergeText;
+
+  /**
+   * Whether the per-parse bidi pre-pass ran and found right-to-left text,
+   * so the levels on the atoms mean something. Set by parse_latex.cpp and
+   * cleared by the same guard as the flags above; without it every atom
+   * carries level 0 and no row reorders, which is the left-to-right path.
+   */
+  static bool _levelled;
 
   bool _lookAtLastAtom;
 
-  RowAtom() : _lookAtLastAtom(false), _breakable(true) {}
+  RowAtom() : _breakable(true), _lookAtLastAtom(false) {}
 
   explicit RowAtom(const sptr<Atom>& atom);
 

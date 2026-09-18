@@ -1,6 +1,8 @@
 #ifndef MICROTEX_BOX_GROUP_H
 #define MICROTEX_BOX_GROUP_H
 
+#include <map>
+
 #include "atom/atom.h"
 #include "graphic/graphic_basic.h"
 #include "utils/nums.h"
@@ -21,6 +23,23 @@ private:
 public:
   std::vector<int> _breakPositions;
 
+  /**
+   * Boxes to append to a line that ends at the matching break position --
+   * the hyphen of a break taken inside a word. An ordinary break, at a
+   * space, records nothing here and behaves exactly as it always did.
+   */
+  std::map<int, sptr<Box>> _breakBoxes;
+
+  /**
+   * Bidirectional embedding level per child, or empty when the row holds
+   * nothing right-to-left -- which is the usual case and costs nothing.
+   *
+   * Resolved while the atoms still hold their text (a box does not: see
+   * TextBox), carried through split() so each line keeps the levels of
+   * its own children, and consumed by BoxSplitter once the line is built.
+   */
+  std::vector<std::uint8_t> _childLevels;
+
   HBox() = default;
 
   /** Create a horizontal box with alignment */
@@ -40,6 +59,18 @@ public:
   void replaceFirst(const sptr<Box>& from, const sptr<Box>& to) override;
 
   inline void addBreakPosition(int pos) { _breakPositions.push_back(pos); }
+
+  /** Add a break that draws `box` on the line it ends, e.g. a hyphen. */
+  inline void addBreakPosition(int pos, const sptr<Box>& box) {
+    _breakPositions.push_back(pos);
+    if (box != nullptr) _breakBoxes[pos] = box;
+  }
+
+  /** The box to append when breaking at `pos`, or null for a plain break. */
+  inline sptr<Box> breakBoxAt(int pos) const {
+    const auto it = _breakBoxes.find(pos);
+    return it == _breakBoxes.end() ? nullptr : it->second;
+  }
 
   std::pair<sptr<HBox>, sptr<HBox>> split(int pos) { return split(pos, 1); }
 

@@ -14,7 +14,7 @@ struct Glyph;
 /** Represents metrics for one glyph. */
 struct Metrics final {
 private:
-  i16 _width{}, _height{}, _depth{};
+  i16 _width{}, _height{}, _depth{}, _xMin{};
 
   Metrics() = default;
 
@@ -29,6 +29,15 @@ public:
 
   /** Distance below baseline (positive) */
   inline i16 depth() const { return _depth; }
+
+  /**
+   * Leftmost ink x-coordinate in font design units (the glyph's left side
+   * bearing, i.e. the horizontal offset from the advance origin to the
+   * visual left edge). May be negative. For glyphs that appear as parts of
+   * a vertical/horizontal assembly, the stored path data is pre-shifted so
+   * the path's xMin = 0; this value records the original font-level offset.
+   */
+  inline i16 xMin() const { return _xMin; }
 
   friend CLMReader;
   friend Glyph;

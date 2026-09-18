@@ -71,39 +71,47 @@ void Path::draw(Graphics2D& g2) const {
     if (!cmd.isValid()) continue;
     switch (cmd.cmd) {
       case 'M':
-        mx = px = cmd[0];
-        my = py = cmd[1];
+        mx = px = cx = cmd[0];
+        my = py = cy = cmd[1];
         g2.moveTo(px, py);
         break;
       case 'm':
-        mx = px = cmd[0] + px;
-        my = py = cmd[1] + py;
+        mx = px = cx = cmd[0] + px;
+        my = py = cy = cmd[1] + py;
         g2.moveTo(px, py);
         break;
       case 'L':
-        px = cmd[0];
-        py = cmd[1];
+        px = cx = cmd[0];
+        py = cy = cmd[1];
         g2.lineTo(px, py);
         break;
       case 'l':
         px += cmd[0];
         py += cmd[1];
+        cx = px;
+        cy = py;
         g2.lineTo(px, py);
         break;
       case 'H':
-        px = cmd[0];
+        px = cx = cmd[0];
+        cy = py;
         g2.lineTo(px, py);
         break;
       case 'h':
         px += cmd[0];
+        cx = px;
+        cy = py;
         g2.lineTo(px, py);
         break;
       case 'V':
-        py = cmd[0];
+        py = cy = cmd[0];
+        cx = px;
         g2.lineTo(px, py);
         break;
       case 'v':
         py += cmd[0];
+        cx = px;
+        cy = py;
         g2.lineTo(px, py);
         break;
       case 'C':
@@ -163,7 +171,11 @@ void Path::draw(Graphics2D& g2) const {
         g2.quadTo(cx, cy, px, py);
         break;
       case 'Z':
-      case 'z': g2.closePath(); break;
+      case 'z':
+        px = cx = mx;
+        py = cy = my;
+        g2.closePath();
+        break;
     }
   }
   g2.fillPath(_id);

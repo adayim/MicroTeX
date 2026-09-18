@@ -8,7 +8,7 @@
 using namespace microtex;
 
 FracAtom::FracAtom(const sptr<Atom>& num, const sptr<Atom>& den, bool rule, const Dimen& thickness)
-    : _num(num), _dnom(den), _rule(rule), _thickness(thickness) {}
+    : _thickness(thickness), _num(num), _dnom(den), _rule(rule) {}
 
 FracAtom::FracAtom(
   const sptr<Atom>& num,

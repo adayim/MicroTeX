@@ -51,7 +51,7 @@ sptr<Box> MathAtom::createBox(Env& env) {
 }
 
 sptr<Box> HlineAtom::createBox(Env& env) {
-  const auto drt = env.ruleThickness();
+  const auto drt = env.ruleThickness() * _thicknessScale;
   auto b = new RuleBox(drt, _width, _shift, _color, false);
   auto vb = new VBox();
   vb->add(sptr<Box>(b));

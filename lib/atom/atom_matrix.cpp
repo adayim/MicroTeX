@@ -6,12 +6,31 @@
 #include "atom/atom_row.h"
 #include "core/formula.h"
 #include "core/glue.h"
+#include "core/split.h"
 #include "env/env.h"
+#include "env/units.h"
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
 
 using namespace std;
 using namespace microtex;
+
+namespace {
+
+// Turn RowAtom::_mergeText off for one scope, restoring it on every exit
+// path -- createBox() can throw, and leaking the cleared flag would stop
+// every later row in the formula from merging.
+struct MergeTextGuard {
+  const bool _saved;
+
+  explicit MergeTextGuard(bool disable) : _saved(RowAtom::_mergeText) {
+    if (disable) RowAtom::_mergeText = false;
+  }
+
+  ~MergeTextGuard() { RowAtom::_mergeText = _saved; }
+};
+
+}  // namespace
 
 color MatrixAtom::LINE_COLOR = transparent;
 
@@ -95,6 +114,32 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         _columnSpecifiers[lpos.size()] = cs;
         pos += tp->getPos();
         pos--;
+      } break;
+      case 'p':
+      case 'm':
+      case 'b': {
+        // A fixed-width column: `p{3cm}`. The content is wrapped to that
+        // measure in createBoxInner() instead of sizing to itself, which
+        // is the only way a wide table can reflow rather than overflow.
+        //
+        // LaTeX's m{} and b{} differ from p{} only in how the cell sits
+        // vertically against its neighbours; the row builder already
+        // aligns on the tallest box, so all three parse the same here.
+        // A width is not a nested construct, so the closing brace is
+        // found by a plain scan rather than by running the parser.
+        if (pos + 1 < len && opt[pos + 1] == '{') {
+          const int start = pos + 2;
+          int close = start;
+          while (close < len && opt[close] != '}') close++;
+          if (close < len) {
+            const auto dimen = Units::getDimen(opt.substr(start, close - start));
+            // An unreadable width leaves the column content-sized rather
+            // than collapsing it to zero.
+            if (dimen.isValid()) _colWidths[lpos.size()] = dimen;
+            pos = close;
+          }
+        }
+        lpos.push_back(Alignment::left);
       } break;
       case ' ':
       case '\t': break;
@@ -430,9 +475,31 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       }
 
       sptr<Atom> atom = _matrix->_array[i][j];
-      boxarr[i][j] = (atom == nullptr) ? _nullbox : atom->createBox(env);
+      {
+        // A p{} column is broken to its own measure just below, whatever
+        // the global width is. Its cells therefore have to keep the
+        // word-level runs the breaker needs: folded into one phrase they
+        // would be unbreakable, and the column would silently size to its
+        // content instead of wrapping.
+        MergeTextGuard guard(_colWidths.find(j) != _colWidths.end());
+        boxarr[i][j] = (atom == nullptr) ? _nullbox : atom->createBox(env);
+      }
       if (atom != nullptr && atom->_type == AtomType::interText) {
         boxarr[i][j]->_type = AtomType::interText;
+      }
+
+      // `p{len}`: wrap the cell to the requested measure, then pin it to
+      // that width so the column is sized by the spec and not by its
+      // content. BoxSplitter is the same breaker \\ and max_width use.
+      const auto pw = _colWidths.find(j);
+      if (pw != _colWidths.end() && atom != nullptr) {
+        const float w = Units::fsize(pw->second, env);
+        if (w > 0) {
+          auto cell = boxarr[i][j];
+          auto [wasSplit, splitBox] = BoxSplitter::split(cell, w, env.lineSpace());
+          (void)wasSplit;
+          boxarr[i][j] = sptrOf<HBox>(splitBox, w, Alignment::left);
+        }
       }
 
       if (boxarr[i][j]->_type != AtomType::multiRow) {
@@ -556,9 +623,28 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
         case AtomType::hline: {
           auto* at = (HlineAtom*)_matrix->_array[i][j].get();
           at->setColor(LINE_COLOR);
-          at->setWidth(matW);
           if (i >= 1 && dynamic_cast<HlineAtom*>(_matrix->_array[i - 1][j].get()) != nullptr) {
             hb->add(sptrOf<StrutBox>(0.f, 2 * drt, 0.f, 0.f));
+          }
+          if (at->colStart() >= 0) {
+            // Partial rule: \cline{a-b}. Span left edge of column a to
+            // right edge of column b (LaTeX 1-indexed columns are
+            // converted to 0-indexed by the macro).
+            int a = at->colStart();
+            int b = at->colEnd();
+            if (a < 0) a = 0;
+            if (b >= cols) b = cols - 1;
+            if (b < a) b = a;
+            float offset = 0;
+            for (int c = 0; c < a; c++) offset += colWidth[c];
+            for (int c = 0; c <= a; c++) offset += Hsep[c];
+            float width = 0;
+            for (int c = a; c <= b; c++) width += colWidth[c];
+            for (int c = a + 1; c <= b; c++) width += Hsep[c];
+            if (offset > 0) hb->add(sptrOf<StrutBox>(offset, 0.f, 0.f, 0.f));
+            at->setWidth(width);
+          } else {
+            at->setWidth(matW);
           }
 
           hb->add(at->createBox(env));

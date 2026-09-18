@@ -36,7 +36,8 @@ public:
 
   // Once a destructor is user-declared the implicit copy operations are
   // deprecated (-Wdeprecated-copy-with-dtor), and subclasses do copy the
-  // base. Spell them out: same behaviour, no deprecated definition.
+  // base -- CharSymbol in atom_char.h is one. Spell them out so the
+  // behaviour is the same but no longer rests on a deprecated definition.
   Atom(const Atom&) = default;
   Atom& operator=(const Atom&) = default;
 
@@ -74,7 +75,6 @@ public:
 
   /** Test if this atom is a single character */
   virtual bool isChar() const { return false; }
-
 
   /**
    * Append the text this atom represents, for resolving bidirectional
@@ -157,6 +157,16 @@ public:
 
   AtomType rightType() const override {
     return _base == nullptr ? Atom::rightType() : _base->rightType();
+  }
+
+  void collectBidiText(std::vector<c32>& out) const override {
+    if (_base != nullptr) _base->collectBidiText(out);
+  }
+
+  void assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t& cursor) override {
+    const std::size_t start = cursor;
+    if (_base != nullptr) _base->assignBidiLevels(lv, cursor);
+    _bidiLevel = subtreeLevel(lv, start, cursor);
   }
 };
 

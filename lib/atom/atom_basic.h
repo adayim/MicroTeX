@@ -29,7 +29,7 @@ private:
 public:
   StyleAtom() = delete;
 
-  StyleAtom(TexStyle style, const sptr<Atom>& a) : _style(style), WrapAtom(a) {}
+  StyleAtom(TexStyle style, const sptr<Atom>& a) : WrapAtom(a), _style(style) {}
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -45,7 +45,7 @@ private:
 public:
   AStyleAtom() = delete;
 
-  AStyleAtom(std::string name, const sptr<Atom>& a) : _name(std::move(name)), WrapAtom(a) {}
+  AStyleAtom(std::string name, const sptr<Atom>& a) : WrapAtom(a), _name(std::move(name)) {}
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -84,14 +84,14 @@ private:
 public:
   SmashedAtom() = delete;
 
-  SmashedAtom(const sptr<Atom>& a, const std::string& opt) : _h(true), _d(true), WrapAtom(a) {
+  SmashedAtom(const sptr<Atom>& a, const std::string& opt) : WrapAtom(a), _h(true), _d(true) {
     if (opt == "opt")
       _d = false;
     else if (opt == "b")
       _h = false;
   }
 
-  explicit SmashedAtom(const sptr<Atom>& a) : _h(true), _d(true), WrapAtom(a) {}
+  explicit SmashedAtom(const sptr<Atom>& a) : WrapAtom(a), _h(true), _d(true) {}
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -120,7 +120,7 @@ private:
 public:
   MathAtom() = delete;
 
-  MathAtom(const sptr<Atom>& base, TexStyle style) noexcept : _style(style), WrapAtom(base) {}
+  MathAtom(const sptr<Atom>& base, TexStyle style) noexcept : WrapAtom(base), _style(style) {}
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -129,16 +129,31 @@ public:
 class HlineAtom : public Atom {
 private:
   float _width, _shift;
+  float _thicknessScale;
+  int _colStart, _colEnd;
   color _color;
 
 public:
-  HlineAtom() noexcept : _color(transparent), _width(0), _shift(0) { _type = AtomType::hline; }
+  HlineAtom() noexcept
+      : _width(0), _shift(0), _thicknessScale(1.f),
+        _colStart(-1), _colEnd(-1), _color(transparent) {
+    _type = AtomType::hline;
+  }
 
   inline void setWidth(float w) { _width = w; }
 
   inline void setShift(float s) { _shift = s; }
 
   inline void setColor(color c) { _color = c; }
+
+  inline void setThicknessScale(float s) { _thicknessScale = s; }
+
+  /** 0-indexed inclusive column range; -1 (the default) means full width. */
+  inline void setColumnRange(int s, int e) { _colStart = s; _colEnd = e; }
+
+  inline int colStart() const { return _colStart; }
+
+  inline int colEnd() const { return _colEnd; }
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -185,6 +200,16 @@ public:
   AtomType rightType() const override { return _elements->rightType(); }
 
   void setPreviousAtom(const sptr<AtomDecor>& prev) override { _elements->setPreviousAtom(prev); }
+
+  void collectBidiText(std::vector<c32>& out) const override {
+    if (_elements != nullptr) _elements->collectBidiText(out);
+  }
+
+  void assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t& cursor) override {
+    const std::size_t start = cursor;
+    if (_elements != nullptr) _elements->assignBidiLevels(lv, cursor);
+    _bidiLevel = subtreeLevel(lv, start, cursor);
+  }
 
   /**
    * Parse color from given name. The name can be one of the following format:
@@ -263,7 +288,7 @@ public:
     std::function<float(const Env&)>&& getLen,
     bool isVertical = false
   )
-      : _sym(std::move(sym)), _getLen(getLen), _vertical(isVertical) {}
+      : _sym(std::move(sym)), _vertical(isVertical), _getLen(getLen) {}
 
   sptr<Box> createBox(Env& env) override;
 };

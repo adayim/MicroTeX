@@ -65,6 +65,10 @@ inline macro(xcancel) {
   return _cancel(CancelAtom::CROSS, tp, args);
 }
 
+inline macro(sout) {
+  return _cancel(CancelAtom::HORIZONTAL, tp, args);
+}
+
 inline macro(underscore) {
   return SymbolAtom::get("_");
 }
@@ -142,7 +146,10 @@ inline macro(rmoustache) {
 }
 
 inline macro(breakmark) {
-  return sptrOf<BreakMarkAtom>();
+  // `\-` is TeX's discretionary hyphen: it offers a break and draws a
+  // hyphen if that break is taken. It used to offer the break and draw
+  // nothing, which is worse than not breaking at all.
+  return sptrOf<HyphenMarkAtom>();
 }
 
 inline macro(nokern) {
@@ -187,6 +194,10 @@ macro(rule);
 macro(newcommand);
 
 macro(renewcommand);
+
+macro(providecommand);
+
+macro(def);
 
 macro(raisebox);
 

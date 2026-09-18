@@ -25,7 +25,7 @@ public:
 
   BigSymbolAtom() = delete;
 
-  BigSymbolAtom(const sptr<SymbolAtom>& delim, int size) : _delim(delim), _size(size) {}
+  BigSymbolAtom(const sptr<SymbolAtom>& delim, int size) : _size(size), _delim(delim) {}
 
   AtomType leftType() const override { return _delim->leftType(); }
 
@@ -186,7 +186,7 @@ private:
   int _cancelType;
 
 public:
-  enum CancelType { SLASH, BACKSLASH, CROSS };
+  enum CancelType { SLASH, BACKSLASH, CROSS, HORIZONTAL };
 
   CancelAtom() = delete;
 

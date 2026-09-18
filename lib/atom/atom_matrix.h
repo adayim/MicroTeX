@@ -6,6 +6,7 @@
 #include "atom/atom_space.h"
 #include "box/box_group.h"
 #include "box/box_single.h"
+#include "env/units.h"
 
 namespace microtex {
 
@@ -69,6 +70,9 @@ private:
   std::vector<Alignment> _position;
   std::map<int, sptr<VlineAtom>> _vlines;
   std::map<int, sptr<Atom>> _columnSpecifiers;
+  // Fixed column widths from `p{len}` / `m{len}` / `b{len}`. A column
+  // listed here is wrapped to that measure instead of sizing to content.
+  std::map<int, Dimen> _colWidths;
 
   MatrixType _matType;
   bool _isPartial;
@@ -221,7 +225,7 @@ public:
   MultiRowAtom() = delete;
 
   MultiRowAtom(int n, const std::string& option, const sptr<Atom>& rows)
-      : _i(0), _j(0), _rows(rows), _n(n == 0 ? 1 : n) {}
+      : _rows(rows), _i(0), _j(0), _n(n == 0 ? 1 : n) {}
 
   inline void setRowColumn(int r, int c) {
     _i = r;

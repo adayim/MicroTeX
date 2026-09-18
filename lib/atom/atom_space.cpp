@@ -16,7 +16,16 @@ sptr<Box> SpaceAtom::createBox(Env& env) {
     return sptrOf<StrutBox>(w, h, d, 0.f);
   }
   if (_blankType == SpaceType::none) {
-    return sptrOf<StrutBox>(env.space(_isMathMode), 0.f, 0.f, 0.f);
+    // An interword space is glue, not a rigid box: it is the only thing
+    // a justified line has to give. The natural width is unchanged, and
+    // nothing reads _stretch/_shrink unless justification is switched
+    // on, so ragged output is byte-for-byte what it was before.
+    //
+    // Proportions follow TeX's interword glue for an upright font --
+    // stretch a half space, shrink a third -- which keeps a stretched
+    // line from opening up further than a reader tolerates.
+    const float w = env.space(_isMathMode);
+    return sptrOf<GlueBox>(w, w / 2.f, w / 3.f);
   }
   return Glue::get(_blankType, env);
 }
