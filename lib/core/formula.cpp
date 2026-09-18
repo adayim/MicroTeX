@@ -14,17 +14,16 @@ map<string, sptr<Formula>> Formula::_predefFormulas;
 
 Formula::Formula() : _parser("", this, false) {}
 
+// A command's argument (\text{...}, \frac{..}{..}, ...) is parsed here.
+// Upstream swallowed any error in it when the parser was partial -- as ours
+// always is, since that is what draws an unknown command in red -- and kept
+// only what came before the error: \text{a <bad array> b} drew "a", and a
+// fraction lost its denominator, with nothing said. The error now
+// propagates, as the same input does at the top level. What partial mode is
+// for is untouched: an unknown command still comes out red.
 Formula::Formula(const Parser& tp, const string& latex, bool preprocess, bool isMathMode)
     : _parser(tp.isPartial(), latex, this, preprocess, isMathMode) {
-  if (tp.isPartial()) {
-    try {
-      _parser.parse();
-    } catch (exception& e) {
-      if (_root == nullptr) _root = sptrOf<EmptyAtom>();
-    }
-  } else {
-    _parser.parse();
-  }
+  _parser.parse();
 }
 
 Formula::Formula(const string& latex, bool preprocess) : _parser(latex, this, preprocess) {
