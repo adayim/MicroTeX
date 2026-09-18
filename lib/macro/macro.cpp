@@ -8,14 +8,19 @@ using namespace std;
 using namespace microtex;
 
 bool NewCommandMacro::_errIfConflict = true;
+bool NewCommandMacro::_sealed = false;
 
 bool NewCommandMacro::isMacro(const string& name) {
   auto it = _codes.find(name);
   return (it != _codes.end());
 }
 
+// As in LaTeX, a built-in command counts as defined. Only the code macros
+// were checked, so \newcommand{\frac} replaced the built-in \frac -- and
+// MacroInfo::add() deleted it -- for every formula parsed afterwards.
 void NewCommandMacro::checkNew(const string& name) {
-  if (_errIfConflict && isMacro(name))
+  const bool builtin = _sealed && MacroInfo::get(name) != nullptr;
+  if (_errIfConflict && (isMacro(name) || builtin))
     throw ex_parse("Command " + name + " already exists! Use renewcommand instead!");
 }
 

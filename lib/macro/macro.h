@@ -24,6 +24,11 @@ protected:
   static std::map<std::string, std::string> _replacements;
   static Macro* _instance;
 
+  // Set once _init_() has defined the built-ins, which are the baseline
+  // rather than a user's definition: from then on a built-in command such
+  // as \frac counts as defined (see checkNew()).
+  static bool _sealed;
+
   static void checkNew(const std::string& name);
 
   static void checkRenew(const std::string& name);

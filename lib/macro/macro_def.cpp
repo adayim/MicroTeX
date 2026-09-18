@@ -356,6 +356,8 @@ void NewCommandMacro::_init_() {
   // _free_() nulls the singleton, so a teardown/re-init cycle has to be
   // able to rebuild it. Static initialisation still creates the first one.
   if (_instance == nullptr) _instance = new NewCommandMacro();
+  // What follows defines the built-ins, so none of it conflicts with one.
+  _sealed = false;
   // region Predefined environments
   env(1, "array", "\\array@@env{#1}{", "}");
   env(1, "tabular", "\\array@@env{#1}{", "}");
@@ -418,6 +420,7 @@ void NewCommandMacro::_init_() {
     "}}"
   );
   // endregion
+  _sealed = true;
 }
 
 namespace {
