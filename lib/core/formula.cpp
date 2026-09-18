@@ -89,12 +89,16 @@ ArrayFormula::ArrayFormula() : _row(0), _col(0) {
 }
 
 void ArrayFormula::addCol() {
+  // Defensive bounds guard: malformed input can invoke \\ or & outside a
+  // real row context (see upstream issue #188). Ensure _row is addressable.
+  if (_row >= _array.size()) _array.resize(_row + 1);
   _array[_row].push_back(_root);
   _root = nullptr;
   _col++;
 }
 
 void ArrayFormula::addCol(int n) {
+  if (_row >= _array.size()) _array.resize(_row + 1);
   _array[_row].push_back(_root);
   for (int i = 1; i < n - 1; i++) {
     _array[_row].push_back(nullptr);
@@ -105,14 +109,15 @@ void ArrayFormula::addCol(int n) {
 
 void ArrayFormula::insertAtomIntoCol(int col, const sptr<Atom>& atom) {
   _col++;
+  const size_t c = col < 0 ? 0u : static_cast<size_t>(col);
   for (size_t j = 0; j < _row; j++) {
     size_t n_row_columns = _array[j].size();
-    if (n_row_columns < col) {
-      for (unsigned int i = 0; i < col - n_row_columns; i++)
+    if (n_row_columns < c) {
+      for (size_t i = 0; i < c - n_row_columns; i++)
         _array[j].push_back(sptrOf<EmptyAtom>());
     }
     auto it = _array[j].begin();
-    _array[j].insert(it + col, atom);
+    _array[j].insert(it + c, atom);
   }
 }
 
