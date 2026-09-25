@@ -385,8 +385,4 @@ void Graphics2D_Recorder::drawTextRun(const std::string& text, float x, float y,
     _records.push_back(std::move(rec));
 }
 
-void Graphics2D_Recorder::clear() {
-    _records.clear();
-}
-
 }  // namespace microtex

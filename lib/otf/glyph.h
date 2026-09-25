@@ -7,7 +7,7 @@
 
 namespace microtex {
 
-class CLMReader;
+class OtfBuilder;
 
 struct Glyph;
 
@@ -39,7 +39,7 @@ public:
    */
   inline i16 xMin() const { return _xMin; }
 
-  friend CLMReader;
+  friend OtfBuilder;
   friend Glyph;
 };
 
@@ -64,7 +64,7 @@ public:
 
   ~KernRecord() { delete[] _fields; }
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /** Defines variant for one glyph */
@@ -94,7 +94,7 @@ public:
 
   ~Variants() { delete[] _glyphs; }
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 struct GlyphAssembly;
@@ -143,7 +143,7 @@ public:
   inline bool isExtender() const { return (_flags & 0x0001) == 1; }
 
   friend GlyphAssembly;
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /**
@@ -185,7 +185,7 @@ public:
 
   ~GlyphAssembly() { delete[] _parts; }
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /**
@@ -229,7 +229,7 @@ public:
 
   ~MathKern() { delete[] _fields; }
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /**
@@ -263,7 +263,7 @@ public:
 
   ~MathKernRecord();
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /**
@@ -349,7 +349,7 @@ public:
 
   ~Math();
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /** Defines info for one glyph, device-table is JUST IGNORED. */
@@ -385,7 +385,7 @@ public:
 
   ~Glyph();
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 }  // namespace microtex

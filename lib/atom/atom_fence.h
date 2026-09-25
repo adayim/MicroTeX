@@ -20,7 +20,8 @@ public:
 
   MiddleAtom() = delete;
 
-  explicit MiddleAtom(std::string sym) : _sym(std::move(sym)), _placeholder(StrutBox::empty()) {}
+  /** @throw ex_parse if `sym` is not a delimiter ("" and "." are none) */
+  explicit MiddleAtom(std::string sym);
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -38,11 +39,10 @@ private:
   std::vector<sptr<MiddleAtom>> _m;
 
 public:
-  FencedAtom(const sptr<Atom>& b, std::string l, std::string r)
-      : _base(b), _l(std::move(l)), _r(std::move(r)) {}
+  /** @throw ex_parse if `l` or `r` is not a delimiter ("" and "." are none) */
+  FencedAtom(const sptr<Atom>& b, std::string l, std::string r);
 
-  FencedAtom(const sptr<Atom>& b, std::string l, std::string r, std::vector<sptr<MiddleAtom>> m)
-      : _base(b), _l(std::move(l)), _r(std::move(r)), _m(std::move(m)) {}
+  FencedAtom(const sptr<Atom>& b, std::string l, std::string r, std::vector<sptr<MiddleAtom>> m);
 
   AtomType leftType() const override { return AtomType::inner; }
 

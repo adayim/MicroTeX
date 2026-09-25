@@ -26,6 +26,14 @@ sptr<Box> createVDelim(const sptr<SymbolAtom>& sym, Env& env, int size) {
   return sptrOf<CharBox>(chr.vLarger(size));
 }
 
+sptr<SymbolAtom> delimiterSymbol(const std::string& sym) {
+  if (sym.length() == 1) {
+    const auto it = Formula::_charToSymbol.find(sym[0]);
+    if (it != Formula::_charToSymbol.end()) return SymbolAtom::get(it->second);
+  }
+  return SymbolAtom::get(sym);
+}
+
 static sptr<Box> createDelim(
   const std::string& sym,
   Env& env,
@@ -33,17 +41,7 @@ static sptr<Box> createDelim(
   bool isVertical,
   bool round = false
 ) {
-  sptr<SymbolAtom> atom;
-  if (sym.length() == 1) {
-    const auto it = Formula::_charToSymbol.find(sym[0]);
-    if (it != Formula::_charToSymbol.end()) {
-      atom = SymbolAtom::get(it->second);
-    } else {
-      atom = SymbolAtom::get(sym);
-    }
-  } else {
-    atom = SymbolAtom::get(sym);
-  }
+  const sptr<SymbolAtom> atom = delimiterSymbol(sym);
   if (atom == nullptr) {
     throw ex_parse(sym + " is not a delimiter!");
   }

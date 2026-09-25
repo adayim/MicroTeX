@@ -1,7 +1,5 @@
 #include "otf/otf.h"
 
-#include "otf/clm.h"
-
 using namespace std;
 
 namespace microtex {
@@ -17,20 +15,10 @@ pair<bool, i16> ClassKerning::operator()(u16 left, u16 right) const {
 }
 
 ClassKerning::~ClassKerning() {
-  // Allocated with new[] in CLMReader::readClassKerning().
+  // Allocated with new[].
   delete[] _lefts;
   delete[] _rights;
   delete[] _table;
-}
-
-Otf* Otf::fromFile(const char* filePath) {
-  const CLMReader reader;
-  return reader.read(filePath);
-}
-
-Otf* Otf::fromData(size_t len, const u8* data) {
-  const CLMReader reader;
-  return reader.read(len, data);
 }
 
 u16 Otf::space() const {

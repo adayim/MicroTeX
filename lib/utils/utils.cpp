@@ -9,22 +9,10 @@ const std::locale& microtex::defaultLocale() {
   return locale;
 }
 
-bool microtex::isUnicodeLower(c32 code) {
-  // the type-cast is necessary, or a std::bad_cast will be thrown,
-  // because std::toupper is a template function
-  return std::islower((wchar_t)code, defaultLocale());
-}
-
 bool microtex::isUnicodeDigit(c32 code) {
+  // the type-cast is necessary, or a std::bad_cast will be thrown,
+  // because std::isdigit is a template function
   return std::isdigit((wchar_t)code, defaultLocale());
-}
-
-microtex::c32 microtex::toUnicodeUpper(c32 code) {
-  return std::toupper((wchar_t)code, defaultLocale());
-}
-
-microtex::c32 microtex::toUnicodeLower(c32 code) {
-  return std::tolower((wchar_t)code, defaultLocale());
 }
 
 int microtex::binIndexOf(int count, const std::function<int(int)>& compare, bool returnClosest) {

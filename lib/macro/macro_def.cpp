@@ -22,26 +22,19 @@ using namespace microtex;
 
 namespace microtex {
 
-inline auto defMac(const char* code, int argc, int posOpts, MacroDelegate del) {
-  return std::make_pair(code, new PreDefMacro(argc, posOpts, del));
+// Handlers that read their arguments through CommandArgs (macro_args.h).
+inline auto defMac(const char* code, int argc, int posOpts, CommandDelegate del) {
+  return std::make_pair(code, new CommandMacro(argc, posOpts, del));
 }
 
-inline auto defMac(const char* code, int argc, MacroDelegate del) {
-  return std::make_pair(code, new PreDefMacro(argc, del));
+inline auto defMac(const char* code, int argc, CommandDelegate del) {
+  return std::make_pair(code, new CommandMacro(argc, del));
 }
 
 }  // namespace microtex
 
 map<string, MacroInfo*> MacroInfo::_commands{
 #define mac mac4
-  mac(2, 2, macro_newcommand, "newcommand"),
-  mac(2, 2, macro_renewcommand, "renewcommand"),
-  mac(2, 2, macro_providecommand, "providecommand"),
-  // \def takes its name, pattern, and body via custom parsing inside
-  // macro_def — argc=0 so the framework's standard arg reader, which
-  // would expand any already-defined macro it finds at the cursor, is
-  // bypassed entirely.
-  mac(0, 0, macro_def, "def"),
   mac(2, 1, macro_rule, "rule"),
   mac(1, 1, macro_includegraphics, "includegraphics"),
   mac(2, 1, macro_cfrac, "cfrac"),
@@ -75,14 +68,11 @@ map<string, MacroInfo*> MacroInfo::_commands{
 #define mac mac3
   mac(1, macro_fatalIfCmdConflict, "fatalIfCmdConflict"),
   mac(1, macro_breakEverywhere, "breakEverywhere"),
-  mac(3, macro_newenvironment, "newenvironment"),
-  mac(3, macro_renewenvironment, "renewenvironment"),
-  mac(0, macro_makeatletter, "makeatletter"),
-  mac(0, macro_makeatother, "makeatother"),
   // region array environments
   mac(1, macro_smallmatrixATATenv, "smallmatrix@@env"),
   mac(1, macro_matrixATATenv, "matrix@@env"),
   mac(2, macro_arrayATATenv, "array@@env"),
+  mac(2, macro_arrayATATenv, "tabular@@env"),
   mac(2, macro_alignATATenv, "align@@env"),
   mac(2, macro_alignedATATenv, "aligned@@env"),
   mac(2, macro_flalignATATenv, "flalign@@env"),
@@ -96,13 +86,13 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(3, macro_multicolumn, "multicolumn"),
   mac(0, macro_hline, "hline"),
   mac(0, macro_thickhline, "thickhline"),
+  mac(3, macro_specialrule, "specialrule"),
   mac(1, macro_cline, "cline"),
   mac(3, macro_multirow, "multirow"),
   mac(1, macro_rowcolor, "rowcolor"),
   mac(1, macro_columnbg, "columncolor"),
   mac(1, macro_arrayrulecolor, "arrayrulecolor"),
   mac(2, macro_newcolumntype, "newcolumntype"),
-  mac(1, macro_color, "color"),
   mac(1, macro_cellcolor, "cellcolor"),
   mac(1, macro_shoveright, "shoveright"),
   mac(1, macro_shoveleft, "shoveleft"),
@@ -110,16 +100,6 @@ map<string, MacroInfo*> MacroInfo::_commands{
   // region sizes
   mac(4, macro_declaremathsizes, "DeclareMathSizes"),
   mac(1, macro_magnification, "magnification"),
-  mac(0, macro_sizes, "tiny"),
-  mac(0, macro_sizes, "scriptsize"),
-  mac(0, macro_sizes, "footnotesize"),
-  mac(0, macro_sizes, "small"),
-  mac(0, macro_sizes, "normalsize"),
-  mac(0, macro_sizes, "large"),
-  mac(0, macro_sizes, "Large"),
-  mac(0, macro_sizes, "LARGE"),
-  mac(0, macro_sizes, "huge"),
-  mac(0, macro_sizes, "Huge"),
   mac(1, macro_big, "big"),
   mac(1, macro_Big, "Big"),
   mac(1, macro_bigg, "bigg"),
@@ -136,12 +116,6 @@ map<string, MacroInfo*> MacroInfo::_commands{
   // region scripts & frac
   mac(2, macro_frac, "frac"),
   mac(6, macro_genfrac, "genfrac"),
-  mac(0, macro_above, "above"),
-  mac(0, macro_over, "over"),
-  mac(0, macro_atop, "atop"),
-  mac(2, macro_overwithdelims, "overwithdelims"),
-  mac(2, macro_atopwithdelims, "atopwithdelims"),
-  mac(2, macro_abovewithdelims, "abovewithdelims"),
   mac(3, macro_sideset, "sideset"),
   mac(3, macro_prescript, "prescript"),
   // endregion
@@ -162,13 +136,6 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_underline, "underline"),
   mac(1, macro_Braket, "Braket"),
   mac(1, macro_Set, "Set"),
-  mac(0, macro_leftparenthesis, "("),
-  mac(0, macro_leftbracket, "["),
-  mac(0, macro_choose, "choose"),
-  mac(0, macro_brace, "brace"),
-  mac(0, macro_brack, "brack"),
-  mac(0, macro_bangle, "bangle"),
-  mac(1, macro_left, "left"),
   mac(1, macro_middle, "middle"),
   // endregion
   // region atom types
@@ -182,14 +149,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_mathclose, "mathclose"),
   // endregion
   // region math and text styles
-  mac(0, macro_textfont, "bf"),
-  mac(0, macro_textfont, "it"),
-  mac(0, macro_textfont, "rm"),
-  mac(0, macro_textfont, "sf"),
-  mac(0, macro_textfont, "tt"),
-  mac(1, macro_textfont, "cal"),
-  mac(1, macro_textfont, "frak"),
-  mac(1, macro_textfont, "oldstylenums"),
+  mac(1, macro_oldstylenums, "oldstylenums"),
   mac(1, macro_mathfont, "mathnormal"),
   mac(1, macro_mathfont, "mathrm"),
   mac(1, macro_mathfont, "mathbf"),
@@ -220,7 +180,6 @@ map<string, MacroInfo*> MacroInfo::_commands{
   // semantics than the previous behaviour of leaving them undefined.
   mac(1, macro_bold, "bm"),
   mac(1, macro_bold, "pmb"),
-  mac(2, macro_addfont, "addfont"),
   // endregion
   // region nested styles
   mac(1, macro_text, "mbox"),
@@ -269,10 +228,6 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_undertilde, "undertilde"),
   // endregion
   // region microtex styles
-  mac(0, macro_texstyle, "displaystyle"),
-  mac(0, macro_texstyle, "textstyle"),
-  mac(0, macro_texstyle, "scriptstyle"),
-  mac(0, macro_texstyle, "scriptscriptstyle"),
   mac(1, macro_everymath, "everymath"),
   mac(1, macro_atexstyle, "dnomstyle"),
   mac(1, macro_atexstyle, "numstyle"),
@@ -319,13 +274,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_mathclrlap, "mathclap"),
   // endregion
   // region limits
-  mac(0, macro_nolimits, "nolimits"),
-  mac(0, macro_limits, "limits"),
-  mac(0, macro_normal, "normal"),
   // endregion
-
-  mac(0, macro_kern, "kern"),
-  mac(0, macro_char, "char"),
   mac(1, macro_romannumeral, "roman"),
   mac(1, macro_romannumeral, "Roman"),
   mac(0, macro_surd, "surd"),
@@ -342,8 +291,6 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(0, macro_nbsp, "nbsp"),
   mac(1, macro_sqrt, "sqrtsign"),
   mac(0, macro_joinrel, "joinrel"),
-  mac(0, macro_cr, "cr"),
-  mac(0, macro_backslashcr, "\\"),
   mac(1, macro_hvspace, "hspace"),
   mac(1, macro_hvspace, "vspace"),
   mac(0, macro_underscore, "underscore"),
@@ -353,122 +300,25 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_vphantom, "vphantom"),
   mac(0, macro_spATbreve, "sp@breve"),
   mac(0, macro_nokern, "nokern"),
-#ifdef GRAPHICS_DEBUG
-  mac(1, macro_debug, "debug"),
-  mac(0, macro_undebug, "undebug"),
-#endif  // GRAPHICS_DEBUG
 };
-
-map<string, string> NewCommandMacro::_codes;
-map<string, string> NewCommandMacro::_replacements;
-map<string, NewCommandMacro::Displaced> NewCommandMacro::_displaced;
-bool NewCommandMacro::_sealed = false;
-Macro* NewCommandMacro::_instance = new NewCommandMacro();
-
-inline static void env(int argc, const string& name, const string& begDef, const string& endDef) {
-  NewEnvironmentMacro::addNewEnvironment(name, begDef, endDef, argc);
-}
-
-inline static void cmd(int argc, const string& name, const string& code) {
-  NewCommandMacro::addNewCommand(name, code, argc);
-}
-
-void NewCommandMacro::_init_() {
-  // _free_() nulls the singleton, so a release/re-init cycle must be able
-  // to rebuild it. Static init still creates the first one.
-  if (_instance == nullptr) _instance = new NewCommandMacro();
-  // What follows is the baseline, not a parse: no conflict with a built-in
-  // and nothing to restore until snapshotBuiltins() below.
-  _sealed = false;
-  // region Predefined environments
-  env(1, "array", "\\array@@env{#1}{", "}");
-  env(1, "tabular", "\\array@@env{#1}{", "}");
-  env(0, "matrix", "\\matrix@@env{", "}");
-  env(0, "smallmatrix", "\\smallmatrix@@env{", "}");
-  env(0, "pmatrix", "\\left(\\begin{matrix}", "\\end{matrix}\\right)");
-  env(0, "bmatrix", "\\left[\\begin{matrix}", "\\end{matrix}\\right]");
-  env(0, "Bmatrix", "\\left\\{\\begin{matrix}", "\\end{matrix}\\right\\}");
-  env(0, "vmatrix", "\\left|\\begin{matrix}", "\\end{matrix}\\right|");
-  env(0, "Vmatrix", "\\left\\|\\begin{matrix}", "\\end{matrix}\\right\\|");
-  env(0, "eqnarray", "\\begin{array}{rcl}", "\\end{array}");
-  env(0, "align", "\\align@@env{", "}");
-  env(0, "flalign", "\\flalign@@env{", "}");
-  env(1, "alignat", "\\alignat@@env{#1}{", "}");
-  env(0, "aligned", "\\aligned@@env{", "}");
-  env(1, "alignedat", "\\alignedat@@env{#1}{", "}");
-  env(0, "multline", "\\multline@@env{", "}");
-  env(0, "cases", "\\left\\{\\begin{array}{@{}ll@{\\,}}", "\\end{array}\\right.");
-  env(0, "rcases", "\\left.\\begin{array}{@{}ll@{\\,}}", "\\end{array}\\right\\}");
-  env(0, "split", "\\begin{array}{r@{\\;}l}", "\\end{array}");
-  env(0, "gather", "\\gather@@env{", "}");
-  env(0, "gathered", "\\gathered@@env{", "}");
-  env(0, "itemize", "\\itemize@@env{", "}");
-  env(0, "enumerate", "\\enumerate@@env{", "}");
-  env(0, "math", "\\(", "\\)");
-  env(0, "displaymath", "\\[", "\\]");
-  env(0, "equation", "\\begin{align}", "\\end{align}");
-  // endregion
-  // region Predefined commands
-  cmd(1, "operatorname", "\\mathop{\\mathrm{#1}}\\nolimits ");
-  cmd(2, "DeclareMathOperator", "\\newcommand{#1}{\\mathop{\\mathrm{#2}}\\nolimits}");
-  cmd(1, "substack", "{\\scriptstyle\\begin{array}{c}#1\\end{array}}");
-  cmd(2, "dfrac", "\\genfrac{}{}{1}{}{#1}{#2}");
-  cmd(2, "tfrac", "\\genfrac{}{}{1}{1}{#1}{#2}");
-  cmd(2, "dbinom", "\\genfrac{(}{)}{0pt}{}{#1}{#2}");
-  cmd(2, "tbinom", "\\genfrac{(}{)}{0pt}{1}{#1}{#2}");
-  cmd(1, "pmod", "\\qquad\\mathbin{(\\mathrm{mod}\\ #1)}");
-  cmd(1, "mod", "\\qquad\\mathbin{\\mathrm{mod}\\ #1}");
-  cmd(1, "pod", "\\qquad\\mathbin{(#1)}");
-  cmd(0, "spbreve", "^{\\makeatletter\\sp@breve\\makeatother}");
-  cmd(0, "spcheck", "^{\\vee}");
-  cmd(0, "spdot", "^{\\displaystyle.}");
-  cmd(1, "d", "\\underaccent{\\dot}{#1}");
-  cmd(1, "b", "\\underaccent{\\bar}{#1}");
-  cmd(1, "Bra", "\\left\\langle{#1}\\right\\vert");
-  cmd(1, "Ket", "\\left\\vert{#1}\\right\\rangle");
-  cmd(1, "textsuperscript", "{}^{\\text{#1}}");
-  cmd(1, "textsubscript", "{}_{\\text{#1}}");
-  cmd(1, "overbrack", "\\overbracket{#1}");
-  cmd(1, "underbrack", "\\underbracket{#1}");
-  cmd(0, "degree", "^\\circ");
-  cmd(0, "with", "\\mathbin{\\&}");
-  cmd(0, "parr", "\\mathbin{\\rotatebox[origin=c]{180}{\\&}}");
-  cmd(
-    2,
-    "sfrac",
-    "\\scalebox{.8}{"
-    "\\raisebox{.5ex}{"
-    "\\raisebox{.45ex}{\\numstyle{#1}}"
-    "\\kern-.4ex\\nokern\\mathslash\\nokern\\kern-.4ex"
-    "\\raisebox{-.45ex}{\\dnomstyle{#2}}"
-    "}}"
-  );
-  // endregion
-
-  // Everything defined so far is the built-in baseline: clearUserMacros()
-  // undoes only what a parse defines after this point.
-  snapshotBuiltins();
-}
 
 namespace {
 
-// The registries above are static-duration containers holding raw `new`ed
-// pointers. At process exit the containers are destroyed but their values
-// are not, so a leak checker reports ~1600 "definitely lost" records
-// pointing at defMac() static initialisation. Hosts that never call
-// MicroTeX::release() -- anything embedding the library and relying on
-// process teardown -- leak all of it.
+// The registry above is a static-duration container holding raw `new`ed
+// pointers. At process exit the container is destroyed but its values are
+// not, so a leak checker reports "definitely lost" records pointing at
+// defMac() static initialisation. Hosts that never call MicroTeX::release()
+// -- anything embedding the library and relying on process teardown --
+// leak all of it.
 //
 // This object is defined last in this translation unit, so it is
-// constructed last and destroyed *first*, ahead of _commands, _codes,
-// _replacements, _displaced and _instance above. That is the only point at
-// which _free_() can still run against live containers. _free_() clears
-// them as it goes, so an explicit MicroTeX::release() beforehand makes
-// this a no-op rather than a double free.
+// constructed last and destroyed *first*, ahead of _commands above. That is
+// the only point at which _free_() can still run against a live container.
+// _free_() clears it as it goes, so an explicit MicroTeX::release()
+// beforehand makes this a no-op rather than a double free.
 struct MacroRegistryCleanup {
   ~MacroRegistryCleanup() {
     MacroInfo::_free_();
-    NewCommandMacro::_free_();
   }
 };
 

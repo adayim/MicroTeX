@@ -3,6 +3,7 @@
 #include "atom/atom_basic.h"
 #include "atom/atom_delim.h"
 #include "env/units.h"
+#include "front/lower.h"
 #include "utils/string_utils.h"
 #include "utils/utf.h"
 
@@ -150,7 +151,7 @@ LongDivAtom::LongDivAtom(long divisor, long dividend) : _divisor(divisor), _divi
 
   const int s = results.size();
   for (int i = 0; i < s; i++) {
-    auto num = Formula(results[i])._root;
+    auto num = front::buildFragment(results[i]);
     if (i == 1) {
       string divisor = toString(_divisor);
       auto rparen = SymbolAtom::get("rparen");
@@ -159,7 +160,7 @@ LongDivAtom::LongDivAtom(long divisor, long dividend) : _divisor(divisor), _divi
       auto row = sptrOf<RowAtom>(raise);
       row->add(num);
       auto o = sptrOf<OverUnderBar>(row, true);
-      auto r = sptrOf<RowAtom>(Formula(divisor, false)._root);
+      auto r = sptrOf<RowAtom>(front::buildFragment(divisor));
       r->add(sptrOf<SpaceAtom>(SpaceType::thinMuSkip));
       r->add(o);
       append(r);

@@ -2,7 +2,6 @@
 
 #include "atom/atom_font.h"
 #include "atom/atom_zstack.h"
-#include "core/debug_config.h"
 #include "env/env.h"
 #include "env/units.h"
 #include "graphic/graphic.h"
@@ -12,194 +11,45 @@ using namespace std;
 
 namespace microtex {
 
-macro(longdiv) {
+cmdmacro(longdiv) {
   long dividend = 0;
-  valueOf(args[1], dividend);
+  valueOf(args.text(1), dividend);
   long divisor = 0;
-  valueOf(args[2], divisor);
+  valueOf(args.text(2), divisor);
   if (divisor == 0) throw ex_parse("Divisor must not be 0.");
   return sptrOf<LongDivAtom>(divisor, dividend);
 }
 
-macro(char) {
-  // clang-format off
-  const auto& str = tp.forward([](char ch) {
-    return ch == '\'' || ch == '"'
-           || (ch >= '0' && ch <= '9')
-           || (ch >= 'a' && ch <= 'z')
-           || (ch >= 'A' && ch <= 'Z');
-  });
-  // clang-format on
-  int radix = 10;
-  int offset = 0;
-  if (startsWith(str, "'")) {
-    radix = 8;
-    offset = 1;
-  } else if (startsWith(str, "\"")) {
-    radix = 16;
-    offset = 1;
-  }
-  int n = 0;
-  str2int(str.c_str() + offset, str.length() - offset, n, radix);
-  return tp.getCharAtom(n);
-}
-
-macro(cr) {
-  if (tp.isArrayMode()) {
-    tp.addRow();
-  } else {
-    ArrayFormula arr;
-    arr.add(tp._formula->_root);
-    arr.addRow();
-    Parser parser(tp.isPartial(), tp.forwardBalancedGroup(), &arr, false, tp.isMathMode());
-    parser.parse();
-    arr.checkDimensions();
-    tp._formula->_root = arr.getAsVRow();
-  }
-
-  return nullptr;
-}
-
-macro(kern) {
-  auto [value, unit] = tp.getDimen();
-  return sptrOf<SpaceAtom>(unit, value, 0.f, 0.f);
-}
-
-macro(hvspace) {
-  auto [value, unit] = Units::getDimen(args[1]);
-  return args[0][0] == 'h' ? sptrOf<SpaceAtom>(unit, value, 0.f, 0.f)
+cmdmacro(hvspace) {
+  auto [value, unit] = Units::getDimen(args.text(1));
+  return args.text(0)[0] == 'h' ? sptrOf<SpaceAtom>(unit, value, 0.f, 0.f)
                            : sptrOf<SpaceAtom>(unit, 0.f, value, 0.f);
 }
 
-macro(rule) {
-  auto w = Units::getDimen(args[1]);
-  auto h = Units::getDimen(args[2]);
-  auto r = Units::getDimen(args[3]);
+cmdmacro(rule) {
+  auto w = Units::getDimen(args.text(1));
+  auto h = Units::getDimen(args.text(2));
+  auto r = Units::getDimen(args.text(3));
 
   return sptrOf<RuleAtom>(w, h, -r);
 }
 
-template <typename F>
-sptr<Atom> _def_cmd(Parser& tp, Args& args, F&& f) {
-  string newcmd(args[1]);
-  int argc = 0;
-  if (!tp.isValidCmd(newcmd)) throw ex_parse("Invalid name for the command '" + newcmd);
-
-  if (!args[3].empty()) valueOf(args[3], argc);
-
-  const bool hasOption = !args[4].empty();
-  if (hasOption && argc > 0) --argc;
-
-  f(hasOption, newcmd.substr(1), args[2], argc, args[4]);
-
-  return nullptr;
+cmdmacro(raisebox) {
+  auto r = Units::getDimen(args.text(1));
+  auto h = Units::getDimen(args.text(3));
+  auto d = Units::getDimen(args.text(4));
+  return sptrOf<RaiseAtom>(args.formula(2, args.isMathMode()), -r, h, d);
 }
 
-macro(newcommand) {
-  return _def_cmd(
-    tp,
-    args,
-    [](bool hasOption, const string& cmd, const string& def, int argc, const string& opt) {
-      if (!hasOption) {
-        NewCommandMacro::addNewCommand(cmd, def, argc);
-      } else {
-        NewCommandMacro::addNewCommand(cmd, def, argc, opt);
-      }
-    }
-  );
-}
-
-macro(renewcommand) {
-  return _def_cmd(
-    tp,
-    args,
-    [](bool hasOption, const string& cmd, const string& def, int argc, const string& opt) {
-      if (!hasOption) {
-        NewCommandMacro::addRenewCommand(cmd, def, argc);
-      } else {
-        NewCommandMacro::addRenewCommand(cmd, def, argc, opt);
-      }
-    }
-  );
-}
-
-macro(providecommand) {
-  // \providecommand{\name}[argc][default]{def} — like \newcommand, but
-  // silently no-ops if \name is already defined (built-in or user).
-  const string& newcmd = args[1];
-  if (tp.isValidCmd(newcmd) && MacroInfo::get(newcmd.substr(1)) != nullptr) {
-    return nullptr;
-  }
-  return _def_cmd(
-    tp,
-    args,
-    [](bool hasOption, const string& cmd, const string& def, int argc, const string& opt) {
-      if (!hasOption) {
-        NewCommandMacro::addNewCommand(cmd, def, argc);
-      } else {
-        NewCommandMacro::addNewCommand(cmd, def, argc, opt);
-      }
-    }
-  );
-}
-
-macro(def) {
-  // Plain-TeX \def\name<pattern>{body}. Registered with argc=0 because we
-  // can't let the framework read the name through the standard arg reader
-  // — that path calls getCmdWithArgs(), which greedily consumes following
-  // braces if the name happens to already exist in the macro table (e.g.
-  // from a previous parse sharing MicroTeX's static state). The name must
-  // be a bare control sequence, so we read it ourselves with getCmd().
-  tp.skipWhiteSpace();
-  if (tp.atEnd() || tp.peek() != '\\')
-    throw ex_parse("\\def: expected '\\' before the name");
-  const string raw = tp.getCmd();
-  if (raw.empty())
-    throw ex_parse("\\def: expected a control-sequence name after '\\def'");
-  const string name = "\\" + raw;
-  if (!tp.isValidCmd(name))
-    throw ex_parse("\\def: invalid control sequence name '" + name + "'");
-
-  const string pattern = tp.forward([](char c) { return c != '{'; });
-  int argc = 0;
-  for (size_t i = 0; i < pattern.size(); i++) {
-    const char c = pattern[i];
-    if (c == ' ' || c == '\t' || c == '\n' || c == '\r') continue;
-    if (c != '#')
-      throw ex_parse(
-        "\\def: unexpected character '" + string(1, c) + "' in parameter pattern"
-      );
-    if (i + 1 >= pattern.size())
-      throw ex_parse("\\def: '#' at end of parameter pattern");
-    const char d = pattern[++i];
-    if (d < '1' || d > '9')
-      throw ex_parse("\\def: '#' must be followed by a digit 1..9");
-    const int n = d - '0';
-    if (n != argc + 1)
-      throw ex_parse("\\def: parameters must be sequential starting at #1");
-    argc = n;
-  }
-
-  const string body = tp.getGroup('{', '}');
-  NewCommandMacro::addDefCommand(name.substr(1), body, argc);
-  return nullptr;
-}
-
-macro(raisebox) {
-  auto r = Units::getDimen(args[1]);
-  auto h = Units::getDimen(args[3]);
-  auto d = Units::getDimen(args[4]);
-  return sptrOf<RaiseAtom>(Formula(tp, args[2], false, tp.isMathMode())._root, -r, h, d);
-}
-
-macro(romannumeral) {
+cmdmacro(romannumeral) {
   static const int numbers[] = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1};
   static const string letters[] =
     {"M", "CM", "D", "CD", "C", "XC", "", "XL", "X", "IX", "V", "IV", "I"};
   string roman;
 
   int num;
-  valueOf(trim(args[1]), num);
+  std::string text = args.text(1);
+  valueOf(trim(text), num);
   for (int i = 0; i < 13; i++) {
     while (num >= numbers[i]) {
       roman += letters[i];
@@ -207,65 +57,40 @@ macro(romannumeral) {
     }
   }
 
-  if (args[0][0] == 'r') {
+  if (args.text(0)[0] == 'r') {
     toLower(roman);
   }
 
   return sptrOf<FontStyleAtom>(
     FontStyle::rm,
-    tp.isMathMode(),
-    Formula(tp, roman, false, tp.isMathMode())._root
+    args.isMathMode(),
+    args.formulaOf(roman, args.isMathMode())
   );
 }
 
-macro(debug) {
-  auto& config = DebugConfig::INSTANCE;
-  const auto& options = parseOption(args[1]);
-  config.enable = true;
-  const auto& showOnlyChar = options.find("showonlychar");
-  if (showOnlyChar != options.end()) {
-    config.showOnlyChar = showOnlyChar->second == "true";
-  }
-  const auto& boundColor = options.find("boundcolor");
-  if (boundColor != options.end()) {
-    config.boundColor = ColorAtom::getColor(boundColor->second);
-  }
-  const auto& baselineColor = options.find("baselinecolor");
-  if (baselineColor != options.end()) {
-    config.baselineColor = ColorAtom::getColor(baselineColor->second);
-  }
-  return nullptr;
-}
-
-macro(undebug) {
-  auto& config = DebugConfig::INSTANCE;
-  config.enable = false;
-  return nullptr;
-}
-
-macro(zstack) {
+cmdmacro(zstack) {
   auto halign = Alignment::left;
-  if (args[1] == "c") {
+  if (args.text(1) == "c") {
     halign = Alignment::center;
-  } else if (args[1] == "r") {
+  } else if (args.text(1) == "r") {
     halign = Alignment::right;
   }
-  const auto& h = Units::getDimen(args[2]);
+  const auto& h = Units::getDimen(args.text(2));
   const ZStackArgs hargs{halign, h};
 
   auto valign = Alignment::top;
-  if (args[3] == "c") {
+  if (args.text(3) == "c") {
     valign = Alignment::center;
-  } else if (args[3] == "b") {
+  } else if (args.text(3) == "b") {
     valign = Alignment::bottom;
-  } else if (args[3] == "B") {
+  } else if (args.text(3) == "B") {
     valign = Alignment::none;
   }
-  const auto& v = Units::getDimen(args[4]);
+  const auto& v = Units::getDimen(args.text(4));
   const ZStackArgs& vargs{valign, v};
 
-  const auto atom = Formula(tp, args[5], false)._root;
-  const auto anchor = Formula(tp, args[6], false)._root;
+  const auto atom = args.formula(5);
+  const auto anchor = args.formula(6);
 
   return sptrOf<ZStackAtom>(hargs, vargs, atom, anchor);
 }

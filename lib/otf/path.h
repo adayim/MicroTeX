@@ -86,8 +86,6 @@ struct PathCmd {
 
   inline i16 operator[](int i) const { return args[i]; }
 
-  std::string toString() const;
-
   ~PathCmd();
 };
 
@@ -106,8 +104,6 @@ public:
   inline bool isEmpty() const { return _cmdCnt <= 0; }
 
   void draw(Graphics2D& g2) const;
-
-  std::string toString() const;
 
   ~Path();
 

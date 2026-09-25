@@ -7,43 +7,13 @@
 
 namespace microtex {
 
-macro(binom);
+cmdmacro(binom);
 
-sptr<Atom> _choose(const std::string& left, const std::string& right, Parser& tp, Args& args);
+cmdmacro(frac);
 
-inline macro(choose) {
-  return _choose("lparen", "rparen", tp, args);
-}
+cmdmacro(cfrac);
 
-inline macro(brack) {
-  return _choose("lbrack", "rbrack", tp, args);
-}
-
-inline macro(bangle) {
-  return _choose("langle", "rangle", tp, args);
-}
-
-inline macro(brace) {
-  return _choose("lbrace", "rbrace", tp, args);
-}
-
-macro(frac);
-
-macro(above);
-
-macro(atop);
-
-macro(over);
-
-macro(abovewithdelims);
-
-macro(atopwithdelims);
-
-macro(overwithdelims);
-
-macro(cfrac);
-
-macro(genfrac);
+cmdmacro(genfrac);
 
 }  // namespace microtex
 

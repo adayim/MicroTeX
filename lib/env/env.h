@@ -202,6 +202,20 @@ public:
   }
 
   /**
+   * Do something with the given text width (in font units), as a column or
+   * a minipage narrower than the page sets its content. This will reset the
+   * width after function #f return.
+   */
+  template <typename F>
+  auto withTextWidth(float width, F&& f) -> decltype(f(*this)) {
+    const float oldWidth = _textWidth;
+    _textWidth = width;
+    auto result = f(*this);
+    _textWidth = oldWidth;
+    return result;
+  }
+
+  /**
    * Do something with given FontStyle. This will reset the FontStyle after function #f
    * return.
    */

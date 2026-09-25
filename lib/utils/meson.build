@@ -1,4 +1,5 @@
 utils_src = [
+	'utils/bidi.cpp',
 	'utils/string_utils.cpp',
 	'utils/utf.cpp',
 	'utils/utils.cpp'
@@ -6,6 +7,7 @@ utils_src = [
 
 if install_headerfiles
 	install_headers([
+		'bidi.h',
 		'dict_tree.h',
         'exceptions.h',
         'log.h',

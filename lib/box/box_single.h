@@ -143,15 +143,6 @@ public:
   boxname(RuleBox);
 };
 
-class DebugBox : public Box {
-public:
-  explicit DebugBox(const sptr<Box>& base);
-
-  void draw(Graphics2D& g2, float x, float y) override;
-
-  boxname(DebugBox);
-};
-
 }  // namespace microtex
 
 #endif  // MICROTEX_BOX_SINGLE_H

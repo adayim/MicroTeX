@@ -6,42 +6,42 @@
 
 namespace microtex {
 
-inline sptr<Atom> _math_type(Parser& tp, Args& args, AtomType type) {
-  return sptrOf<TypedAtom>(type, type, Formula(tp, args[1], false)._root);
+inline sptr<Atom> _math_type(CommandArgs& args, AtomType type) {
+  return sptrOf<TypedAtom>(type, type, args.formula(1));
 }
 
-inline macro(mathop) {
-  auto a = _math_type(tp, args, AtomType::bigOperator);
+inline cmdmacro(mathop) {
+  auto a = _math_type(args, AtomType::bigOperator);
   a->_limitsType = LimitsType::noLimits;
   return a;
 }
 
-inline macro(mathpunct) {
-  return _math_type(tp, args, AtomType::punctuation);
+inline cmdmacro(mathpunct) {
+  return _math_type(args, AtomType::punctuation);
 }
 
-inline macro(mathord) {
-  return _math_type(tp, args, AtomType::ordinary);
+inline cmdmacro(mathord) {
+  return _math_type(args, AtomType::ordinary);
 }
 
-inline macro(mathrel) {
-  return _math_type(tp, args, AtomType::relation);
+inline cmdmacro(mathrel) {
+  return _math_type(args, AtomType::relation);
 }
 
-inline macro(mathinner) {
-  return _math_type(tp, args, AtomType::inner);
+inline cmdmacro(mathinner) {
+  return _math_type(args, AtomType::inner);
 }
 
-inline macro(mathbin) {
-  return _math_type(tp, args, AtomType::binaryOperator);
+inline cmdmacro(mathbin) {
+  return _math_type(args, AtomType::binaryOperator);
 }
 
-inline macro(mathopen) {
-  return _math_type(tp, args, AtomType::opening);
+inline cmdmacro(mathopen) {
+  return _math_type(args, AtomType::opening);
 }
 
-inline macro(mathclose) {
-  return _math_type(tp, args, AtomType::closing);
+inline cmdmacro(mathclose) {
+  return _math_type(args, AtomType::closing);
 }
 
 }  // namespace microtex

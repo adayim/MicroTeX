@@ -6,9 +6,10 @@
 #include <vector>
 
 #include "atom/atom_basic.h"
+#include "atom/atom_font.h"
 #include "atom/atom_matrix.h"
 #include "core/formula.h"
-#include "core/parser.h"
+#include "env/units.h"
 #include "macro/macro.h"
 #include "macro/macro_decl.h"
 #include "utils/exceptions.h"
@@ -16,152 +17,154 @@
 
 namespace microtex {
 
-inline macro(smallmatrixATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser parser(tp.isPartial(), args[1], arr, false);
-  parser.parse();
+inline cmdmacro(smallmatrixATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::smallMatrix);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::smallMatrix);
 }
 
-inline macro(matrixATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser parser(tp.isPartial(), args[1], arr, false);
-  parser.parse();
+inline cmdmacro(matrixATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::matrix);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::matrix);
 }
 
-inline macro(arrayATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser parser(tp.isPartial(), args[2], arr, false);
-  parser.parse();
+inline cmdmacro(arrayATATenv) {
+  const auto arr = args.alignment(2);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), args[1], true);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
 }
 
-inline macro(alignATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser parser(tp.isPartial(), args[1], arr, false);
-  parser.parse();
+inline cmdmacro(alignATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::align);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::align);
 }
 
-inline macro(flalignATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser parser(tp.isPartial(), args[1], arr, false);
-  parser.parse();
+inline cmdmacro(flalignATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::flAlign);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::flAlign);
 }
 
-inline macro(alignatATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser par(tp.isPartial(), args[2], arr, false);
-  par.parse();
+inline cmdmacro(alignatATATenv) {
+  const auto arr = args.alignment(2);
   arr->checkDimensions();
   size_t n = 0;
-  valueOf(args[1], n);
+  valueOf(args.text(1), n);
   if (arr->cols() != 2 * n) throw ex_parse("Bad number of equations in alignat environment!");
 
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::alignAt);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::alignAt);
 }
 
-inline macro(alignedATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser p(tp.isPartial(), args[1], arr, false);
-  p.parse();
+inline cmdmacro(alignedATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::aligned);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::aligned);
 }
 
-inline macro(alignedatATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser p(tp.isPartial(), args[2], arr, false);
-  p.parse();
+inline cmdmacro(alignedatATATenv) {
+  const auto arr = args.alignment(2);
   arr->checkDimensions();
   size_t n = 0;
-  valueOf(args[1], n);
+  valueOf(args.text(1), n);
   if (arr->cols() != 2 * n) {
     throw ex_parse("Bad number of equations in alignedat environment!");
   }
 
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MatrixType::alignedAt);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::alignedAt);
 }
 
-inline macro(multlineATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser p(tp.isPartial(), args[1], arr, false);
-  p.parse();
+inline cmdmacro(multlineATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
   if (arr->cols() > 1) {
     throw ex_parse("Requires exact one column in multiline environment!");
   }
   if (arr->cols() == 0) return nullptr;
 
-  return sptrOf<MultlineAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MultiLineType::multiline);
+  return sptrOf<MultlineAtom>(args.isPartial(), arr, MultiLineType::multiline);
 }
 
-inline macro(gatherATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser p(tp.isPartial(), args[1], arr, false);
-  p.parse();
+inline cmdmacro(gatherATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
   if (arr->cols() > 1) throw ex_parse("Requires exact one column in gather environment!");
   if (arr->cols() == 0) return nullptr;
 
-  return sptrOf<MultlineAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MultiLineType::gather);
+  return sptrOf<MultlineAtom>(args.isPartial(), arr, MultiLineType::gather);
 }
 
-inline macro(gatheredATATenv) {
-  auto* arr = new ArrayFormula();
-  Parser p(tp.isPartial(), args[1], arr, false);
-  p.parse();
+inline cmdmacro(gatheredATATenv) {
+  const auto arr = args.alignment(1);
   arr->checkDimensions();
   if (arr->cols() > 1) throw ex_parse("Requires exact one column in gathered environment!");
   if (arr->cols() == 0) return nullptr;
 
-  return sptrOf<MultlineAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), MultiLineType::gathered);
+  return sptrOf<MultlineAtom>(args.isPartial(), arr, MultiLineType::gathered);
 }
 
-inline macro(multicolumn) {
-  if (!tp.isArrayMode()) throw ex_parse("Command 'multicolumn' only available in array mode!");
+// What a \multicolumn or \multirow spans is a cell: math in an array, text
+// in a tabular met in text.
+inline sptr<Atom> cellContent(CommandArgs& args, std::size_t i) {
+  if (args.isMathMode()) return args.formula(i, true, true);
+  return sptrOf<FontStyleAtom>(FontStyle::rm, false, args.formula(i, false));
+}
+
+inline cmdmacro(multicolumn) {
+  ArrayFormula* arr = args.alignmentHere();
+  if (arr == nullptr) throw ex_parse("Command 'multicolumn' only available in array mode!");
   int n = 0;
-  valueOf(args[1], n);
-  tp.addAtom(sptrOf<MulticolumnAtom>(n, args[2], Formula(tp, args[3])._root));
-  ((ArrayFormula*)tp._formula)->addCol(n);
+  valueOf(args.text(1), n);
+  arr->add(sptrOf<MulticolumnAtom>(n, args.text(2), cellContent(args, 3)));
+  arr->addCol(n);
   return nullptr;
 }
 
-inline macro(hdotsfor) {
-  if (!tp.isArrayMode()) throw ex_parse("Command 'hdotsfor' only available in array mode!");
+inline cmdmacro(hdotsfor) {
+  ArrayFormula* arr = args.alignmentHere();
+  if (arr == nullptr) throw ex_parse("Command 'hdotsfor' only available in array mode!");
   int n = 0;
-  valueOf(args[1], n);
+  valueOf(args.text(1), n);
   float f = 1.f;
-  if (!args[2].empty()) valueOf(args[2], f);
-  tp.addAtom(sptrOf<HdotsforAtom>(n, f));
-  ((ArrayFormula*)tp._formula)->addCol(n);
+  if (!args.text(2).empty()) valueOf(args.text(2), f);
+  arr->add(sptrOf<HdotsforAtom>(n, f));
+  arr->addCol(n);
   return nullptr;
 }
 
-inline macro(hline) {
-  if (!tp.isArrayMode()) throw ex_parse("The macro \\hline only available in array mode!");
+inline cmdmacro(hline) {
+  if (args.alignmentHere() == nullptr) throw ex_parse("The macro \\hline only available in array mode!");
   return sptrOf<HlineAtom>();
 }
 
-inline macro(thickhline) {
-  if (!tp.isArrayMode())
+inline cmdmacro(thickhline) {
+  if (args.alignmentHere() == nullptr)
     throw ex_parse("The macro \\thickhline only available in array mode!");
   auto a = sptrOf<HlineAtom>();
   a->setThicknessScale(2.f);
   return a;
 }
 
-inline macro(cline) {
-  if (!tp.isArrayMode())
+// booktabs' \specialrule{thickness}{above}{below}: a rule of that
+// thickness. The space above and below is not set; no rule here has any.
+inline cmdmacro(specialrule) {
+  if (args.alignmentHere() == nullptr)
+    throw ex_parse("The macro \\specialrule only available in array mode!");
+  auto a = sptrOf<HlineAtom>();
+  const Dimen thick = Units::getDimen(args.text(1));
+  if (thick.isValid()) {
+    a->setThickness(thick.val, thick.unit);
+  } else {
+    a->setThicknessScale(2.f);  // an unreadable thickness: \toprule's
+  }
+  return a;
+}
+
+inline cmdmacro(cline) {
+  if (args.alignmentHere() == nullptr)
     throw ex_parse("The macro \\cline only available in array mode!");
-  const std::string& spec = args[1];
+  const std::string& spec = args.text(1);
   int a = 0, b = 0;
   const auto dash = spec.find('-');
   if (dash == std::string::npos) {
@@ -177,70 +180,55 @@ inline macro(cline) {
   return at;
 }
 
-inline macro(multirow) {
-  if (!tp.isArrayMode()) throw ex_parse("Command \\multirow must used in array environment!");
+inline cmdmacro(multirow) {
+  ArrayFormula* arr = args.alignmentHere();
+  if (arr == nullptr) throw ex_parse("Command \\multirow must used in array environment!");
   int n = 0;
-  valueOf(args[1], n);
-  tp.addAtom(sptrOf<MultiRowAtom>(n, args[2], Formula(tp, args[3])._root));
+  valueOf(args.text(1), n);
+  arr->add(sptrOf<MultiRowAtom>(n, args.text(2), cellContent(args, 3)));
   return nullptr;
 }
 
-inline macro(cellcolor) {
-  if (!tp.isArrayMode()) throw ex_parse("Command \\cellcolor must used in array environment!");
-  color c = ColorAtom::getColor(args[1]);
-  auto atom = sptrOf<CellColorAtom>(c);
-  ((ArrayFormula*)tp._formula)->addCellSpecifier(atom);
+inline cmdmacro(cellcolor) {
+  ArrayFormula* arr = args.alignmentHere();
+  if (arr == nullptr) throw ex_parse("Command \\cellcolor must used in array environment!");
+  color c = ColorAtom::getColor(args.text(1));
+  arr->addCellSpecifier(sptrOf<CellColorAtom>(c));
   return nullptr;
 }
 
-inline macro(color) {
-  if (tp.isArrayMode()) {
-    color c = ColorAtom::getColor(args[1]);
-    return sptrOf<CellForegroundAtom>(c);
-  }
-  // Outside array mode, \color is a LaTeX declaration that changes the
-  // current foreground colour for every atom until the end of the
-  // enclosing group. Approximate that here by consuming the remainder
-  // of the current group and wrapping it in a ColorAtom — so
-  // `{\color{blue} E = mc^2}` colours the whole inner formula and
-  // `\color{blue} E = mc^2` colours the rest of the top-level input.
-  const std::string rest = tp.forwardBalancedGroup();
-  auto a = Formula(tp, rest, false, tp.isMathMode())._root;
-  return sptrOf<ColorAtom>(a, TRANSPARENT, ColorAtom::getColor(args[1]));
-}
-
-inline macro(newcolumntype) {
-  MatrixAtom::defineColumnSpecifier(args[1], args[2]);
+inline cmdmacro(newcolumntype) {
+  MatrixAtom::defineColumnSpecifier(args.text(1), args.text(2));
   return nullptr;
 }
 
-inline macro(arrayrulecolor) {
-  color c = ColorAtom::getColor(args[1]);
+inline cmdmacro(arrayrulecolor) {
+  color c = ColorAtom::getColor(args.text(1));
   MatrixAtom::LINE_COLOR = c;
   return nullptr;
 }
 
-inline macro(columnbg) {
-  color c = ColorAtom::getColor(args[1]);
+inline cmdmacro(columnbg) {
+  color c = ColorAtom::getColor(args.text(1));
   return sptrOf<CellColorAtom>(c);
 }
 
-inline macro(rowcolor) {
-  if (!tp.isArrayMode()) throw ex_parse("Command \\rowcolor must used in array environment!");
-  color c = ColorAtom::getColor(args[1]);
-  auto spe = sptrOf<CellColorAtom>(c);
-  ((ArrayFormula*)tp._formula)->addRowSpecifier(spe);
+inline cmdmacro(rowcolor) {
+  ArrayFormula* arr = args.alignmentHere();
+  if (arr == nullptr) throw ex_parse("Command \\rowcolor must used in array environment!");
+  color c = ColorAtom::getColor(args.text(1));
+  arr->addRowSpecifier(sptrOf<CellColorAtom>(c));
   return nullptr;
 }
 
-inline macro(shoveright) {
-  auto a = Formula(tp, args[1])._root;
+inline cmdmacro(shoveright) {
+  auto a = args.formula(1, true, true);
   a->_alignment = Alignment::right;
   return a;
 }
 
-inline macro(shoveleft) {
-  auto a = Formula(tp, args[1])._root;
+inline cmdmacro(shoveleft) {
+  auto a = args.formula(1, true, true);
   a->_alignment = Alignment::left;
   return a;
 }
@@ -376,38 +364,122 @@ inline std::string listFormatLabel(const std::string& tmpl, int n) {
   return tmpl;
 }
 
-// Lay a list body out as a single left-aligned column, one row per item,
-// each row prefixed with `marker(index)`.
+// `s` less the spaces at either end, which TeX drops from an item. A
+// control space `\ ` is not one of them: trimmed, it left its backslash to
+// join the `\\` that ends the row, and the next row lost its first cell.
+inline std::string listTrim(const std::string& s) {
+  size_t from = 0, to = s.size();
+  while (from < to && std::isspace((unsigned char)s[from]) != 0) from++;
+  while (to > from && std::isspace((unsigned char)s[to - 1]) != 0) {
+    size_t slashes = 0;
+    while (to - 1 - slashes > from && s[to - 2 - slashes] == '\\') slashes++;
+    if (slashes % 2 == 1) break;
+    to--;
+  }
+  return s.substr(from, to - from);
+}
+
+// An item's text met in text is text, as in LaTeX. A `}` that closes
+// nothing is dropped, as TeX drops it, so that it cannot end the \text{}.
+inline std::string listTextItem(const std::string& item) {
+  std::string out;
+  int depth = 0;
+  for (size_t i = 0; i < item.size(); i++) {
+    const char c = item[i];
+    if (c == '\\' && i + 1 < item.size()) {
+      out += c;
+      out += item[++i];
+      continue;
+    }
+    if (c == '}' && depth == 0) continue;
+    if (c == '{') depth++;
+    if (c == '}') depth--;
+    out += c;
+  }
+  return "\\text{" + out + std::string((size_t)depth, '}') + "}";
+}
+
+// An item's text and the lists nested in it, in turn: text, list, text, ...
+inline std::vector<std::string> listParts(const std::string& item) {
+  const auto at = [&](size_t pos, const std::string& s) { return item.compare(pos, s.size(), s) == 0; };
+  std::vector<std::string> parts{""};
+  size_t i = 0;
+  while (i < item.size()) {
+    if (!at(i, "\\begin{itemize}") && !at(i, "\\begin{enumerate}")) {
+      if (item[i] == '\\' && i + 1 < item.size()) parts.back() += item[i++];
+      parts.back() += item[i++];
+      continue;
+    }
+    // Up to its own \end, nested environments counted.
+    size_t j = i + 1;
+    int depth = 1;
+    while (j < item.size() && depth > 0) {
+      if (at(j, "\\begin{")) depth++;
+      if (at(j, "\\end{") && --depth == 0) {
+        const size_t close = item.find('}', j);
+        j = close == std::string::npos ? item.size() : close + 1;
+        break;
+      }
+      j++;
+    }
+    parts.push_back(item.substr(i, j - i));
+    parts.emplace_back();
+    i = j;
+  }
+  return parts;
+}
+
+// Lay a list body out as rows, one per item: its marker, set right as
+// LaTeX sets labels, a quad, and its text in an X column, which takes the
+// rest of the text width and wraps to it (the whole line without a
+// width). A list nested after an item's text goes on rows of its own,
+// level with that text, as LaTeX sets it; one that opens the item shares
+// the item's first line, as in LaTeX too.
 inline sptr<Atom> listBuild(
-  Parser& tp,
+  CommandArgs& args,
   const std::vector<std::string>& items,
   const std::function<std::string(int)>& marker
 ) {
   if (items.empty()) return nullptr;
   std::string s;
+  const auto row = [&](const std::string& lead, const std::string& content) {
+    if (!s.empty()) s += "\\\\";
+    s += lead + "&" + content;
+  };
   for (size_t i = 0; i < items.size(); i++) {
-    if (i > 0) s += "\\\\";
-    s += marker((int)i + 1) + "\\quad{}" + items[i];
+    const std::string mark = marker((int)i + 1);
+    const auto parts = listParts(items[i]);
+    bool first = true;
+    for (size_t k = 0; k < parts.size(); k++) {
+      const std::string part = listTrim(parts[k]);
+      if (part.empty()) continue;
+      const bool nested = k % 2 == 1;
+      // A nested list is met in text when its item is text.
+      const std::string content = args.isMathMode() ? part
+                                  : nested         ? "\\text{" + part + "}"
+                                                   : listTextItem(part);
+      row(first ? mark : "", content);
+      first = false;
+    }
+    if (first) row(mark, "");  // an empty item still has its marker
   }
-  auto* arr = new ArrayFormula();
-  Parser parser(tp.isPartial(), s, arr, false);
-  parser.parse();
+  const auto arr = args.alignmentOfText(s);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(tp.isPartial(), sptr<ArrayFormula>(arr), "l", false);
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, "r@{\\quad}X", false);
 }
 
-inline macro(itemizeATATenv) {
-  std::string body = args[1];
+inline cmdmacro(itemizeATATenv) {
+  std::string body = args.text(1);
   const std::string opt = listPeelOptional(body);
   const std::string mark = opt.empty() ? "\\bullet" : opt;
-  return listBuild(tp, listSplitItems(body), [&](int) { return mark; });
+  return listBuild(args, listSplitItems(body), [&](int) { return mark; });
 }
 
-inline macro(enumerateATATenv) {
-  std::string body = args[1];
+inline cmdmacro(enumerateATATenv) {
+  std::string body = args.text(1);
   std::string opt = listPeelOptional(body);
   if (opt.empty()) opt = "\\arabic*.";
-  return listBuild(tp, listSplitItems(body), [&](int n) {
+  return listBuild(args, listSplitItems(body), [&](int n) {
     return "\\mathrm{" + listFormatLabel(opt, n) + "}";
   });
 }

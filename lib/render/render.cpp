@@ -1,10 +1,7 @@
 #include "render.h"
 
-#include <functional>
-
 #include "atom/atom.h"
 #include "box/box_single.h"
-#include "core/debug_config.h"
 #include "core/split.h"
 #include "env/env.h"
 
@@ -12,8 +9,6 @@ using namespace std;
 using namespace microtex;
 
 namespace microtex {
-
-using BoxFilter = std::function<bool(const sptr<Box>&)>;
 
 struct RenderData {
   sptr<Box> root;
@@ -23,59 +18,10 @@ struct RenderData {
   bool isSplit;
 };
 
-static sptr<BoxGroup> wrap(const sptr<Box>& box) {
-  sptr<BoxGroup> parent;
-  if (auto group = dynamic_pointer_cast<BoxGroup>(box); group != nullptr) {
-    parent = group;
-  } else {
-    parent = sptrOf<HBox>(box);
-  }
-  return parent;
-}
-
-static void
-buildDebug(const sptr<BoxGroup>& parent, const sptr<Box>& box, const BoxFilter& filter) {
-  if (parent != nullptr) {
-    if (box->isSpace()) {
-      parent->addOnly(box);
-    } else if (filter(box)) {
-      parent->addOnly(sptrOf<DebugBox>(box));
-    } else {
-      // placeholder to consume the space of the current box
-      parent->addOnly(sptrOf<StrutBox>(box));
-    }
-  }
-  if (auto group = dynamic_pointer_cast<BoxGroup>(box); group != nullptr) {
-    const auto kern =
-      sptrOf<StrutBox>(-group->_width, -group->_height, -group->_depth, -group->_shift);
-    // snapshot of current children
-    const auto children = group->descendants();
-    group->addOnly(kern);
-    for (const auto& child : children) {
-      buildDebug(group, child, filter);
-    }
-  } else if (auto decor = dynamic_pointer_cast<DecorBox>(box); decor != nullptr) {
-    const auto g = wrap(decor->_base);
-    decor->_base = g;
-    buildDebug(nullptr, g, filter);
-  }
-}
-
 }  // namespace microtex
 
 Render::Render(const sptr<Box>& box, float textSize, bool isSplit) {
   _data = new RenderData{box, textSize, textSize / Env::fixedTextSize(), black, isSplit};
-  const auto& debugConfig = DebugConfig::INSTANCE;
-  if (debugConfig.enable) {
-    const auto group = microtex::wrap(box);
-    _data->root = group;
-    BoxFilter filter = [&](const sptr<Box>& b) {
-      return (
-        debugConfig.showOnlyChar ? dynamic_cast<CharBox*>(b.get()) != nullptr : !b->isSpace()
-      );
-    };
-    microtex::buildDebug(nullptr, group, filter);
-  }
 }
 
 Render::~Render() {

@@ -120,6 +120,10 @@ public:
 
   explicit ColorBox(const sptr<Box>& box, color fg = transparent, color bg = transparent);
 
+  inline color foreground() const { return _foreground; }
+
+  inline color background() const { return _background; }
+
   void draw(Graphics2D& g2, float x, float y) override;
 
   boxname(ColorBox);
@@ -138,6 +142,10 @@ public:
   ScaleBox(const sptr<Box>& b, float sx, float sy) : DecorBox(b) { init(b, sx, sy); }
 
   ScaleBox(const sptr<Box>& b, float factor) : DecorBox(b) { init(b, factor, factor); }
+
+  inline float sx() const { return _sx; }
+
+  inline float sy() const { return _sy; }
 
   void draw(Graphics2D& g2, float x, float y) override;
 

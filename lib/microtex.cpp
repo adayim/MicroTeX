@@ -1,7 +1,7 @@
 #include "microtex.h"
 
 #include "core/formula.h"
-#include "otf/fontsense.h"
+#include "front/front.h"
 #include "macro/macro.h"
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
@@ -10,6 +10,7 @@
 #include "utils/bidi.h"
 
 #include <clocale>
+#include <memory>
 
 using namespace std;
 using namespace microtex;
@@ -18,7 +19,6 @@ namespace microtex {
 
 struct Config {
   bool isInited;
-  bool isPrivilegedEnvironment;
   std::string defaultMainFontFamily;
   std::string defaultMathFontName;
   bool renderGlyphUsePath;
@@ -26,7 +26,7 @@ struct Config {
   TexStyle overrideTeXStyle;
 };
 
-static Config MICROTEX_CONFIG{false, false, "", "", false, false, TexStyle::text};
+static Config MICROTEX_CONFIG{false, "", "", false, false, TexStyle::text};
 
 } // namespace microtex
 
@@ -39,48 +39,6 @@ std::string MicroTeX::version() {
   return ver;
 }
 
-#ifdef HAVE_AUTO_FONT_FIND
-
-struct InitVisitor {
-
-  FontMeta operator()(const FontSrc* src) {
-    auto meta = FontContext::addFont(*src);
-    if (!meta.isMathFont) {
-      throw ex_invalid_param("'" + meta.name + "' is not a math font!");
-    }
-    return meta;
-  }
-
-  FontMeta operator()(const string& name) {
-    fontsenseLookup();
-    if (!FontContext::isMathFontExists(name)) {
-      throw ex_invalid_param("Math font '" + name + "' does not exists!");
-    }
-    return FontContext::mathFontMetaOf(name);
-  }
-
-  FontMeta operator()(const InitFontSenseAuto& sense) {
-    auto mathFont = fontsenseLookup();
-    if (!mathFont.has_value()) {
-      throw ex_invalid_param("No math font found by font-sense.");
-    }
-    return mathFont.value();
-  }
-};
-
-FontMeta MicroTeX::init(const Init& init) {
-  if (_config->isInited) return {};
-  std::setlocale(LC_NUMERIC, "C"); // workaround for decimal parsing on German (decimal comma) systems
-  auto meta = std::visit(InitVisitor(), init);
-  _config->defaultMathFontName = meta.name;
-  _config->isInited = true;
-  _config->isPrivilegedEnvironment = false;
-  NewCommandMacro::_init_();
-  return meta;
-}
-
-#endif // HAVE_AUTO_FONT_FIND
-
 FontMeta MicroTeX::init(const FontSrc& mathFontSrc) {
   if (_config->isInited) return {};
   std::setlocale(LC_NUMERIC, "C"); // workaround for decimal parsing on German (decimal comma) systems
@@ -90,8 +48,6 @@ FontMeta MicroTeX::init(const FontSrc& mathFontSrc) {
   }
   _config->defaultMathFontName = meta.name;
   _config->isInited = true;
-  _config->isPrivilegedEnvironment = false;
-  NewCommandMacro::_init_();
   return meta;
 }
 
@@ -101,15 +57,6 @@ bool MicroTeX::isInited() {
 
 void MicroTeX::release() {
   MacroInfo::_free_();
-  NewCommandMacro::_free_();
-}
-
-bool MicroTeX::isPrivilegedEnvironment() {
-	return _config->isPrivilegedEnvironment;
-}
-
-void MicroTeX::setPrivilegedEnvironment(bool privileged) {
-	_config->isPrivilegedEnvironment = privileged;
 }
 
 FontMeta MicroTeX::addFont(const FontSrc& src) {
@@ -177,9 +124,11 @@ bool MicroTeX::isRenderGlyphUsePath() {
 Render* MicroTeX::parse(
   const string& latex, float width, float textSize, float lineSpace, color fg,
   bool fillWidth, const OverrideTeXStyle& overrideTeXStyle,
-  const string& mathFontName, const string& mainFontFamily
+  const string& mathFontName, const string& mainFontFamily, InputMode mode
 ) {
-  Formula formula(latex);
+  auto built = std::make_unique<Formula>();
+  front::buildModern(latex, mode, *built);
+  Formula& formula = *built;
   // Bidirectional levels, resolved once over the whole formula while the
   // atoms still hold their text -- a box keeps only an opaque layout. It
   // has to be one pass over the whole tree, not one per row: a group's
@@ -194,7 +143,10 @@ Render* MicroTeX::parse(
   // to the backend whole and still ordered internally by it; this orders
   // the runs around it.
   RowAtom::_levelled = microtex::bidi_assign_levels(formula._root);
-  const auto isInline = !startsWith(latex, "$$") && !startsWith(latex, "\\[");
+  // A formula that opens with display math is set as a display. A label
+  // is prose, whatever it opens with.
+  const auto isInline = mode != InputMode::math ||
+                        (!startsWith(latex, "$$") && !startsWith(latex, "\\["));
   const auto align = isInline ? Alignment::left : Alignment::center;
   TexStyle style = isInline ? TexStyle::text : TexStyle::display;
   if (overrideTeXStyle.enable) {

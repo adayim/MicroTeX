@@ -16,24 +16,24 @@
 #include <string>
 #include <vector>
 
-#include "microtex.h"
-#include "unimath/font_src.h"
+#include "otf/glyph.h"
+#include "otf/math_consts.h"
 #include "otf/otf.h"
 #include "otf/otfconfig.h"
-#include "otf/math_consts.h"
+#include "otf/path.h"
 
 // =============================================================================
-// In-memory OTF → CLM synth
+// An engine font straight from a font file
 // -----------------------------------------------------------------------------
 // Pulls font basics via FreeType, parses the OpenType MATH table ourselves,
-// walks glyph outlines via FT_Outline_Decompose, and emits CLM v6 minor=2
-// bytes matching what `CLMReader::read` expects. The bytes are handed to
-// `MicroTeX::addFont` through `FontSrcData` — no disk cache, no external
-// toolchain (FontForge / otf2clm.py) dependency.
+// walks glyph outlines via FT_Outline_Decompose, and fills an Otf with them
+// (OtfBuilder, at the end). No disk cache, no external toolchain (FontForge /
+// otf2clm.py), and no CLM bytes in between: fonts used to be written to that
+// format here and read straight back.
 //
-// GSUB class-kerning and ligature tables are emitted as empty (count=0 /
-// empty root); scripts-variants are also empty because OT MATH has no
-// native source for them (FontForge derives these from GSUB `ssty`).
+// Class kerning and ligatures are left empty; scripts-variants are also
+// empty because OT MATH has no native source for them (FontForge derives
+// these from GSUB `ssty`).
 // =============================================================================
 
 namespace {
@@ -44,13 +44,8 @@ using u32 = std::uint32_t;
 using i16 = std::int16_t;
 using i32 = std::int32_t;
 
-// Pull wire-format constants straight from MicroTeX so the writer cannot drift
-// from the reader on a version bump or a semantics change.
-constexpr u16 CLM_VER_MAJOR_EXPECTED = CLM_VER_MAJOR;
 constexpr i16 UNDEFINED_MATH_VALUE   = microtex::Otf::undefinedMathValue;
 constexpr int MATH_CONSTS_COUNT      = TEX_MATH_CONSTS_COUNT;
-static_assert(CLM_SUPPORT_GLYPH_PATH(2),
-              "CLM minor=2 must signal 'has glyph paths' in the reader.");
 static_assert(MATH_CONSTS_COUNT == 57,
               "MathConsts field count changed — audit read_math_constants.");
 
@@ -79,28 +74,6 @@ struct BeReader {
                (static_cast<u32>(data[off + 1]) << 16) |
                (static_cast<u32>(data[off + 2]) << 8)  |
                 static_cast<u32>(data[off + 3]);
-    }
-};
-
-// ---------- Big-endian writers into a growing byte vector --------------------
-
-struct BeWriter {
-    std::vector<u8> buf;
-
-    void u8v(u8 v)      { buf.push_back(v); }
-    void u16v(u16 v)    { buf.push_back(v >> 8);  buf.push_back(v & 0xFF); }
-    void i16v(i16 v)    { u16v(static_cast<u16>(v)); }
-    void u32v(u32 v) {
-        buf.push_back((v >> 24) & 0xFF);
-        buf.push_back((v >> 16) & 0xFF);
-        buf.push_back((v >>  8) & 0xFF);
-        buf.push_back( v        & 0xFF);
-    }
-    void i32v(i32 v)    { u32v(static_cast<u32>(v)); }
-    void bytes(const u8* p, std::size_t n) { buf.insert(buf.end(), p, p + n); }
-    void str0(const std::string& s) {
-        bytes(reinterpret_cast<const u8*>(s.data()), s.size());
-        u8v(0);
     }
 };
 
@@ -257,7 +230,7 @@ void parse_math_glyph_info(const BeReader& math, std::size_t mgi_off,
     // MathGlyphInfo header: 4 × Offset16 (italicCorr, topAccent, extShape, kerns)
     const u16 italic_off_rel   = math.u16be(mgi_off + 0);
     const u16 top_accent_rel   = math.u16be(mgi_off + 2);
-    // ext_shape_rel ignored — not stored in CLM.
+    // ext_shape_rel ignored — the engine has no use for it.
     const u16 math_kern_rel    = math.u16be(mgi_off + 6);
 
     if (italic_off_rel != 0) {
@@ -515,7 +488,7 @@ void read_hhea(FT_Face face, i16& ascent, i16& descent) {
     if (hhea.size() < 8) return;
     BeReader r{hhea.data(), hhea.size()};
     ascent  = r.i16be(4);
-    descent = -r.i16be(6); // spec is negative; CLM stores positive
+    descent = -r.i16be(6); // spec is negative; Otf stores positive
     if (descent < 0) descent = 0;
 }
 
@@ -592,43 +565,11 @@ std::vector<GlyphMetrics> read_glyph_metrics(FT_Face face, u16 num_glyphs,
     return out;
 }
 
-// ---------- CLM serialiser ---------------------------------------------------
-
-void write_variants(BeWriter& w, const std::vector<u16>& v) {
-    w.u16v(static_cast<u16>(v.size()));
-    for (u16 g : v) w.u16v(g);
-}
-
-void write_assembly(BeWriter& w, const Assembly& a) {
-    if (!a.present) { w.u8v(0); return; }
-    w.u8v(1);
-    w.u16v(static_cast<u16>(a.parts.size()));
-    w.i16v(a.italics_correction);
-    for (const auto& p : a.parts) {
-        w.u16v(p.glyph);
-        w.u16v(p.flags);
-        w.u16v(p.start_connector);
-        w.u16v(p.end_connector);
-        w.u16v(p.full_advance);
-    }
-}
-
-void write_math_kern(BeWriter& w, const std::vector<std::pair<i16, i16>>& pts) {
-    // hc == 0xFFFF yields 65536 pairs but the CLM count field is u16 —
-    // cap so the written count always matches the pairs that follow.
-    const std::size_t n = std::min<std::size_t>(pts.size(), 0xFFFF);
-    w.u16v(static_cast<u16>(n));
-    for (std::size_t i = 0; i < n; ++i) {
-        w.i16v(pts[i].first);   // kern value
-        w.i16v(pts[i].second);  // height
-    }
-}
-
-// ---------- Glyph outline → CLM path commands -------------------------------
+// ---------- Glyph outline → path commands ------------------------------------
 // FT_Outline_Decompose walks each contour: one move_to, then line/conic/cubic
 // segments. It does NOT emit an implicit close; we emit 'Z' before each new
-// 'M' (past the first) and once at the end. OTF/FreeType has Y-up; CLM paths
-// are drawn with Y-down, so we negate Y on the way out.
+// 'M' (past the first) and once at the end. OTF/FreeType has Y-up; engine
+// paths are drawn with Y-down, so we negate Y on the way out.
 
 struct PathBuilder {
     std::vector<char>  cmds;
@@ -696,40 +637,26 @@ PathBuilder build_glyph_path(FT_Face face, u16 gid) {
     return pb;
 }
 
-// Mirror of `microtex::pathCmdArgsCount` — kept local so we don't have to
-// expose a MicroTeX header from the writer.
-inline u16 cmd_args(char c) {
-    switch (c) {
-        case 'M': case 'm': case 'L': case 'l':
-        case 'T': case 't':            return 2;
-        case 'H': case 'h':
-        case 'V': case 'v':            return 1;
-        case 'Z': case 'z':            return 0;
-        case 'C': case 'c':            return 6;
-        case 'S': case 's':
-        case 'Q': case 'q':            return 4;
-        default:                       return 0;
-    }
-}
-
-void write_glyph_path(BeWriter& w, const PathBuilder& pb) {
-    w.u16v(static_cast<u16>(pb.cmds.size()));
-    std::size_t ai = 0;
-    for (char c : pb.cmds) {
-        w.u8v(static_cast<u8>(c));
-        const u16 n = cmd_args(c);
-        for (u16 i = 0; i < n; ++i) {
-            w.i16v(pb.args[ai++]);
-        }
-    }
-}
-
-std::vector<u8> build_clm_bytes_impl(const std::string& path, int index);
-
 }  // namespace
-namespace {
 
-std::vector<u8> build_clm_bytes_impl(const std::string& path, int index) {
+// =============================================================================
+// The font, filled from what the readers above found
+// =============================================================================
+
+namespace microtex {
+
+/**
+ * The one class let into a font's private fields (Otf, Glyph and the math
+ * tables name it friend). It keeps the rules fonts were read by when they
+ * came through CLM bytes: an absent table is its shared empty sentinel, and
+ * a value is clamped to the width of the field that holds it.
+ */
+class OtfBuilder {
+public:
+  static Otf* build(const std::string& path, int index);
+};
+
+Otf* OtfBuilder::build(const std::string& path, int index) {
     FT_Face face = open_face(path, index);
     struct FaceGuard {
         FT_Face f;
@@ -753,97 +680,140 @@ std::vector<u8> build_clm_bytes_impl(const std::string& path, int index) {
         math_bytes.size(), num_glyphs);
     const bool is_math = math.present;
 
-    BeWriter w;
-    // Header
-    w.u8v('c'); w.u8v('l'); w.u8v('m');
-    w.u16v(CLM_VER_MAJOR_EXPECTED);
-    w.u8v(2);  // minor = 2 (with glyph paths) — see otfconfig.h CLM_SUPPORT_GLYPH_PATH
+    // Every field has a safe default, so a font abandoned half-built by an
+    // exception is freed by its own destructor.
+    std::unique_ptr<Otf> font(new Otf());
+#ifdef HAVE_GLYPH_RENDER_PATH
+    font->_hasGlyphPath = true;
+#else
+    font->_hasGlyphPath = false;
+#endif
 
-    // MicroTeX uses the CLM's "name" as the math-font registry key, so write
+    // MicroTeX uses the font's name as the math-font registry key, so it is
     // the human-readable family (e.g. "Lete Sans Math") rather than the
     // psName (e.g. "LeteSansMath").
     const std::string& primary = names.family.empty() ? names.ps_name : names.family;
-    w.str0(primary);
-    w.str0(primary);
-    w.u8v(is_math ? 1 : 0);
-    w.u16v(style);
-    w.u16v(head.em);
-    w.u16v(static_cast<u16>(std::max<i16>(0, x_height)));
-    w.u16v(static_cast<u16>(std::max<i16>(0, ascent)));
-    w.u16v(static_cast<u16>(std::max<i16>(0, descent)));
+    font->_name = primary;
+    font->_family = primary;
+    font->_isMathFont = is_math;
+    font->_style = style;
+    font->_em = head.em;
+    font->_xHeight = static_cast<u16>(std::max<i16>(0, x_height));
+    font->_ascent = static_cast<u16>(std::max<i16>(0, ascent));
+    font->_descent = static_cast<u16>(std::max<i16>(0, descent));
 
-    // cmap
-    const std::size_t n_cmap = std::min<std::size_t>(cmap.size(), 0xFFFF);
-    w.u16v(static_cast<u16>(n_cmap));
-    for (std::size_t i = 0; i < n_cmap; ++i) {
-        if (cmap[i].gid >= num_glyphs) { w.u32v(0); w.u16v(0); continue; }
-        w.u32v(cmap[i].cp);
-        w.u16v(cmap[i].gid);
+    // cmap. A code point mapped past the last glyph maps to glyph 0 of
+    // code point 0, as it always has.
+    const u16 n_cmap = static_cast<u16>(std::min<std::size_t>(cmap.size(), 0xFFFF));
+    font->_unicodes = new u32[n_cmap];
+    font->_unicodeGlyphs = new u16[n_cmap];
+    font->_unicodeCount = n_cmap;
+    for (u16 i = 0; i < n_cmap; ++i) {
+        const bool ok = cmap[i].gid < num_glyphs;
+        font->_unicodes[i] = ok ? cmap[i].cp : 0;
+        font->_unicodeGlyphs[i] = ok ? cmap[i].gid : 0;
     }
 
-    // ClassKernings: none
-    w.u16v(0);
+    // No class kerning, and an empty ligature tree.
+    font->_ligatures = new LigaTable(0, -1, 0);
 
-    // Ligatures: empty root (glyph=0, liga=-1, childCount=0)
-    w.u16v(0);
-    w.i32v(-1);
-    w.u16v(0);
-
-    // MathConsts (only if math font)
     if (is_math) {
-        for (int i = 0; i < MATH_CONSTS_COUNT; ++i) w.i16v(math.consts[i]);
+        auto* consts = new MathConsts();
+        font->_mathConsts = consts;
+        for (int i = 0; i < MATH_CONSTS_COUNT; ++i) consts->_fields[i] = math.consts[i];
     }
 
-    // Glyphs
-    w.u16v(num_glyphs);
-    for (u16 g = 0; g < num_glyphs; ++g) {
-        const auto& m = metrics[g];
-        w.i16v(m.width);
-        w.i16v(m.height);
-        w.i16v(m.depth);
-        w.i16v(m.xMin);
+    const auto variants = [](const std::vector<u16>& v) -> const Variants* {
+        const u16 n = static_cast<u16>(v.size());
+        if (n == 0) return &Variants::empty;
+        auto* out = new Variants(n);
+        for (u16 i = 0; i < n; ++i) out->_glyphs[i] = v[i];
+        return out;
+    };
+    const auto assembly = [](const Assembly& a) -> const GlyphAssembly* {
+        if (!a.present) return &GlyphAssembly::empty;
+        const u16 n = static_cast<u16>(a.parts.size());
+        auto* out = new GlyphAssembly(n);
+        out->_italicsCorrection = a.italics_correction;
+        for (u16 i = 0; i < n; ++i) {
+            GlyphPart& part = out->_parts[i];
+            part._glyph = a.parts[i].glyph;
+            part._flags = a.parts[i].flags;
+            part._startConnectorLength = a.parts[i].start_connector;
+            part._endConnectorLength = a.parts[i].end_connector;
+            part._fullAdvance = a.parts[i].full_advance;
+        }
+        return out;
+    };
+    const auto mathKern = [](const std::vector<std::pair<i16, i16>>& pts) -> const MathKern* {
+        // hc == 0xFFFF yields 65536 pairs, one more than the count holds.
+        const u16 n = static_cast<u16>(std::min<std::size_t>(pts.size(), 0xFFFF));
+        if (n == 0) return &MathKern::empty;
+        auto* out = new MathKern(n);
+        for (u16 i = 0; i < n; ++i) {
+            out->_fields[i << 1] = pts[i].first;          // kern value
+            out->_fields[(i << 1) + 1] = pts[i].second;   // height
+        }
+        return out;
+    };
 
-        // kernRecord: none (we don't parse GPOS pair kerning here)
-        w.u16v(0);
+    font->_glyphs = new Glyph*[num_glyphs]();
+    font->_glyphCount = num_glyphs;
+    for (u16 g = 0; g < num_glyphs; ++g) {
+        auto* glyph = new Glyph();
+        font->_glyphs[g] = glyph;
+        const auto& m = metrics[g];
+        glyph->_metrics._width = m.width;
+        glyph->_metrics._height = m.height;
+        glyph->_metrics._depth = m.depth;
+        glyph->_metrics._xMin = m.xMin;
+        // No pair kerning (GPOS is not read), so the empty kern record.
 
         if (is_math) {
             const GlyphMath& gm = math.per_glyph[g];
-            w.i16v(gm.italics_correction);
-            w.i16v(gm.top_accent);
-            write_variants(w, gm.h_variants);
-            write_variants(w, gm.v_variants);
-            write_variants(w, {});                 // scriptsVariants: empty
-            write_assembly(w, gm.h_assembly);
-            write_assembly(w, gm.v_assembly);
-            for (int c = 0; c < 4; ++c) write_math_kern(w, gm.kerns.corner[c]);
+            auto* gmath = new Math(0);
+            glyph->_math = gmath;
+            gmath->_italicsCorrection = gm.italics_correction;
+            gmath->_topAccentAttachment = gm.top_accent;
+            gmath->_horizontalVariants = variants(gm.h_variants);
+            gmath->_verticalVariants = variants(gm.v_variants);
+            gmath->_horizontalAssembly = assembly(gm.h_assembly);
+            gmath->_verticalAssembly = assembly(gm.v_assembly);
+            auto* record = new MathKernRecord(0);
+            gmath->_kernRecord = record;
+            for (int c = 0; c < 4; ++c) record->_fields[c] = mathKern(gm.kerns.corner[c]);
         }
-        // Glyph path (minor = 0). Empty glyphs emit just a u16 length of 0.
-        PathBuilder pb = build_glyph_path(face, g);
-        write_glyph_path(w, pb);
+
+#ifdef HAVE_GLYPH_RENDER_PATH
+        const PathBuilder pb = build_glyph_path(face, g);
+        const u16 len = static_cast<u16>(std::min<std::size_t>(pb.cmds.size(), 0xFFFF));
+        if (len > 0) {
+            // Ids are unique across all fonts, as a glyph's path is cached by it.
+            static i32 id = 0;
+            std::unique_ptr<PathCmd*[]> cmds(new PathCmd*[len]());
+            std::size_t ai = 0;
+            try {
+                for (u16 i = 0; i < len; ++i) {
+                    const char c = pb.cmds[i];
+                    const u16 n = pathCmdArgsCount(c);
+                    std::unique_ptr<i16[]> args(new i16[n]);
+                    for (u16 j = 0; j < n; ++j) args[j] = pb.args[ai++];
+                    cmds[i] = new PathCmd(c, args.release());
+                }
+            } catch (...) {
+                for (u16 i = 0; i < len; ++i) delete cmds[i];
+                throw;
+            }
+            glyph->_path = new Path(++id, len, cmds.release());
+        }
+#endif
     }
 
-    return std::move(w.buf);
+    return font.release();
 }
 
-}  // namespace
-
-// =============================================================================
-// Public entry points
-// =============================================================================
-
-namespace microtex {
-
-std::vector<u8> otfMathTableBytes(const std::string& path, int index) {
-    FT_Face face = open_face(path, index);
-    struct FaceGuard {
-        FT_Face f;
-        ~FaceGuard() { if (f) FT_Done_Face(f); }
-    } guard{face};
-    return read_sfnt_table(face, TTAG_MATH);
-}
-
-std::vector<u8> otfToClmBytes(const std::string& path, int index) {
-    return build_clm_bytes_impl(path, index);
+Otf* otfFromFile(const std::string& path, int index) {
+    return OtfBuilder::build(path, index);
 }
 
 }  // namespace microtex

@@ -14,6 +14,105 @@
 using namespace std;
 using namespace microtex;
 
+namespace {
+
+// \color, \textcolor and the size declarations are one box around the run
+// they apply to, and the splitter breaks only inside rows (HBox): text in
+// them never wrapped. Opening such a box puts it around each piece of its
+// row instead. A foreground colour on every piece draws what it drew on
+// the whole; so does scaling every piece about its own origin, as a row
+// sets its pieces side by side, each at its (scaled) shift. A space stays a
+// GlueBox, which the line builder looks for, scaled rather than wrapped.
+// Only a line that is broken is opened, so every other layout is exactly
+// as it was. A colour with a background is a box in LaTeX too
+// (\colorbox), and stays one.
+
+const ScaleBox* scaling(const sptr<Box>& b) {
+  const auto* s = dynamic_cast<const ScaleBox*>(b.get());
+  if (s == nullptr || s->sx() <= 0 || s->sy() <= 0) return nullptr;
+  return dynamic_pointer_cast<HBox>(s->_base) != nullptr ? s : nullptr;
+}
+
+const ColorBox* colouring(const sptr<Box>& b) {
+  const auto* c = dynamic_cast<const ColorBox*>(b.get());
+  if (c == nullptr || !isTransparent(c->background())) return nullptr;
+  return dynamic_pointer_cast<HBox>(c->_base) != nullptr ? c : nullptr;
+}
+
+bool openable(const sptr<Box>& b) {
+  return scaling(b) != nullptr || colouring(b) != nullptr;
+}
+
+sptr<Box> wrapPiece(const sptr<Box>& w, sptr<Box> piece);
+
+// `row`'s pieces, each inside the wrapper `w`, as a row at `shift`. The
+// breaks, their hyphens and the bidi levels are per child, and a child
+// maps to one piece, so they carry over as they are.
+sptr<HBox> wrapRow(const sptr<Box>& w, const sptr<HBox>& row, float shift) {
+  auto out = sptrOf<HBox>();
+  for (const auto& c : row->_children) out->add(wrapPiece(w, c));
+  out->_breakPositions = row->_breakPositions;
+  for (const auto& [pos, b] : row->_breakBoxes) out->_breakBoxes[pos] = wrapPiece(w, b);
+  out->_childLevels = row->_childLevels;
+  out->_shift = shift;
+  out->_type = row->_type;
+  return out;
+}
+
+// The wrapper `w` opened: its row, piece by piece.
+sptr<HBox> openWrapper(const sptr<Box>& w) {
+  const auto row = static_pointer_cast<HBox>(static_pointer_cast<DecorBox>(w)->_base);
+  return wrapRow(w, row, w->_shift);
+}
+
+sptr<Box> wrapPiece(const sptr<Box>& w, sptr<Box> piece) {
+  // A wrapper inside this one is opened first, so both reach the words.
+  if (openable(piece)) piece = openWrapper(piece);
+  const ScaleBox* s = scaling(w);
+  if (const auto row = dynamic_pointer_cast<HBox>(piece)) {
+    // Down to the words: a row wrapped whole is one more box the splitter
+    // cannot enter.
+    return wrapRow(w, row, s != nullptr ? row->_shift * s->sy() : row->_shift);
+  }
+  if (const auto glue = dynamic_pointer_cast<GlueBox>(piece)) {
+    if (s == nullptr) return glue;
+    return sptrOf<GlueBox>(glue->_width * s->sx(), glue->_stretch * s->sx(),
+                           glue->_shrink * s->sx());
+  }
+  if (s != nullptr) return sptrOf<ScaleBox>(piece, s->sx(), s->sy());
+  const ColorBox* c = colouring(w);
+  return sptrOf<ColorBox>(piece, c->foreground(), c->background());
+}
+
+// `row` with every colour or size box in it opened, at any depth; `row`
+// itself when it holds none.
+sptr<HBox> openRow(const sptr<HBox>& row) {
+  bool changed = false;
+  vector<sptr<Box>> children;
+  children.reserve(row->_children.size());
+  for (const auto& c : row->_children) {
+    sptr<Box> d = c;
+    if (openable(c)) {
+      d = openWrapper(c);
+    } else if (const auto h = dynamic_pointer_cast<HBox>(c)) {
+      d = openRow(h);
+    }
+    changed = changed || d != c;
+    children.push_back(d);
+  }
+  if (!changed) return row;
+  auto out = sptrOf<HBox>();
+  for (const auto& c : children) out->add(c);
+  out->_breakPositions = row->_breakPositions;
+  out->_breakBoxes = row->_breakBoxes;
+  out->_childLevels = row->_childLevels;
+  out->_shift = row->_shift;
+  out->_type = row->_type;
+  return out;
+}
+
+}  // namespace
+
 #ifdef HAVE_LOG
 
 static void printBox(const sptr<Box>& b, int dep, vector<bool>& lines, int max = 0) {
@@ -240,6 +339,11 @@ std::pair<bool, sptr<Box>> BoxSplitter::splitDispatch(
   if (h != nullptr) return split(h, width, lineSpace);
   auto v = dynamic_pointer_cast<VBox>(b);
   if (v != nullptr) return split(v, width, lineSpace, depth);
+  // A label that is all \large or \color is that box, not a row.
+  if (openable(b) && width > 0 && b->_width > width) {
+    const auto [splitted, box] = split(openWrapper(b), width, lineSpace);
+    return {splitted, splitted ? box : b};
+  }
   return {false, b};
 }
 
@@ -370,14 +474,15 @@ std::pair<bool, sptr<Box>> BoxSplitter::split(const sptr<HBox>& hb, float width,
   // BoxSplitter::split over one test run).
   auto vbox = sptrOf<VBox>();
   sptr<HBox> first, second;
-  sptr<HBox> hbox = hb;
+  // Colour and size boxes opened, so the text in them can be broken too.
+  sptr<HBox> hbox = openRow(hb);
   bool splitted = false;
 
   // Per-line target widths when breaking by total fit. Empty means
   // greedy, in which case every line simply targets the full measure and
   // the behaviour is exactly what it was.
   const std::vector<float> targets =
-    _optimalBreak ? optimalLineTargets(hb, width) : std::vector<float>();
+    _optimalBreak ? optimalLineTargets(hbox, width) : std::vector<float>();
   size_t line = 0;
 
   while (hbox->_width > width) {
@@ -478,7 +583,8 @@ std::pair<bool, sptr<Box>> BoxSplitter::split(const sptr<HBox>& hb, float width,
     return {splitted, vbox};
   }
 
-  return {splitted, hbox};
+  // Nothing broke: the row as it came, not its opened copy.
+  return {splitted, hb};
 }
 
 float BoxSplitter::canBreak(stack<Position>& s, const sptr<HBox>& hbox, const float width) {

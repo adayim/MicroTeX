@@ -2,6 +2,7 @@
 
 #include "graphic/graphic_recorder.h"
 #include "macro/macro.h"
+#include "macro/macro_args.h"
 
 namespace microtex {
 
@@ -15,9 +16,9 @@ void MarkBox::draw(Graphics2D& g2, float x, float y) {
 namespace {
 
 // Delegate for the \mark{name} macro.
-sptr<Atom> mark_macro_delegate(Parser&, std::vector<std::string>& args) {
-    // args[0] is the macro name itself ("mark"); args[1] is the mark name.
-    return sptr<Atom>(new MarkAtom(args[1]));
+sptr<Atom> mark_macro_delegate(CommandArgs& args) {
+    // Argument 0 is the macro name itself ("mark"); 1 is the mark name.
+    return sptr<Atom>(new MarkAtom(args.text(1)));
 }
 
 bool s_registered = false;
@@ -26,7 +27,7 @@ bool s_registered = false;
 
 void register_mark_macro() {
     if (s_registered) return;
-    MacroInfo::add("mark", new PreDefMacro(1, mark_macro_delegate));
+    MacroInfo::add("mark", new CommandMacro(1, mark_macro_delegate));
     s_registered = true;
 }
 

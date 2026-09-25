@@ -38,16 +38,6 @@ namespace microtex {
 
 PathCmd::PathCmd(char cmd, const i16* args) noexcept : cmd(cmd), args(args) {}
 
-std::string PathCmd::toString() const {
-  std::string str;
-  str.append(1, cmd).append(1, ' ');
-  for (int i = 0; i < pathCmdArgsCount(cmd); i++) {
-    str.append(microtex::toString(args[i])).append(1, ' ');
-  }
-  str.append(1, '\n');
-  return str;
-}
-
 PathCmd::~PathCmd() {
   delete[] args;
 }
@@ -179,14 +169,6 @@ void Path::draw(Graphics2D& g2) const {
     }
   }
   g2.fillPath(_id);
-}
-
-std::string Path::toString() const {
-  std::string str;
-  for (int i = 0; i < _cmdCnt; i++) {
-    str.append(_cmds[i]->toString());
-  }
-  return str;
 }
 
 Path::~Path() {

@@ -15,6 +15,7 @@ macro_src = [
 if install_headerfiles
     install_headers([
         'macro_accent.h',
+        'macro_args.h',
         'macro_boxes.h',
         'macro_colors.h',
         'macro_decl.h',

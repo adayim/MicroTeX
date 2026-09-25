@@ -2,27 +2,27 @@
 
 namespace microtex {
 
-macro(muskips) {
+cmdmacro(muskips) {
   SpaceType type = SpaceType::none;
-  if (args[0] == ",")
+  if (args.text(0) == ",")
     type = SpaceType::thinMuSkip;
-  else if (args[0] == ":")
+  else if (args.text(0) == ":")
     type = SpaceType::medMuSkip;
-  else if (args[0] == ";")
+  else if (args.text(0) == ";")
     type = SpaceType::thickMuSkip;
-  else if (args[0] == "thinspace")
+  else if (args.text(0) == "thinspace")
     type = SpaceType::thinMuSkip;
-  else if (args[0] == "medspace")
+  else if (args.text(0) == "medspace")
     type = SpaceType::medMuSkip;
-  else if (args[0] == "thickspace")
+  else if (args.text(0) == "thickspace")
     type = SpaceType::thickMuSkip;
-  else if (args[0] == "!")
+  else if (args.text(0) == "!")
     type = SpaceType::negThinMuSkip;
-  else if (args[0] == "negthinspace")
+  else if (args.text(0) == "negthinspace")
     type = SpaceType::negThinMuSkip;
-  else if (args[0] == "negmedspace")
+  else if (args.text(0) == "negmedspace")
     type = SpaceType::negMedMuSkip;
-  else if (args[0] == "negthickspace")
+  else if (args.text(0) == "negthickspace")
     type = SpaceType::negThickMuSkip;
 
   return sptrOf<SpaceAtom>(type);

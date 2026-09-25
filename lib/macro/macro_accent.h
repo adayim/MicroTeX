@@ -9,52 +9,52 @@
 
 namespace microtex {
 
-inline macro(accentset) {
-  if (args[1] == "")
-    return Formula(tp, args[2], false)._root;
-  return sptrOf<AccentedAtom>(Formula(tp, args[2], false)._root, args[1].substr(1), false, true);
+inline cmdmacro(accentset) {
+  if (args.text(1) == "")
+    return args.formula(2);
+  return sptrOf<AccentedAtom>(args.formula(2), args.text(1).substr(1), false, true);
 }
 
-inline macro(stack) {
-  const auto& over = StackArgs::autoSpace(Formula(tp, args[1], false)._root);
-  const auto& under = StackArgs::autoSpace(Formula(tp, args[3], false)._root);
-  return sptrOf<StackAtom>(Formula(tp, args[2], false)._root, over, under);
+inline cmdmacro(stack) {
+  const auto& over = StackArgs::autoSpace(args.formula(1));
+  const auto& under = StackArgs::autoSpace(args.formula(3));
+  return sptrOf<StackAtom>(args.formula(2), over, under);
 }
 
-inline macro(stackrel) {
-  const auto& stack = macro_stack(tp, args);
+inline cmdmacro(stackrel) {
+  const auto& stack = macro_stack(args);
   return sptrOf<TypedAtom>(AtomType::relation, AtomType::relation, stack);
 }
 
-inline macro(stackbin) {
-  const auto& stack = macro_stack(tp, args);
+inline cmdmacro(stackbin) {
+  const auto& stack = macro_stack(args);
   return sptrOf<TypedAtom>(AtomType::binaryOperator, AtomType::binaryOperator, stack);
 }
 
-inline macro(overset) {
-  const auto& over = StackArgs::autoSpace(Formula(tp, args[1], false)._root);
-  sptr<Atom> a = sptrOf<StackAtom>(Formula(tp, args[2], false)._root, over, true);
+inline cmdmacro(overset) {
+  const auto& over = StackArgs::autoSpace(args.formula(1));
+  sptr<Atom> a = sptrOf<StackAtom>(args.formula(2), over, true);
   return sptrOf<TypedAtom>(AtomType::relation, AtomType::relation, a);
 }
 
-inline macro(underset) {
-  const auto& under = StackArgs::autoSpace(Formula(tp, args[1], false)._root);
-  auto a = sptrOf<StackAtom>(Formula(tp, args[2], false)._root, under, false);
+inline cmdmacro(underset) {
+  const auto& under = StackArgs::autoSpace(args.formula(1));
+  auto a = sptrOf<StackAtom>(args.formula(2), under, false);
   return sptrOf<TypedAtom>(AtomType::relation, AtomType::relation, a);
 }
 
-inline macro(underaccent) {
-  const StackArgs under{Formula(tp, args[1], false)._root, UnitType::mu, 1.f, true};
-  auto a = sptrOf<StackAtom>(Formula(tp, args[2], false)._root, under, false);
+inline cmdmacro(underaccent) {
+  const StackArgs under{args.formula(1), UnitType::mu, 1.f, true};
+  auto a = sptrOf<StackAtom>(args.formula(2), under, false);
   a->setAdjustBottom(true);
   return a;
 }
 
-macro(accentbiss);
+cmdmacro(accentbiss);
 
-macro(accents);
+cmdmacro(accents);
 
-macro(undertilde);
+cmdmacro(undertilde);
 
 }  // namespace microtex
 

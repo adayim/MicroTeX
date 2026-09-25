@@ -6,11 +6,11 @@
 
 namespace microtex {
 
-inline macro(quad) {
+inline cmdmacro(quad) {
   return sptrOf<SpaceAtom>(UnitType::em, 1.f, 0.f, 0.f);
 }
 
-macro(muskips);
+cmdmacro(muskips);
 
 }  // namespace microtex
 

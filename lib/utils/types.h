@@ -144,6 +144,8 @@ enum class UnitType : i8 {
   cc,
   /** 1 tt = the rule thickness */
   tt,
+  /** 1 tw = the text width: `\textwidth`, `\linewidth`, `\columnwidth` */
+  tw,
   none = -1
 };
 

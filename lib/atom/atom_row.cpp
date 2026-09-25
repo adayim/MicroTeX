@@ -257,7 +257,7 @@ void RowAtom::assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t&
 }
 
 sptr<Box> RowAtom::createBox(Env& env) {
-  auto hbox = new HBox();
+  auto hbox = sptrOf<HBox>();
 
   // Bidirectional levels were resolved once for the whole formula, before
   // any box was built -- see the pre-pass in src/parse_latex.cpp. They are
@@ -446,7 +446,7 @@ sptr<Box> RowAtom::createBox(Env& env) {
   }
   // reset previous atom
   _previousAtom = nullptr;
-  return sptr<Box>(hbox);
+  return hbox;
 }
 
 void RowAtom::setPreviousAtom(const sptr<AtomDecor>& prev) {

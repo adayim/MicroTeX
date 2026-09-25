@@ -1,5 +1,7 @@
 #include "atom/atom_matrix.h"
 
+#include <algorithm>
+#include <cctype>
 #include <memory>
 
 #include "atom/atom_basic.h"
@@ -9,6 +11,7 @@
 #include "core/split.h"
 #include "env/env.h"
 #include "env/units.h"
+#include "front/lower.h"
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
 
@@ -49,20 +52,76 @@ void MatrixAtom::defineColumnSpecifier(const string& rep, const string& spe) {
   _colspeReplacement[rep] = spe;
 }
 
+namespace {
+
+/** One argument in a column specification, read TeX's way: a braced group
+ *  (its text, with nested braces and \{ \} in it), or else one token -- a
+ *  control word or a single character. */
+struct SpecArgument {
+  string text;
+  /** Index just past what was read. */
+  int end;
+  bool found;
+  bool braced;
+};
+
+SpecArgument specArgument(const string& s, int pos) {
+  const int len = static_cast<int>(s.size());
+  while (pos < len && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\r' || s[pos] == '\n')) pos++;
+  if (pos >= len) return {"", pos, false, false};
+  if (s[pos] == '{') {
+    int depth = 0;
+    for (int i = pos; i < len; i++) {
+      if (s[i] == '\\' && i + 1 < len) {
+        i++;
+        continue;
+      }
+      if (s[i] == '{') depth++;
+      if (s[i] == '}' && --depth == 0) return {s.substr(pos + 1, i - pos - 1), i + 1, true, true};
+    }
+    return {s.substr(pos + 1), len, true, true};  // never closed: the rest
+  }
+  int end = pos + 1;
+  if (s[pos] == '\\') {
+    while (end < len && std::isalpha(static_cast<unsigned char>(s[end]))) end++;
+    if (end == pos + 1 && end < len) end++;  // a control symbol
+  } else {
+    // A whole UTF-8 character, not one byte of it.
+    while (end < len && (static_cast<unsigned char>(s[end]) & 0xC0) == 0x80) end++;
+  }
+  return {s.substr(pos, end - pos), end, true, false};
+}
+
+/** What an argument of @{...} or >{...} draws: a group is read as a formula
+ *  in a row of its own, a lone token as itself, and nothing as nothing. */
+sptr<Atom> specAtom(const SpecArgument& a) {
+  if (!a.found) return sptrOf<EmptyAtom>();
+  auto atom = front::buildFragment(a.text, true);
+  if (!a.braced) return atom;
+  auto row = sptrOf<RowAtom>();
+  row->add(atom);
+  return row;
+}
+
+}  // namespace
+
 void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
   int len = opt.length();
   int pos = 0;
   char ch;
-  sptr<Formula> tf;
-  sptr<Parser> tp;
   // clear first
   lpos.clear();
+  _fillCols.clear();
   while (pos < len) {
     ch = opt[pos];
     switch (ch) {
       case 'l': lpos.push_back(Alignment::left); break;
       case 'r': lpos.push_back(Alignment::right); break;
       case 'c': lpos.push_back(Alignment::center); break;
+      case 'X':
+        _fillCols.push_back(static_cast<int>(lpos.size()));
+        lpos.push_back(Alignment::left);
+        break;
       case '|': {
         int nb = 1;
         while (++pos < len) {
@@ -77,43 +136,33 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         _vlines[lpos.size()] = sptrOf<VlineAtom>(nb);
       } break;
       case '@': {
-        pos++;
-        tf = sptrOf<Formula>();
-        tp = sptrOf<Parser>(_isPartial, opt.substr(pos), tf.get(), false);
-        auto atom = tp->getArgument();
+        const SpecArgument a = specArgument(opt, pos + 1);
         // Keep columns same with the matrix
         if (lpos.size() > _matrix->cols()) {
           lpos.resize(_matrix->cols());
         }
-        _matrix->insertAtomIntoCol(lpos.size(), atom);
+        _matrix->insertAtomIntoCol(lpos.size(), specAtom(a));
 
         lpos.push_back(Alignment::none);
-        pos += tp->getPos();
-        pos--;
+        pos = a.end - 1;
       } break;
       case '*': {
-        pos++;
-        tf = sptrOf<Formula>();
-        tp = sptrOf<Parser>(_isPartial, opt.substr(pos), tf.get(), false);
-        vector<string> args;
-        tp->getOptsArgs(2, 0, args);
-        pos += tp->getPos();
+        // *{n}{cols}: the columns n times over, read from where they end.
+        const SpecArgument times = specArgument(opt, pos + 1);
+        const SpecArgument cols = specArgument(opt, times.end);
         int nrep = 0;
-        valueOf(args[1], nrep);
+        valueOf(times.text, nrep);
         string str;
-        for (int j = 0; j < nrep; j++) str += args[2];
+        for (int j = 0; j < nrep; j++) str += cols.text;
+        pos = cols.end;
         opt.insert(pos, str);
         len = opt.length();
         pos--;
       } break;
       case '>': {
-        pos++;
-        tf = sptrOf<ArrayFormula>();
-        tp = sptrOf<Parser>(_isPartial, opt.substr(pos), &(*tf), false);
-        sptr<Atom> cs = tp->getArgument();
-        _columnSpecifiers[lpos.size()] = cs;
-        pos += tp->getPos();
-        pos--;
+        const SpecArgument a = specArgument(opt, pos + 1);
+        _columnSpecifiers[lpos.size()] = specAtom(a);
+        pos = a.end - 1;
       } break;
       case 'p':
       case 'm':
@@ -523,6 +572,66 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
     }
   }
 
+  // `X`: what the other columns and the space between them leave of the
+  // text width, shared by the X columns. A cell wider than that is made
+  // again at that width -- so a list or a table inside it fits in turn --
+  // with the word-level runs the breaker needs, and broken to it as p{}
+  // is. A column whose cells all fit is left as it was: a short list in a
+  // label keeps its own width, which is what `hjust` places.
+  if (!_fillCols.empty() && env.textWidth() != POS_INF) {
+    float used = 0;
+    for (int j = 0; j < cols; j++) {
+      if (std::find(_fillCols.begin(), _fillCols.end(), j) == _fillCols.end()) {
+        used += colWidth[j];
+      }
+    }
+    const float* sep = getColumnSep(env, used);
+    for (int j = 0; j <= cols; j++) {
+      used += sep[j];
+      const auto it = _vlines.find(j);
+      if (it != _vlines.end()) used += it->second->getWidth(env);
+    }
+    delete[] sep;
+    const float xw = (env.textWidth() - used) / static_cast<float>(_fillCols.size());
+    if (xw > 0) {
+      for (int i = 0; i < rows; i++) {
+        const int size = _matrix->_array[i].size();
+        bool made = false;
+        for (const int j : _fillCols) {
+          if (j >= size || j >= cols || colWidth[j] <= xw) continue;
+          const sptr<Atom>& atom = _matrix->_array[i][j];
+          if (atom == nullptr || boxarr[i][j]->_type != AtomType::none) continue;
+          if (boxarr[i][j]->_width <= xw) continue;
+          sptr<Box> cell;
+          {
+            MergeTextGuard guard(true);
+            cell = env.withTextWidth(xw, [&](Env& e) { return atom->createBox(e); });
+          }
+          const auto [wasSplit, splitBox] = BoxSplitter::split(cell, xw, env.lineSpace());
+          (void)wasSplit;
+          boxarr[i][j] = sptrOf<HBox>(splitBox, xw, Alignment::left);
+          made = true;
+        }
+        if (!made) continue;
+        lineHeight[i] = lineDepth[i] = 0;
+        for (int j = 0; j < cols; j++) {
+          if (boxarr[i][j] == nullptr || boxarr[i][j]->_type == AtomType::multiRow) continue;
+          lineHeight[i] = max(boxarr[i][j]->_height, lineHeight[i]);
+          lineDepth[i] = max(boxarr[i][j]->_depth, lineDepth[i]);
+        }
+      }
+      for (const int j : _fillCols) {
+        if (j < cols) colWidth[j] = min(colWidth[j], xw);
+      }
+    }
+  }
+
+  // `\\[len]`: extra space below a row, added to its depth as LaTeX's array
+  // adds it, so the rows after it move down and vertical rules run through.
+  for (const auto& [row, gap] : _matrix->_rowGaps) {
+    if (row >= 0 && row < rows) lineDepth[row] += Units::fsize(gap, env);
+  }
+
   for (int j = 0; j < cols; j++) matW += colWidth[j];
 
   // The horizontal separator's width
@@ -555,7 +664,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   // Recalculate the height of the row
   recalculateLine(rows, boxarr, multiRows, lineHeight, lineDepth, drt, Vsep->_height);
 
-  auto* vb = new VBox();
+  auto vb = sptrOf<VBox>();
   float totalHeight = 0;
   float Vspace = Vsep->_height / 2;
 
@@ -626,13 +735,15 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           if (i >= 1 && dynamic_cast<HlineAtom*>(_matrix->_array[i - 1][j].get()) != nullptr) {
             hb->add(sptrOf<StrutBox>(0.f, 2 * drt, 0.f, 0.f));
           }
-          if (at->colStart() >= 0) {
+          if (at->colStart() >= 0 && cols > 0) {
             // Partial rule: \cline{a-b}. Span left edge of column a to
             // right edge of column b (LaTeX 1-indexed columns are
-            // converted to 0-indexed by the macro).
+            // converted to 0-indexed by the macro). Both are kept inside
+            // the table: \cline{2-2} on one column read past its widths.
             int a = at->colStart();
             int b = at->colEnd();
             if (a < 0) a = 0;
+            if (a >= cols) a = cols - 1;
             if (b >= cols) b = cols - 1;
             if (b < a) b = a;
             float offset = 0;
@@ -675,7 +786,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   for (int i = 0; i < rows; i++) delete[] boxarr[i];
   delete[] boxarr;
 
-  return sptr<Box>(vb);
+  return vb;
 }
 
 sptr<Box> MatrixAtom::createBox(Env& env) {
@@ -811,12 +922,21 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
   if (tw == POS_INF || _lineType == MultiLineType::gathered)
     return MatrixAtom(_isPartial, _column, "").createBox(env);
 
-  auto* vb = new VBox();
+  auto vb = sptrOf<VBox>();
   auto atom = _column->_array[0][0];
   Alignment alignment = _lineType == MultiLineType::gather ? Alignment::center : Alignment::left;
   if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
 
+  // `\\[len]`: extra space below a row.
+  const auto gapAfter = [&](size_t row) {
+    const auto it = _column->_rowGaps.find(static_cast<int>(row));
+    if (it != _column->_rowGaps.end()) {
+      vb->add(sptrOf<StrutBox>(0.f, Units::fsize(it->second, env), 0.f, 0.f));
+    }
+  };
+
   vb->add(sptrOf<HBox>(atom->createBox(env), tw, alignment));
+  gapAfter(0);
   auto Vsep = _vsep_in.createBox(env);
   for (size_t i = 1; i < _column->rows() - 1; i++) {
     atom = _column->_array[i][0];
@@ -824,6 +944,7 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
     vb->add(Vsep);
     vb->add(sptrOf<HBox>(atom->createBox(env), tw, alignment));
+    gapAfter(i);
   }
 
   if (_column->rows() > 1) {
@@ -838,5 +959,5 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
   vb->_height = h / 2;
   vb->_depth = h / 2;
 
-  return sptr<Box>(vb);
+  return vb;
 }

@@ -73,6 +73,9 @@ private:
   // Fixed column widths from `p{len}` / `m{len}` / `b{len}`. A column
   // listed here is wrapped to that measure instead of sizing to content.
   std::map<int, Dimen> _colWidths;
+  // `X` columns (tabularx's): they share the text width the other columns
+  // leave, and wrap to it as p{} does. Without a text width they are `l`.
+  std::vector<int> _fillCols;
 
   MatrixType _matType;
   bool _isPartial;

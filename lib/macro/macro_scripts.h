@@ -8,9 +8,9 @@
 
 namespace microtex {
 
-macro(prescript);
+cmdmacro(prescript);
 
-macro(sideset);
+cmdmacro(sideset);
 
 }  // namespace microtex
 

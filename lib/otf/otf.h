@@ -7,7 +7,7 @@
 
 namespace microtex {
 
-class CLMReader;
+class OtfBuilder;
 
 /** Table represents standard ligatures. */
 using LigaTable = SortedDictTree<u16, i32>;
@@ -40,7 +40,7 @@ public:
 
   ~ClassKerning();
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 /** Class to represent an otf font */
@@ -79,12 +79,6 @@ public:
   /** Undefined value */
   static constexpr auto undefinedMathValue = 0x7FFF;
 
-  /** Read otf font from file */
-  static Otf* fromFile(const char* filePath);
-
-  /** Read otf font from data */
-  static Otf* fromData(size_t len, const u8* data);
-
   /** Get the full postscript name of this font */
   inline std::string name() const { return _name; }
 
@@ -100,7 +94,7 @@ public:
    */
   inline bool hasGlyphPath() const { return _hasGlyphPath; }
 
-  /** Get the font style in clm (short enum see [lib/graphics/font_style.h: FontStyle]) format **/
+  /** Get the font style (short enum see [lib/graphics/font_style.h: FontStyle]) **/
   inline u16 style() const { return _style; }
 
   /** Get the char count covered by this font */
@@ -169,7 +163,7 @@ public:
 
   ~Otf();
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 }  // namespace microtex

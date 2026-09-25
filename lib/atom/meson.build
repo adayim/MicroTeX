@@ -20,7 +20,10 @@ atom_src = [
     'atom/atom_text.cpp',
     'atom/atom_vrow.cpp',
     'atom/atom_zstack.cpp',
-    'atom/colors_def.cpp'
+    'atom/colors_def.cpp',
+    'atom/font_family_atom.cpp',
+    'atom/image_atom.cpp',
+    'atom/mark_atom.cpp'
 ]
 
 if install_headerfiles
@@ -45,6 +48,9 @@ if install_headerfiles
         'atom_stack.h',
         'atom_text.h',
         'atom_vrow.h',
-        'atom_zstack.h'
+        'atom_zstack.h',
+        'font_family_atom.h',
+        'image_atom.h',
+        'mark_atom.h'
 	], subdir: 'microtex/atom')
 endif

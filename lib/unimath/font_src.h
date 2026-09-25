@@ -35,23 +35,17 @@ public:
   virtual ~FontSrc() = default;
 };
 
-/** Font source from file. */
-class MICROTEX_EXPORT FontSrcFile : public FontSrc {
+/**
+ * Font source from an OpenType font file, read by otf_math_reader: its
+ * metrics from its own tables, its math from its MATH table. The file is
+ * also the font file drawn with.
+ */
+class MICROTEX_EXPORT FontSrcOtf : public FontSrc {
 public:
-  const std::string clmFile;
+  /** The face in a font collection (.ttc); 0 for a plain font. */
+  const int index;
 
-  explicit FontSrcFile(std::string clmFile, std::string fontFile = "");
-
-  sptr<Otf> loadOtf() const override;
-};
-
-/** Font source from data. */
-class MICROTEX_EXPORT FontSrcData : public FontSrc {
-public:
-  const size_t len;
-  const u8* data;
-
-  FontSrcData(size_t len, const u8* data, std::string fontFile = "");
+  explicit FontSrcOtf(std::string otfFile, int index = 0);
 
   sptr<Otf> loadOtf() const override;
 };

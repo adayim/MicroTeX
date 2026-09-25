@@ -132,7 +132,6 @@ public:
 
     // --- Extraction ---
     const std::vector<DrawRecord>& records() const { return _records; }
-    void clear();
 
 private:
     std::vector<DrawRecord> _records;

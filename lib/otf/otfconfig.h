@@ -14,20 +14,6 @@
 #if GLYPH_RENDER_TYPE == GLYPH_RENDER_TYPE_BOTH || GLYPH_RENDER_TYPE == GLYPH_RENDER_TYPE_TYPEFACE
 #   define HAVE_GLYPH_RENDER_TYPEFACE
 #endif
-
-// The clm data major version
-// v6: added per-glyph xMin (leftmost ink x in design units) to metrics block
-#define CLM_VER_MAJOR 6
-
-// The clm data minor version, must be 1 or 2
-#ifdef HAVE_GLYPH_RENDER_PATH
-#   define CLM_VER_MINOR 2
-#else
-#   define CLM_VER_MINOR 1
-#endif
-
-// If clm supports glyph path
-#define CLM_SUPPORT_GLYPH_PATH(minorVersion) ((minorVersion) == 2)
 // clang-format on
 
 #endif  // MICROTEX_OTFCONFIG_H

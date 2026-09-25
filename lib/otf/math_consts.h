@@ -7,7 +7,7 @@ namespace microtex {
 
 #define TEX_MATH_CONSTS_COUNT 57
 
-class CLMReader;
+class OtfBuilder;
 
 /**
  * Defines a number of constants required to properly position elements of mathematical formulas.
@@ -146,7 +146,7 @@ public:
 
   inline i16 minConnectorOverlap() const { return _fields[56]; }
 
-  friend CLMReader;
+  friend OtfBuilder;
 };
 
 }  // namespace microtex

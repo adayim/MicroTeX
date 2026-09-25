@@ -1,6 +1,5 @@
 #include "box_single.h"
 
-#include "core/debug_config.h"
 #include "env/env.h"
 #include "microtex.h"
 #include "utils/exceptions.h"
@@ -152,30 +151,3 @@ void RuleBox::draw(Graphics2D& g2, float x, float y) {
   g2.setColor(oldColor);
 }
 
-DebugBox::DebugBox(const sptr<Box>& base) {
-  copyMetrics(base);
-}
-
-void DebugBox::draw(Graphics2D& g2, float x, float y) {
-  const auto& config = DebugConfig::INSTANCE;
-
-  const color prevColor = g2.getColor();
-  const auto& prevStroke = g2.getStroke();
-
-  g2.setColor(config.boundColor);
-  g2.setStrokeWidth(std::abs(1.f / g2.sx()));
-
-  // draw box
-  g2.drawRect(x, y - _height, _width, _height + _depth);
-  // draw baseline
-  if (_depth > PREC) {
-    const auto& prevDash = g2.getDash();
-    g2.setColor(config.baselineColor);
-    g2.setDash({std::abs(5 / g2.sx()), std::abs(5 / g2.sx())});
-    g2.drawLine(x, y, x + _width, y);
-    g2.setDash(prevDash);
-  }
-
-  g2.setColor(prevColor);
-  g2.setStroke(prevStroke);
-}

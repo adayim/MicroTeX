@@ -95,12 +95,6 @@ sptr<GlueBox> Glue::get(SpaceType skipType, const Env& env) {
   return b;
 }
 
-float Glue::getSpace(AtomType ltype, AtomType rtype, const Env& env) {
-  int i = indexOf(ltype, rtype, env);
-  const Glue& glueType = _glueTypes[i];
-  return glueType._space * getFactor(env);
-}
-
 float Glue::getSpace(SpaceType skipType, const Env& env) {
   const Glue& glue = getGlue(skipType);
   const auto v = glue._space * getFactor(env);

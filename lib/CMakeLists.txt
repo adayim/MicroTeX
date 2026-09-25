@@ -62,8 +62,6 @@ set(
     core/formula_def.cpp
     core/glue.cpp
     core/localized_num.cpp
-    core/parser.cpp
-    core/debug_config.cpp
     # macro folder
     macro/macro.cpp
     macro/macro_def.cpp
@@ -84,8 +82,6 @@ set(
     utils/utf.cpp
     utils/utils.cpp
     # otf folder
-    otf/clm.cpp
-    otf/fontsense.cpp
     otf/glyph.cpp
     otf/otf.cpp
     otf/path.cpp
@@ -108,6 +104,18 @@ set(
     atom/font_family_atom.cpp
     atom/mark_atom.cpp
     atom/image_atom.cpp
+    otf/otf_math_reader.cpp
+    # compiles to no-ops without FriBidi (see MICROTEX_BIDI)
+    utils/bidi.cpp
+    # front folder: the LaTeX front end
+    front/lexer.cpp
+    front/expander.cpp
+    front/front.cpp
+    front/spec.cpp
+    front/ast.cpp
+    front/parser.cpp
+    front/prelude.cpp
+    front/lower.cpp
 
     microtex.cpp
 )
@@ -125,26 +133,18 @@ if (DEFINED HAVE_CWRAPPER AND HAVE_CWRAPPER)
     target_compile_definitions(microtex PUBLIC -DHAVE_CWRAPPER)
 endif ()
 
-
-# Optional: synthesise CLM font metrics from an OpenType MATH table in
-# memory, instead of shipping .clm2 files produced ahead of time with
-# FontForge / otf2clm.py. Off by default because it needs FreeType.
-option(MICROTEX_OTF_MATH_READER "Build the in-memory OTF -> CLM synthesiser (needs FreeType)" OFF)
-if (MICROTEX_OTF_MATH_READER)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(FREETYPE2 REQUIRED freetype2)
-    set(_SRCS ${_SRCS} otf/otf_math_reader.cpp)
-    target_include_directories(microtex PRIVATE ${FREETYPE2_INCLUDE_DIRS})
-    target_link_libraries(microtex PRIVATE ${FREETYPE2_LINK_LIBRARIES})
-endif ()
+# A font is read straight from its OpenType file (otf/otf_math_reader.cpp):
+# metrics, glyph outlines and the MATH table. That needs FreeType.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FREETYPE2 REQUIRED freetype2)
+target_include_directories(microtex PRIVATE ${FREETYPE2_INCLUDE_DIRS})
+target_link_libraries(microtex PRIVATE ${FREETYPE2_LINK_LIBRARIES})
 
 # Optional: bidirectional (right-to-left) reordering via FriBidi. Off by
 # default because it needs FriBidi; without it text keeps logical order.
 option(MICROTEX_BIDI "Build bidirectional text reordering (needs FriBidi)" OFF)
 if (MICROTEX_BIDI)
-    find_package(PkgConfig REQUIRED)
     pkg_check_modules(FRIBIDI REQUIRED fribidi)
-    set(_SRCS ${_SRCS} utils/bidi.cpp)
     target_include_directories(microtex PRIVATE ${FRIBIDI_INCLUDE_DIRS})
     target_link_libraries(microtex PRIVATE ${FRIBIDI_LINK_LIBRARIES})
     target_compile_definitions(microtex PUBLIC -DHAVE_FRIBIDI)
@@ -160,67 +160,6 @@ target_include_directories(
 ###################
 # compile options #
 ###################
-
-# compile option: if debug graphics
-option(GRAPHICS_DEBUG "If enable graphics debug" ON)
-if (GRAPHICS_DEBUG)
-    target_compile_definitions(microtex PRIVATE -DGRAPHICS_DEBUG)
-endif ()
-
-if (NOT DEFINED _HAVE_AUTO_FONT_FIND)
-    set(_HAVE_AUTO_FONT_FIND ON)
-endif ()
-# compile option: HAVE_AUTO_FONT_FIND if enable auto font find
-# this option is exported to users, will write into file 'microtexconfig.h'
-option(HAVE_AUTO_FONT_FIND "If enable auto font find" ${_HAVE_AUTO_FONT_FIND_})
-
-macro(CHECK_FS LIB_NAME)
-    if (EXISTS "${CMAKE_SOURCE_DIR}/test/has_filesystem.cpp")
-        if (${LIB_NAME} STREQUAL "none")
-            try_compile(
-                _HAS_FS
-                "${CMAKE_BINARY_DIR}/temp"
-                "${CMAKE_SOURCE_DIR}/test/has_filesystem.cpp"
-                CMAKE_FLAGS -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON
-            )
-        else ()
-            try_compile(
-                _HAS_FS
-                "${CMAKE_BINARY_DIR}/temp"
-                "${CMAKE_SOURCE_DIR}/test/has_filesystem.cpp"
-                CMAKE_FLAGS -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON
-                LINK_LIBRARIES ${LIB_NAME}
-            )
-        endif ()
-        set(_HAS_STD_FS ${_HAS_FS})
-    endif ()
-endmacro()
-
-if (HAVE_AUTO_FONT_FIND)
-    # iterate over the preset std c++ filesystem libraries
-    # `none` means there is no filesystem library to link
-    foreach (LIB IN ITEMS none;stdc++fs;c++fs;c++experimental)
-        check_fs(${LIB})
-        message(STATUS "Test for: ${LIB}, has std fs: ${_HAS_STD_FS}")
-        if (_HAS_STD_FS)
-            # special case: use the experimental filesystem
-            if (${LIB} STREQUAL "c++experimental")
-                target_compile_definitions(microtex PRIVATE -DUSE_EXPERIMENTAL_FILESYSTEM)
-            endif ()
-            if (NOT ${LIB} STREQUAL "none")
-                target_link_libraries(microtex ${LIB})
-            endif ()
-            break()
-        endif ()
-    endforeach ()
-    # oops... no std filesystem was found, use boost instead
-    if (NOT _HAS_STD_FS)
-        message(STATUS "No std c++ filesystem was found, use boost filesystem instead")
-        find_package(Boost REQUIRED COMPONENTS filesystem)
-        target_link_libraries(microtex PRIVATE Boost::filesystem)
-        target_compile_definitions(microtex PRIVATE USE_BOOST_FILESYSTEM)
-    endif ()
-endif ()
 
 if (NOT DEFINED _GLYPH_RENDER_TYPE)
     set(_GLYPH_RENDER_TYPE 0)
@@ -254,6 +193,7 @@ if (_HAS_MICROTEX_INSTALL)
         PREFIX graphic
         HEADERS graphic/graphic.h graphic/font_style.h graphic/graphic_basic.h
     )
+    microtex_install_headers(microtex PREFIX front HEADERS front/input_mode.h)
     if (DEFINED HAVE_CWRAPPER AND HAVE_CWRAPPER)
         microtex_install_headers(
             microtex

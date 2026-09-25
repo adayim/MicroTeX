@@ -4,6 +4,7 @@
 #include "box/box_factory.h"
 #include "box/box_group.h"
 #include "env/env.h"
+#include "env/units.h"
 
 using namespace std;
 using namespace microtex;
@@ -51,52 +52,14 @@ sptr<Box> MathAtom::createBox(Env& env) {
 }
 
 sptr<Box> HlineAtom::createBox(Env& env) {
-  const auto drt = env.ruleThickness() * _thicknessScale;
+  const auto drt = _thicknessUnit != UnitType::none
+                     ? Units::fsize(_thicknessUnit, _thickness, env)
+                     : env.ruleThickness() * _thicknessScale;
   auto b = new RuleBox(drt, _width, _shift, _color, false);
   auto vb = new VBox();
   vb->add(sptr<Box>(b));
   vb->_type = AtomType::hline;
   return sptr<Box>(vb);
-}
-
-CumulativeScriptsAtom::CumulativeScriptsAtom(
-  const sptr<Atom>& base,
-  const sptr<Atom>& sub,
-  const sptr<Atom>& sup
-) {
-  if (auto ca = dynamic_cast<CumulativeScriptsAtom*>(base.get()); ca != nullptr) {
-    _base = ca->_base;
-    ca->_sup->add(sup);
-    ca->_sub->add(sub);
-    _sup = ca->_sup;
-    _sub = ca->_sub;
-  } else if (auto sa = dynamic_cast<ScriptsAtom*>(base.get()); sa != nullptr) {
-    _base = sa->_base;
-    _sup = sptrOf<RowAtom>(sa->_sup);
-    _sub = sptrOf<RowAtom>(sa->_sub);
-    _sup->add(sup);
-    _sub->add(sub);
-  } else {
-    _base = base;
-    _sup = sptrOf<RowAtom>(sup);
-    _sub = sptrOf<RowAtom>(sub);
-  }
-}
-
-void CumulativeScriptsAtom::addSuperscript(const sptr<Atom>& sup) {
-  _sup->add(sup);
-}
-
-void CumulativeScriptsAtom::addSubscript(const sptr<Atom>& sub) {
-  _sub->add(sub);
-}
-
-sptr<Atom> CumulativeScriptsAtom::getScriptsAtom() const {
-  return sptrOf<ScriptsAtom>(_base, _sub, _sup);
-}
-
-sptr<Box> CumulativeScriptsAtom::createBox(Env& env) {
-  return ScriptsAtom(_base, _sub, _sup).createBox(env);
 }
 
 const color ColorAtom::_default = black;

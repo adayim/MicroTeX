@@ -13,60 +13,48 @@
 
 namespace microtex {
 
-inline macro(overdelim) {
-  const auto& name = args[0];
-  const auto& base = Formula(tp, args[1], false)._root;
+inline cmdmacro(overdelim) {
+  const auto& name = args.text(0);
+  const auto& base = args.formula(1);
   return sptrOf<OverUnderDelimiter>(base, name, true);
 }
 
-inline macro(underdelim) {
-  const auto& name = args[0];
-  const auto& base = Formula(tp, args[1], false)._root;
+inline cmdmacro(underdelim) {
+  const auto& name = args.text(0);
+  const auto& base = args.formula(1);
   return sptrOf<OverUnderDelimiter>(base, name, false);
 }
 
-macro(xarrow);
+cmdmacro(xarrow);
 
-inline macro(overline) {
-  return sptrOf<OverUnderBar>(Formula(tp, args[1], false)._root, true);
+inline cmdmacro(overline) {
+  return sptrOf<OverUnderBar>(args.formula(1), true);
 }
 
-inline macro(underline) {
-  return sptrOf<OverUnderBar>(Formula(tp, args[1], false)._root, false);
+inline cmdmacro(underline) {
+  return sptrOf<OverUnderBar>(args.formula(1), false);
 }
 
-inline macro(Braket) {
-  std::string str(args[1]);
+inline cmdmacro(Braket) {
+  std::string str(args.text(1));
   replaceAll(str, "\\|", "\\middle\\vert ");
-  return Formula(tp, "\\left\\langle " + str + "\\right\\rangle")._root;
+  return args.formulaOf("\\left\\langle " + str + "\\right\\rangle");
 }
 
-inline macro(Set) {
-  std::string str(args[1]);
+inline cmdmacro(Set) {
+  std::string str(args.text(1));
   replaceFirst(str, "\\|", "\\middle\\vert ");
-  return Formula(tp, "\\left\\{" + str + "\\right\\}")._root;
+  return args.formulaOf("\\left\\{" + str + "\\right\\}");
 }
 
-inline macro(leftparenthesis) {
-  std::string grp = tp.getGroup("\\(", "\\)");
-  return sptrOf<MathAtom>(Formula(tp, grp, false)._root, TexStyle::text);
+inline cmdmacro(middle) {
+  return sptrOf<MiddleAtom>(args.text(1));
 }
 
-inline macro(leftbracket) {
-  std::string grp = tp.getGroup("\\[", "\\]");
-  return sptrOf<MathAtom>(Formula(tp, grp, false)._root, TexStyle::display);
+inline cmdmacro(sqrt) {
+  if (args.text(2).empty()) return sptrOf<NthRoot>(args.formula(1), nullptr);
+  return sptrOf<NthRoot>(args.formula(1), args.formula(2));
 }
-
-inline macro(middle) {
-  return sptrOf<MiddleAtom>(args[1]);
-}
-
-inline macro(sqrt) {
-  if (args[2].empty()) return sptrOf<NthRoot>(Formula(tp, args[1], false)._root, nullptr);
-  return sptrOf<NthRoot>(Formula(tp, args[1], false)._root, Formula(tp, args[2], false)._root);
-}
-
-macro(left);
 
 }  // namespace microtex
 

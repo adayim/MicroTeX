@@ -70,6 +70,12 @@ const function<float(const Env&)> _unitConversions[]{
   [](const Env& env) -> float { return 12.7924193070f * pt(env); },
   // 1 tt = rule thickness
   [](const Env& env) -> float { return env.ruleThickness() * env.scale(); },
+  // 1 tw = the text width. Without one there is no page to measure, so it
+  // is what LaTeX's article class sets \textwidth to: 345pt.
+  [](const Env& env) -> float {
+    const float w = env.textWidth();
+    return w != POS_INF ? w : 345.f * 0.99626401f * pt(env);
+  },
 };
 
 }  // namespace
@@ -92,6 +98,25 @@ UnitType Units::getUnit(const std::string& unit) {
 
 Dimen Units::getDimen(const std::string& lgth) {
   if (lgth.empty()) return {0.f, UnitType::none};
+
+  // TeX's factor times a length: `0.5\textwidth`, or `\linewidth` alone,
+  // which is one of it.
+  const size_t bs = lgth.find('\\');
+  if (bs != string::npos) {
+    string name = lgth.substr(bs + 1);
+    trim(name);
+    if (name == "textwidth" || name == "linewidth" || name == "columnwidth") {
+      string num = lgth.substr(0, bs);
+      trim(num);
+      float f = 1.f;
+      if (num == "-") {
+        f = -1.f;
+      } else if (!num.empty() && num != "+") {
+        valueOf(num, f);
+      }
+      return {f, UnitType::tw};
+    }
+  }
 
   size_t i = 0;
   for (; i < lgth.length() && !isAlpha(lgth[i]); i++)

@@ -2,9 +2,9 @@
 
 namespace microtex {
 
-macro(accentbiss) {
+cmdmacro(accentbiss) {
   std::string acc;
-  switch (args[0][0]) {
+  switch (args.text(0)[0]) {
     case '~': acc = "tilde"; break;
     case '\'': acc = "acute"; break;
     case '^': acc = "hat"; break;
@@ -18,20 +18,22 @@ macro(accentbiss) {
     case 'r': acc = "mathring"; break;
   }
 
-  return sptrOf<AccentedAtom>(Formula(tp, args[1], false)._root, acc);
+  return sptrOf<AccentedAtom>(args.formula(1), acc);
 }
 
-macro(accents) {
-  const auto& name = args[0];
+cmdmacro(accents) {
+  const auto& name = args.text(0);
   const auto& [acc, fit] = [&]() {
     if (name == "widehat") return std::make_pair<std::string>("hat", true);
     if (name == "widetilde") return std::make_pair<std::string>("tilde", true);
     return std::make_pair(name, false);
   }();
-  return sptrOf<AccentedAtom>(Formula(tp, args[1], false)._root, acc, fit);
+  return sptrOf<AccentedAtom>(args.formula(1), acc, fit);
 }
 
-macro(undertilde) {
+cmdmacro(undertilde) {
+  // Parsed first: it can throw, and `stack` is a bare pointer until the end.
+  auto a = args.formula(1);
   auto stack = new StackAtom({StackElement::base, StackElement::under});
   auto tilde = sptrOf<ExtensibleAtom>(
     "tilde",
@@ -39,7 +41,6 @@ macro(undertilde) {
     [stack](const Env& env) { return stack->getMaxWidth(); },
     false
   );
-  auto a = Formula(tp, args[1], false)._root;
   const StackArgs under{tilde, UnitType::mu, 0.5f, true};
   stack->setAdjustBottom(true);
   stack->setBaseAtom(a);

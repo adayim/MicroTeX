@@ -40,12 +40,6 @@ public:
    */
   static sptr<GlueBox> get(SpaceType skipType, const Env& env);
 
-  /**
-   * Get the space amount from the given left-type and right-type of atoms
-   * according to the "glue rules".
-   */
-  static float getSpace(AtomType ltype, AtomType rtype, const Env& env);
-
   /** Get the space amount from the given skip-type according to the "glue rules" */
   static float getSpace(SpaceType skipType, const Env& env);
 };

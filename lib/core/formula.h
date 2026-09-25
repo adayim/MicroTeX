@@ -1,17 +1,19 @@
 #ifndef MICROTEX_FORMULA_H
 #define MICROTEX_FORMULA_H
 
+#include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
-#include "core/parser.h"
+#include "atom/atom.h"
+#include "env/units.h"
 
 namespace microtex {
 
 class MiddleAtom;
 class VRowAtom;
 class CellSpecifier;
-class Parser;
 
 /**
  * Represents a logical mathematical formula that will be displayed (by creating
@@ -24,7 +26,6 @@ private:
   static std::map<std::string, sptr<Formula>> _predefFormulas;
   static std::map<std::string, std::string> _predefFormulaStrs;
 
-  Parser _parser;
   std::vector<sptr<MiddleAtom>> _middle;
 
 public:
@@ -34,52 +35,14 @@ public:
   // the root atom of the "atom tree" that represents the formula
   sptr<Atom> _root;
 
-  /** Create an empty Formula */
-  Formula();
-
-  /**
-   * Creates a new Formula by parsing the given string (using a primitive
-   * TeX parser).
-   *
-   * @param tp the given TeXParser
-   * @param latex the string to be parsed
-   * @param preprocess if do preprocessing
-   * @param isMathMode if parse in math mode
-   *
-   * @throw ex_parse if the string could not be parsed correctly
-   */
-  Formula(
-    const Parser& tp,
-    const std::string& latex,
-    bool preprocess = true,
-    bool isMathMode = true
-  );
-
-  /**
-   * Creates a new Formula by parsing the given string (using a primitive
-   * TeX parser).
-   *
-   * @param latex the string to be parsed
-   * @param preprocess if do preprocessing
-   *
-   * @throw ex_parse if the string could not be parsed correctly
-   */
-  explicit Formula(const std::string& latex, bool preprocess = true);
-
-  /**
-   * Change the text of the Formula and regenerate the root atom.
-   *
-   * @param latex the latex formula
-   */
-  void setLaTeX(const std::string& latex);
+  /** An empty Formula, for the front end (front/lower.h) to build into.
+   *  Nothing here parses LaTeX any more: the front end does. */
+  Formula() = default;
 
   const std::vector<sptr<MiddleAtom>>& middle();
 
   /** Inserts an atom at the end of the current formula. */
   Formula* add(const sptr<Atom>& a);
-
-  /** Convert this Formula into a box, with the given environment. */
-  sptr<Box> createBox(Env& env);
 
   /** Test if this formula is in array mode. */
   virtual bool isArrayMode() const { return false; }
@@ -91,6 +54,11 @@ public:
    * @return the predefined Formula or nullptr if not found
    */
   static sptr<Formula> get(const std::string& name);
+
+  /** Whether `name` is a predefined Formula, without parsing it. */
+  static bool isPredefined(const std::string& name) {
+    return _predefFormulaStrs.count(name) != 0;
+  }
 
   virtual ~Formula() = default;
 };
@@ -104,6 +72,8 @@ public:
   std::vector<std::vector<sptr<Atom>>> _array;
   std::map<int, std::vector<sptr<CellSpecifier>>> _rowSpecifiers;
   std::map<std::string, std::vector<sptr<CellSpecifier>>> _cellSpecifiers;
+  /** `\\[len]`: extra space below a row, by row index. */
+  std::map<int, Dimen> _rowGaps;
 
   ArrayFormula();
 
@@ -116,6 +86,9 @@ public:
   void addRow();
 
   void addRowSpecifier(const sptr<CellSpecifier>& spe);
+
+  /** Extra space below the current row, as `\\[len]` asks for. */
+  void addRowGap(const Dimen& gap);
 
   void addCellSpecifier(const sptr<CellSpecifier>& spe);
 

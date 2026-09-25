@@ -5,6 +5,7 @@
 #include "core/formula.h"
 #include "env/env.h"
 #include "macro/macro.h"
+#include "macro/macro_args.h"
 
 namespace microtex {
 
@@ -18,9 +19,9 @@ const std::string s_empty;
 bool s_registered = false;
 
 // Delegate for \gmfontfamily{name}{content}. args[0] is the macro name.
-sptr<Atom> font_family_macro_delegate(Parser& tp, std::vector<std::string>& args) {
-    const int index = register_font_family(args[1]);
-    const auto atom = Formula(tp, args[2], false, false)._root;
+sptr<Atom> font_family_macro_delegate(CommandArgs& args) {
+    const int index = register_font_family(args.text(1));
+    const auto atom = args.formula(2, false);
     if (index == 0) return atom;  // registry full: render, just unstyled
     return sptr<Atom>(new FontFamilyAtom(index, atom));
 }
@@ -32,8 +33,8 @@ sptr<Atom> font_family_macro_delegate(Parser& tp, std::vector<std::string>& args
 // upstream cannot express: it names the reserved family, so a \textrm inside
 // \textsf{} or \texttt{} returns to the caller's font instead of inheriting
 // sans or mono.
-sptr<Atom> text_rm_macro_delegate(Parser& tp, std::vector<std::string>& args) {
-    const auto atom = Formula(tp, args[1], false, false)._root;
+sptr<Atom> text_rm_macro_delegate(CommandArgs& args) {
+    const auto atom = args.formula(1, false);
     const auto styled = sptrOf<FontStyleAtom>(FontStyle::rm, false, atom, true);
     return sptr<Atom>(new FontFamilyAtom(kDefaultFamilyIndex, styled));
 }
@@ -85,8 +86,8 @@ sptr<Box> FontFamilyAtom::createBox(Env& env) {
 
 void register_font_family_macro() {
     if (s_registered) return;
-    MacroInfo::add("gmfontfamily", new PreDefMacro(2, font_family_macro_delegate));
-    MacroInfo::add("textrm", new PreDefMacro(1, text_rm_macro_delegate));
+    MacroInfo::add("gmfontfamily", new CommandMacro(2, font_family_macro_delegate));
+    MacroInfo::add("textrm", new CommandMacro(1, text_rm_macro_delegate));
     s_registered = true;
 }
 
