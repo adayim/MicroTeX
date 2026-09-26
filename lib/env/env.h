@@ -221,12 +221,16 @@ public:
    */
   template <typename F>
   auto withFontStyle(const FontStyle style, bool isMathMode, F&& f) -> decltype(f(*this)) {
-    auto oldStyle = isMathMode ? _mathFontStyle : _textFontStyle;
     auto& target = isMathMode ? _mathFontStyle : _textFontStyle;
+    // Put back on every way out: the lowering carries on past a command
+    // that throws, and a style left set would reach everything after it.
+    struct Restore {
+      FontStyle& target;
+      FontStyle old;
+      ~Restore() { target = old; }
+    } restore{target, target};
     target = style;
-    auto result = f(*this);
-    target = oldStyle;
-    return result;
+    return f(*this);
   }
 };
 

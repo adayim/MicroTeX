@@ -154,6 +154,11 @@ struct Expander::Impl {
   int atLetter = 0;
   // Set after runaway expansion in recover mode: the input ends there.
   bool halted = false;
+  // Where the input ends for now (Expander::endInputAt()), and the first
+  // token past that, read and held back until the end moves on.
+  std::uint32_t limit = UINT32_MAX;
+  bool holding = false;
+  ExpToken held;
   // Set when a delimited macro's use does not fit its definition: the
   // call is dropped (see readDelimitedArgs()).
   bool abandoned = false;
@@ -204,6 +209,7 @@ struct Expander::Impl {
         f.pushback.pop_back();
         return t;
       }
+      if (f.root && holding) return endBeforeHeld();
       Token t = f.lexer->next();
       const std::string_view lead = f.buf.substr(t.leadStart, t.span.offset - t.leadStart);
       if (t.kind == TokKind::end && !f.root) {
@@ -218,8 +224,42 @@ struct Expander::Impl {
       e.text = f.buf.substr(t.span.offset, t.span.length);
       e.tok = std::move(t);
       if (!f.root) e.tok.span = f.origin;
+      if (f.root && e.tok.kind != TokKind::end && e.tok.span.offset >= limit) {
+        held = std::move(e);
+        holding = true;
+        return endBeforeHeld();
+      }
       return e;
     }
+  }
+
+  /** The end of the input as it is for now: where the held token is. */
+  ExpToken endBeforeHeld() const {
+    ExpToken e;
+    e.tok.kind = TokKind::end;
+    e.tok.span = held.tok.span;
+    e.tok.span.length = 0;
+    return e;
+  }
+
+  void endInputAt(std::uint32_t offset) {
+    limit = offset;
+    // An end read at the old limit was not the input's.
+    for (Frame& f : frames) {
+      auto& p = f.pushback;
+      p.erase(std::remove_if(p.begin(), p.end(),
+                             [](const ExpToken& t) { return t.tok.kind == TokKind::end; }),
+              p.end());
+    }
+    if (holding && held.tok.span.offset < limit) {
+      // Read after anything put back before it.
+      auto& root = frames.front().pushback;
+      root.insert(root.begin(), std::move(held));
+      holding = false;
+    }
+    // The groups begun before it end with it, and what they defined.
+    depth = 0;
+    endLocalGroup();
   }
 
   void unread(ExpToken t) {
@@ -739,6 +779,8 @@ struct Expander::Impl {
         open.tok.environment = !transparent             ? (isDisplayEnvironment(name) ? 3 : 1)
                                : isFloatEnvironment(name) ? 4
                                : name == "center"        ? 5
+                               : name == "flushleft"     ? 6
+                               : name == "flushright"    ? 7
                                                           : 2;
       }
       frames.back().pushback.push_back(std::move(open));
@@ -1135,6 +1177,10 @@ std::vector<std::string> preludeTransparentEnvironmentNames() {
 ExpandedToken Expander::next() {
   ExpToken e = _impl->nextExpanded();
   return {std::move(e.tok), std::move(e.lead), std::string(e.text)};
+}
+
+void Expander::endInputAt(std::uint32_t offset) {
+  _impl->endInputAt(offset);
 }
 
 void Expander::setCatcode(c32 ch, Cat cat) {

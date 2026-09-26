@@ -3,6 +3,7 @@
 
 #include "atom/atom.h"
 #include "atom/atom_char.h"
+#include "atom/atom_row.h"
 #include "atom/atom_space.h"
 #include "box/box_group.h"
 #include "box/box_single.h"
@@ -76,6 +77,9 @@ private:
   // `X` columns (tabularx's): they share the text width the other columns
   // leave, and wrap to it as p{} does. Without a text width they are `l`.
   std::vector<int> _fillCols;
+  // How the lines of a paragraph column (p{}, X) are aligned, from a
+  // `>{\centering}` or `>{\raggedleft}` before it; left when not here.
+  std::map<int, Alignment> _lineAligns;
 
   MatrixType _matType;
   bool _isPartial;
@@ -83,26 +87,29 @@ private:
 
   void parsePositions(std::string opt, std::vector<Alignment>& lpos);
 
+  Alignment lineAlign(int col) const;
+
   sptr<Box> generateMulticolumn(
     Env& env,
     const sptr<Box>& b,
-    const float* hsep,
-    const float* colWidth,
+    const std::vector<float>& hsep,
+    const std::vector<float>& colWidth,
     int i,
     int j
   );
 
   static void recalculateLine(
     int rows,
-    sptr<Box>** boxarr,
+    std::vector<std::vector<sptr<Box>>>& boxarr,
     std::vector<sptr<Atom>>& multiRows,
-    float* height,
-    float* depth,
+    std::vector<float>& height,
+    std::vector<float>& depth,
     float drt,
     float vspace
   );
 
-  float* getColumnSep(Env& env, float width);
+  /** The space before each column and after the last: `cols + 1` values. */
+  std::vector<float> getColumnSep(Env& env, float width);
 
   void applyCell(WrapperBox& box, int i, int j);
 
@@ -227,8 +234,14 @@ public:
 
   MultiRowAtom() = delete;
 
+  // An argument that could not be built is null: an empty cell then. The
+  // row count is kept where the row arithmetic (`r + n`, abs()) cannot
+  // overflow; a table has far fewer rows than that.
   MultiRowAtom(int n, const std::string& option, const sptr<Atom>& rows)
-      : _rows(rows), _i(0), _j(0), _n(n == 0 ? 1 : n) {}
+      : _rows(rows != nullptr ? rows : sptrOf<RowAtom>()),
+        _i(0),
+        _j(0),
+        _n(n == 0 ? 1 : std::max(-(1 << 20), std::min(n, 1 << 20))) {}
 
   inline void setRowColumn(int r, int c) {
     _i = r;

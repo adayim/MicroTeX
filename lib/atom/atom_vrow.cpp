@@ -49,6 +49,8 @@ void VRowAtom::addGapAfterLast(const Dimen& gap) {
 
 sptr<Box> VRowAtom::createBox(Env& env) {
   auto vb = sptrOf<VBox>();
+  // Interline space is what makes these a label's lines (getAsVRow()).
+  vb->_rows = _addInterline;
   auto lineSpace = sptrOf<StrutBox>(0.f, env.lineSpace(), 0.f, 0.f);
   // `\\[len]`: extra space below an element that has one.
   const auto gapAfter = [&](size_t i) {
@@ -84,9 +86,11 @@ sptr<Box> VRowAtom::createBox(Env& env) {
       widest = std::max(widest, boxes.back()->_width);
     }
     for (size_t i = 0; i < size; i++) {
-      // A display with no text width to centre in centres on the widest line.
-      if (env.textWidth() == POS_INF && dynamic_cast<DisplayAtom*>(_elements[i].get()) != nullptr) {
-        boxes[i] = sptrOf<HBox>(boxes[i], widest, Alignment::center);
+      // A display, or a centred or right-aligned line, with no text width
+      // to align in is aligned on the widest line.
+      const auto* display = dynamic_cast<DisplayAtom*>(_elements[i].get());
+      if (env.textWidth() == POS_INF && display != nullptr) {
+        boxes[i] = sptrOf<HBox>(boxes[i], widest, display->alignment());
       }
       vb->add(boxes[i]);
       if (i < size - 1) gapAfter(i);
@@ -116,9 +120,9 @@ sptr<Box> DisplayAtom::createBox(Env& env) {
   auto box = _base->createBox(env);
   const float width = env.textWidth();
   if (width == POS_INF) return box;
-  if (box->_width <= width) return sptrOf<HBox>(box, width, Alignment::center);
+  if (box->_width <= width) return sptrOf<HBox>(box, width, _align);
   // Too wide for the line: broken as any line is, and each line it makes
-  // centred -- not justified, as LaTeX's \centering leaves them.
+  // aligned -- not justified, as LaTeX's \centering leaves them.
   const bool justify = BoxSplitter::_justify;
   BoxSplitter::_justify = false;
   const auto [split, lines] = BoxSplitter::split(box, width, env.lineSpace());
@@ -126,15 +130,29 @@ sptr<Box> DisplayAtom::createBox(Env& env) {
   const auto vb = std::dynamic_pointer_cast<VBox>(lines);
   if (!split || vb == nullptr) return box;
   auto out = sptrOf<VBox>();
+  out->_lines = true;
   for (const auto& line : vb->_children) {
     if (std::dynamic_pointer_cast<HBox>(line) != nullptr) {
-      out->add(sptrOf<HBox>(line, width, Alignment::center));
+      out->add(sptrOf<HBox>(line, width, _align));
     } else {
       out->add(line);  // the space between lines
     }
   }
   return out;
 }
+
+namespace {
+
+// The baseline of the last line in `b`, from its top: a paragraph broken
+// into lines is a column whose own baseline is its first line.
+float lastBaseline(const sptr<Box>& b) {
+  const auto v = std::dynamic_pointer_cast<VBox>(b);
+  if (v == nullptr || !v->_lines || v->_children.empty()) return b->_height;
+  const auto& last = v->_children.back();
+  return v->_height + v->_depth - (last->_height + last->_depth) + lastBaseline(last);
+}
+
+}  // namespace
 
 sptr<Box> MinipageAtom::createBox(Env& env) {
   if (_body == nullptr) return sptrOf<StrutBox>(0.f, 0.f, 0.f, 0.f);
@@ -144,16 +162,9 @@ sptr<Box> MinipageAtom::createBox(Env& env) {
   {
     // The breaker needs word-level runs, as a p{} cell does: folded into
     // one phrase a paragraph could not be broken.
-    const bool merge = RowAtom::_mergeText;
-    RowAtom::_mergeText = false;
-    try {
-      box = env.withTextWidth(measured ? width : env.textWidth(),
-                              [&](Env& e) { return _body->createBox(e); });
-    } catch (...) {
-      RowAtom::_mergeText = merge;
-      throw;
-    }
-    RowAtom::_mergeText = merge;
+    const MergeTextGuard guard(true);
+    box = env.withTextWidth(measured ? width : env.textWidth(),
+                            [&](Env& e) { return _body->createBox(e); });
   }
   if (measured) box = BoxSplitter::split(box, width, env.lineSpace()).second;
 
@@ -164,10 +175,12 @@ sptr<Box> MinipageAtom::createBox(Env& env) {
     vb->add(box);
   }
   // Measured from its top: the body's own height, and where its first and
-  // last baselines are in it.
+  // last baselines are in it -- the last paragraph's last line, when the
+  // breaker broke it.
   const float body = vb->_height + vb->_depth;
   const float first = vb->_children.front()->_height;
-  const float last = body - vb->_children.back()->_depth;
+  const auto& back = vb->_children.back();
+  const float last = body - (back->_height + back->_depth) + lastBaseline(back);
   // A height of its own, taller than the body: the room goes where the
   // inner position puts the body (below it for `t`, above for `b`).
   float total = body;

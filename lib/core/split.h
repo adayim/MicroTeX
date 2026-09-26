@@ -35,6 +35,13 @@ private:
   static float canBreak(std::stack<Position>& stack, const sptr<HBox>& hbox, float width);
 
   /**
+   * The last break inside `hbox`, at any depth, at which the line up to it
+   * is at most `limit` wide: its positions go on `stack`, as canBreak()
+   * gives them, and the line's width is returned. -1 when there is none.
+   */
+  static float lastBreak(std::stack<Position>& stack, const sptr<HBox>& hbox, float limit);
+
+  /**
    * The break to take when the content overruns at child `index`.
    *
    * `cumWidth` and `width` are needed only for breaks that draw a box --
@@ -84,11 +91,11 @@ private:
   static std::vector<float> optimalLineTargets(const sptr<HBox>& hb, float width);
 
   /**
-   * Split every over-wide row of a vertical box. Added so that content
-   * carrying an explicit line break -- `\\`, array/gather/align, and the
-   * itemize/enumerate environments, which all produce a VBox at the top
-   * level -- still honours the requested width. Without it the splitter
-   * would decline such a box wholesale and the text would simply overflow.
+   * Split every over-wide row of a label's lines (VBox::_rows): content
+   * with an explicit line break, `\\` or a document's paragraphs, still
+   * honours the requested width. Any other vertical box -- a fraction,
+   * \underline, an accent, a matrix -- is one box, as in TeX, and is left
+   * whole.
    */
   static std::pair<bool, sptr<Box>> split(
     const sptr<VBox>& vb,

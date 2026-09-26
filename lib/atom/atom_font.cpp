@@ -10,10 +10,12 @@ sptr<Box> FontStyleAtom::createBox(Env& env) {
   // can leave _atom unset; upstream MicroTeX issue #160.
   if (_atom == nullptr) _atom = sptrOf<EmptyAtom>();
   if (_nested) {
-    _mathMode ? env.addMathFontStyle(_style) : env.addTextFontStyle(_style);
-    auto box = _atom->createBox(env);
-    _mathMode ? env.removeMathFontStyle(_style) : env.removeTextFontStyle(_style);
-    return box;
+    // Added to the style around it, which is put back after as it was:
+    // taking the bit out again cleared one that was set before -- the
+    // roman of the prose around a \text, the bold around a \textbf.
+    const FontStyle around = _mathMode ? env.mathFontStyle() : env.textFontStyle();
+    const auto both = static_cast<FontStyle>(static_cast<u16>(around) | static_cast<u16>(_style));
+    return env.withFontStyle(both, _mathMode, [&](Env& e) { return _atom->createBox(e); });
   }
   return env.withFontStyle(_style, _mathMode, [&](Env& e) { return _atom->createBox(e); });
 }

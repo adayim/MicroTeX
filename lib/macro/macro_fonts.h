@@ -9,9 +9,12 @@
 
 namespace microtex {
 
+// \text and \mbox: upright text in the current text font, as amsmath's
+// \text and LaTeX's \mbox set it -- bold inside \textbf, italic inside
+// \textit -- so the style around them is added to, not replaced.
 inline cmdmacro(text) {
   const auto atom = args.formula(1, false);
-  return sptrOf<FontStyleAtom>(FontStyle::rm, false, atom);
+  return sptrOf<FontStyleAtom>(FontStyle::rm, false, atom, true);
 }
 
 // \oldstylenums{digits}: the digits as text. Old-style figures are a font

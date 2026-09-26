@@ -66,15 +66,16 @@ std::string_view preludeSource() {
 \newenvironment{figure}[1][]{}{}
 \newenvironment{figure*}[1][]{}{}
 \newenvironment{center}{}{}
+\newenvironment{flushleft}{}{}
+\newenvironment{flushright}{}{}
 \newenvironment{tabular*}[2]{\begin{tabular}{#2}}{\end{tabular}}
 \newcommand{\maketitle}{}
 \newcommand{\title}[1]{}
 \newcommand{\author}[1]{}
 \newcommand{\label}[1]{}
 \newcommand{\DeclareGraphicsExtensions}[1]{}
-\newcommand{\raggedright}{}
-\newcommand{\raggedleft}{}
 \newcommand{\flushleft}{}
+\newcommand{\arraybackslash}{}
 \newcommand{\flushright}{}
 \newcommand{\relax}{}
 \newcommand{\smallskip}{\vspace{0.25em}}
@@ -83,6 +84,7 @@ std::string_view preludeSource() {
 \newcommand{\hfill}{\quad}
 \newcommand{\vfill}{\vspace{1em}}
 \newcommand{\emph}[1]{\textit{#1}}
+\newcommand{\textscale}[2]{{\relscale{#1}#2}}
 \newcommand{\em}{\it}
 \newenvironment{abstract}{\small\begin{center}\textbf{Abstract}\end{center}}{\par}
 \newenvironment{thebibliography}[1]{\section*{References}\begin{enumerate}[{[}\arabic*{]}]}{\end{enumerate}}

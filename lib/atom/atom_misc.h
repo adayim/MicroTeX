@@ -153,6 +153,19 @@ public:
   sptr<Box> createBox(Env& env) override;
 };
 
+/** ulem's \uline and \sout: a rule under its text or through it, which
+ *  breaks across lines with the text (RuleDecorBox). */
+class RuleDecorAtom : public Atom {
+private:
+  sptr<Atom> _base;
+  bool _under;
+
+public:
+  RuleDecorAtom(const sptr<Atom>& base, bool under) : _base(base), _under(under) {}
+
+  sptr<Box> createBox(Env& env) override;
+};
+
 /**
  * An atom representing another atom vertically centered with respect to
  * the math axis

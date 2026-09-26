@@ -124,6 +124,14 @@ public:
    *  time. Use either this or expandToText(), not both. */
   ExpandedToken next();
 
+  /** The input ends before its first token at or past byte `offset`, until
+   *  this is called again with a later one: then reading goes on from
+   *  there. Every reader sees that end, a macro's arguments too, so what
+   *  began before it is closed there -- environments as at the end of the
+   *  input, and the groups and what was defined in them. A whole file's
+   *  preamble is read so, and its body up to \end{document}. */
+  void endInputAt(std::uint32_t offset);
+
   /** Change a catcode from the next token on, for every source being read
    *  (the parser reads a URL with `%` as a character this way). */
   void setCatcode(c32 ch, Cat cat);

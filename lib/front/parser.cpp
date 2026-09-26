@@ -17,8 +17,13 @@ bool isOther(const Token& t, char c) {
   return t.kind == TokKind::character && t.cat == Cat::other && t.cp == static_cast<unsigned char>(c);
 }
 
-bool isRule(const std::string& name) {
-  return name == "hline" || name == "thickhline" || name == "cline" || name == "specialrule";
+// `b` is a `$` right after the `$` `a`, making `$$`: next to it in the
+// source, or in the same macro's expansion (which is where both are
+// placed). A definition between them -- `$\newcommand{..}{..}$`, which
+// the expander consumes -- is something between them, as it is to TeX.
+bool secondShift(const ExpandedToken& a, const ExpandedToken& b) {
+  if (!b.tok.isChar(Cat::mathShift) || !b.lead.empty()) return false;
+  return b.tok.span.offset == a.tok.span.offset + 1 || b.tok.span.offset == a.tok.span.offset;
 }
 
 std::string trim(const std::string& s) {
@@ -59,6 +64,19 @@ Parser::Parser(Expander& input, Ast& ast, Diagnostics& diagnostics, ParserOption
 // --- tokens ------------------------------------------------------------------
 
 ExpandedToken Parser::next() {
+  // After a capacity error (a runaway macro, nesting past the limit) the
+  // parse is an error whatever follows, so reading ends there, the tokens
+  // put back included, as the expander's input ends. Working on through
+  // what a runaway left collected -- an optional argument never closed,
+  // read again at every level it nests -- cost seconds and gigabytes.
+  if (_diags.firstError() != nullptr) {
+    if (!_ahead.empty()) _ahead.pop_back();
+    ExpandedToken end;
+    end.tok.kind = TokKind::end;
+    _lastReplay = false;
+    _consumed++;
+    return end;
+  }
   ExpandedToken t;
   bool replay = false;
   if (!_ahead.empty()) {
@@ -193,7 +211,33 @@ NodeId Parser::character(const ExpandedToken& t, Mode mode) {
 
 NodeId Parser::parse() {
   _prose = (_opts.lineEndsBreak || _opts.parBreaks) && _opts.startMode == Mode::text;
-  _ast.root = parseList(_opts.startMode, Stop{}, SourceSpan{});
+  std::vector<NodeId> items;
+  _depth++;
+  if (_opts.bodyStart > 0) {
+    // A whole file: its preamble is read as if the input ended where the
+    // body begins -- for every reader, a macro's arguments included -- so
+    // that nothing begun in it (a declaration such as \large, an
+    // environment, \over) takes the body into what is read only for what
+    // it defines. Its warnings are about settings a grob cannot honour.
+    _in.endInputAt(_opts.bodyStart);
+    {
+      const Diagnostics::Quiet quiet(_diags);
+      readItems(_opts.startMode, Stop{}, items);
+    }
+    _ast.preamble = static_cast<std::uint32_t>(items.size());
+    // That end was not the input's.
+    _ahead.erase(std::remove_if(_ahead.begin(), _ahead.end(),
+                                [](const Pending& p) { return p.tok.tok.kind == TokKind::end; }),
+                 _ahead.end());
+  }
+  // What follows \end{document} is never read, as LaTeX never reads it.
+  _in.endInputAt(_opts.bodyEnd);
+  readItems(_opts.startMode, Stop{}, items);
+  _depth--;
+  Node root;
+  root.kind = NodeKind::list;
+  root.mode = _opts.startMode;
+  _ast.root = _ast.add(std::move(root), items);
   // Anything left over is after a stray closing token at the top level.
   while (true) {
     ExpandedToken t = next();
@@ -229,6 +273,16 @@ NodeId Parser::parseList(Mode mode, const Stop& stop, SourceSpan at) {
     return emptyList(at, mode);
   }
   _depth++;
+  readItems(mode, stop, items);
+  _depth--;
+  Node n;
+  n.kind = NodeKind::list;
+  n.mode = mode;
+  n.span = at;
+  return _ast.add(std::move(n), items);
+}
+
+void Parser::readItems(Mode mode, const Stop& stop, std::vector<NodeId>& items) {
   _listDone = false;
   _rowEnded = false;
   while (true) {
@@ -253,12 +307,6 @@ NodeId Parser::parseList(Mode mode, const Stop& stop, SourceSpan at) {
     }
     if (_rowEnded && stop.cellTop) break;
   }
-  _depth--;
-  Node n;
-  n.kind = NodeKind::list;
-  n.mode = mode;
-  n.span = at;
-  return _ast.add(std::move(n), items);
 }
 
 bool Parser::parseItem(Mode mode, const Stop& stop, std::vector<NodeId>& items) {
@@ -317,8 +365,7 @@ bool Parser::parseItem(Mode mode, const Stop& stop, std::vector<NodeId>& items) 
       return true;
     case Cat::mathShift: {
       if (mode == Mode::math) return true;  // the old parser ignored `$` in math
-      const ExpandedToken& n = peek();
-      const bool display = _restricted == 0 && n.tok.isChar(Cat::mathShift) && n.lead.empty();
+      const bool display = _restricted == 0 && secondShift(t, peek());
       if (display) next();
       items.push_back(parseMath(t, display, "", stop.group));
       return true;
@@ -605,7 +652,7 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
       const NodeId shortTitle = parseArgument(spec->args[0], mode, who);
       return _ast.add(std::move(n), {shortTitle, parseArgument(spec->args[1], Mode::text, who)});
     }
-    if (name == "noindent" || name == "centering") return _ast.add(std::move(n), {});
+    if (name == "noindent" || isLineAlignment(name)) return _ast.add(std::move(n), {});
     if (name == "caption") {
       // A line of text, ended as the prelude used to end it, with a line
       // break. A document also starts it on a line of its own (lower.cpp).
@@ -1133,7 +1180,9 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
     for (const ArgSpec& a : spec->args) kids.push_back(parseArgument(a, mode, "\\begin{" + name + "}"));
   }
   if (spec != nullptr && spec->body == EnvBody::text) {
-    // Paragraphs, in text whatever the mode around it.
+    // Paragraphs, in text whatever the mode around it: a blank line in a
+    // minipage in a document is a paragraph, as it is outside one.
+    const Scoped text(_prose, prose.was);
     kids.push_back(parseTextBody(name, at));
     return _ast.add(std::move(n), kids);
   }
@@ -1274,10 +1323,7 @@ NodeId Parser::parseMath(const ExpandedToken& open, bool display, const std::str
   if (closeSymbol.empty()) {
     if (close.tok.isChar(Cat::mathShift)) {
       closed = true;
-      if (display) {
-        const ExpandedToken& p = peek();
-        if (p.tok.isChar(Cat::mathShift) && p.lead.empty()) next();
-      }
+      if (display && secondShift(close, peek())) next();
     }
   } else {
     closed = close.tok.kind == TokKind::controlSymbol && close.tok.text == closeSymbol;

@@ -2,6 +2,7 @@
 #define GRIDMICROTEX_FRONT_PARSER_H
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -22,12 +23,19 @@ struct ParserOptions {
   /** Mixed mode: a line end in the prose is a line break, a `\\` of its
    *  own -- the one place a label departs from TeX, for R's "\n". Prose is
    *  text reached from the top without passing through math or an
-   *  environment. */
+   *  environment, but for one whose body is text (minipage, an unknown
+   *  one), which is prose as its surroundings are. */
   bool lineEndsBreak = false;
   /** Document mode: a blank line (the lexer's `par` token) in the prose
    *  starts a paragraph. A line end on its own is only a space, as TeX
    *  reads it. */
   bool parBreaks = false;
+  /** A whole file: where its `\begin{document}` starts (0: no preamble)
+   *  and where its `\end{document}` ends. The preamble is read as if the
+   *  input ended at the body (Ast::preamble counts its items), and nothing
+   *  after the body is read at all. */
+  std::uint32_t bodyStart = 0;
+  std::uint32_t bodyEnd = UINT32_MAX;
 };
 
 /**
@@ -135,6 +143,8 @@ private:
   // `const SourceSpan&` taken from a peeked token would name another token's
   // position by the time it is read.
   NodeId parseList(Mode mode, const Stop& stop, SourceSpan at);
+  /** The items of a list up to its stop, appended to `items`. */
+  void readItems(Mode mode, const Stop& stop, std::vector<NodeId>& items);
   /** One item, appended to `items`. False at a stop token. */
   bool parseItem(Mode mode, const Stop& stop, std::vector<NodeId>& items);
   NodeId parseCommand(ExpandedToken t, Mode mode, const Stop& stop,

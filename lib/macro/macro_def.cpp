@@ -287,6 +287,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_bcancel, "bcancel"),
   mac(1, macro_xcancel, "xcancel"),
   mac(1, macro_sout, "sout"),
+  mac(1, macro_uline, "uline"),
   mac(6, macro_zstack, "stackinset"),
   mac(0, macro_nbsp, "nbsp"),
   mac(1, macro_sqrt, "sqrtsign"),

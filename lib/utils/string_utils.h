@@ -7,8 +7,10 @@
 #include <climits>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace microtex {
@@ -32,7 +34,24 @@ inline std::string toString(char val) {
 template <class T>
 inline void valueOf(const std::string& s, T& val) {
   char* endptr = nullptr;
-  val = strtod(s.c_str(), &endptr);
+  const double d = strtod(s.c_str(), &endptr);
+  // A value past T's range is clamped to it: converting it as it is is
+  // undefined (`\cline{1e400-2}`, `\scalebox{1e300}{x}`), and NaN is no
+  // integer at all.
+  if constexpr (std::is_integral_v<T>) {
+    if (d != d) {
+      val = 0;
+    } else if (d <= static_cast<double>(std::numeric_limits<T>::min())) {
+      val = std::numeric_limits<T>::min();
+    } else if (d >= static_cast<double>(std::numeric_limits<T>::max())) {
+      val = std::numeric_limits<T>::max();
+    } else {
+      val = static_cast<T>(d);
+    }
+  } else {
+    const double top = static_cast<double>(std::numeric_limits<T>::max());
+    val = static_cast<T>(d > top ? top : d < -top ? -top : d);
+  }
 }
 
 inline bool str2int(const char* str, size_t len, int& res, int radix) {

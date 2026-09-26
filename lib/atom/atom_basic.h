@@ -102,6 +102,10 @@ private:
   float _sx, _sy;
 
 public:
+  /** The reach of a size declaration (\large), not a box as \scalebox's
+   *  is: its text breaks across lines (DecorBox::_openable). */
+  bool _declaration = false;
+
   ScaleAtom() = delete;
 
   ScaleAtom(const sptr<Atom>& base, float sx, float sy) noexcept

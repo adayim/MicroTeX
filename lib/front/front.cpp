@@ -1,5 +1,7 @@
 #include "front/front.h"
 
+#include <utility>
+
 #include "core/formula.h"
 #include "front/diagnostics.h"
 #include "front/expander.h"
@@ -14,7 +16,7 @@
 namespace microtex::front {
 
 Ast parseLatex(const std::string& latex, Mode mode, Diagnostics& diagnostics, bool lineBreaks,
-               bool paragraphs) {
+               bool paragraphs, std::uint32_t bodyStart, std::uint32_t bodyEnd) {
   ExpanderOptions eo;
   eo.prelude = true;
   eo.recover = true;
@@ -28,6 +30,8 @@ Ast parseLatex(const std::string& latex, Mode mode, Diagnostics& diagnostics, bo
   po.startMode = mode;
   po.lineEndsBreak = lineBreaks;
   po.parBreaks = paragraphs;
+  po.bodyStart = bodyStart;
+  po.bodyEnd = bodyEnd;
   po.isKnownName = [](const std::string& name) {
     return Symbol::get(name.c_str()) != nullptr || Formula::isPredefined(name);
   };
@@ -42,6 +46,9 @@ Diagnostics& lastStore() {
   static Diagnostics last;
   return last;
 }
+
+/** A byte range of the input: [first, second). */
+using BodyRange = std::pair<std::uint32_t, std::uint32_t>;
 
 // The part of `latex` that a LaTeX file draws: from its \begin{document}
 // to the end of its \end{document}. Found as the lexer would find them --
@@ -88,16 +95,14 @@ void buildModern(const std::string& latex, InputMode mode, Formula& formula) {
   // what breaks a row -- a line end in mixed, a blank line in a document.
   const bool prose = mixed || document;
   // A whole LaTeX file: its preamble is read for its definitions and not
-  // drawn, as LaTeX does; nor is what follows \end{document}. Package
-  // settings a grob cannot honour say nothing about it.
+  // drawn, as LaTeX does, and what follows \end{document} is not read.
+  // Package settings a grob cannot honour say nothing about it.
   const BodyRange body = prose ? documentBody(latex) : BodyRange{0, UINT32_MAX};
-  if (body.first > 0) diags.mute(0, body.first);
-  if (body.second != UINT32_MAX) diags.mute(body.second, UINT32_MAX);
-  const Ast ast =
-    parseLatex(latex, prose ? Mode::text : Mode::math, diags, mixed, document);
+  const Ast ast = parseLatex(latex, prose ? Mode::text : Mode::math, diags, mixed, document,
+                             body.first, body.second);
   // A capacity ran out: what was read is not what the input means.
   if (const Diagnostic* e = diags.firstError()) throw ex_parse(e->message);
-  lowerInto(ast, formula, diags, prose, document, body);
+  lowerInto(ast, formula, diags, prose, document);
   lastStore() = std::move(diags);
 }
 

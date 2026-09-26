@@ -224,6 +224,15 @@ ColorBox::ColorBox(const sptr<Box>& box, color fg, color bg) : DecorBox(box) {
   copyMetrics(box);
 }
 
+sptr<Box> ColorBox::around(const sptr<Box>& piece) const {
+  auto c = sptrOf<ColorBox>(piece, _foreground, _background);
+  if (marksSpaces()) {
+    c->_height = _height;
+    c->_depth = _depth;
+  }
+  return c;
+}
+
 void ColorBox::draw(Graphics2D& g2, float x, float y) {
   const color prev = g2.getColor();
   if (!isTransparent(_background)) {
@@ -235,6 +244,29 @@ void ColorBox::draw(Graphics2D& g2, float x, float y) {
   g2.setColor(prev);
 }
 
+/********************************** rule decoration implementation *****************************/
+
+RuleDecorBox::RuleDecorBox(const sptr<Box>& base, float raise, float thickness)
+    : DecorBox(base), _raise(raise), _thickness(thickness) {
+  _type = base->_type;
+  copyMetrics(base);
+  _height = std::max(_height, raise + thickness / 2);
+  _depth = std::max(_depth, thickness / 2 - raise);
+}
+
+sptr<Box> RuleDecorBox::around(const sptr<Box>& piece) const {
+  return sptrOf<RuleDecorBox>(piece, _raise, _thickness);
+}
+
+void RuleDecorBox::draw(Graphics2D& g2, float x, float y) {
+  _base->draw(g2, x, y);
+  // Drawn as RuleBox draws \underline's: a line as thick as the rule.
+  const Stroke oldStroke = g2.getStroke();
+  g2.setStroke(Stroke(_thickness, CAP_BUTT, JOIN_BEVEL));
+  g2.drawLine(x, y - _raise, x + _width, y - _raise);
+  g2.setStroke(oldStroke);
+}
+
 /*************************************** scale box implementation *********************************/
 
 void ScaleBox::init(const sptr<Box>& b, float sx, float sy) {
@@ -244,6 +276,10 @@ void ScaleBox::init(const sptr<Box>& b, float sx, float sy) {
   _height = _sy > 0 ? b->_height * _sy : -b->_depth * _sy;
   _depth = _sy > 0 ? b->_depth * _sy : -b->_height * _sy;
   _shift = b->_shift * _sy;
+}
+
+sptr<Box> ScaleBox::around(const sptr<Box>& piece) const {
+  return sptrOf<ScaleBox>(piece, _sx, _sy);
 }
 
 void ScaleBox::draw(Graphics2D& g2, float x, float y) {

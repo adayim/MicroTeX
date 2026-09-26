@@ -19,11 +19,15 @@ namespace microtex::front {
  * macros and define_macro() macros expanded, then parsed from `mode`.
  * `lineBreaks`: a line end in text is a line break (mixed mode).
  * `paragraphs`: a blank line is a `\par`, which starts a paragraph
- * (document mode). Problems go to `diagnostics`; errors the expander still
+ * (document mode). `bodyStart`, `bodyEnd`: a whole file's body, from its
+ * `\begin{document}` to the end of its `\end{document}`; the preamble
+ * before it is read for what it defines (ParserOptions), and nothing after
+ * it is read. Problems go to `diagnostics`; errors the expander still
  * raises (a redefinition, runaway recursion) are thrown as ex_parse.
  */
 Ast parseLatex(const std::string& latex, Mode mode, Diagnostics& diagnostics,
-               bool lineBreaks = false, bool paragraphs = false);
+               bool lineBreaks = false, bool paragraphs = false, std::uint32_t bodyStart = 0,
+               std::uint32_t bodyEnd = UINT32_MAX);
 
 /**
  * The atoms of `latex`, read by the new front end as `mode` says, into

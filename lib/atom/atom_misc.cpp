@@ -132,6 +132,25 @@ sptr<Box> StrikeThroughAtom::createBox(Env& env) {
   return hb;
 }
 
+sptr<Box> RuleDecorAtom::createBox(Env& env) {
+  const auto b = (_base == nullptr ? sptrOf<EmptyAtom>() : _base)->createBox(env);
+  // One height for the whole run, so a broken rule is straight: under
+  // the run's depth, where \underline puts its rule, or through the middle
+  // of lowercase letters, where \cancel's horizontal stroke goes.
+  float raise, thickness;
+  if (_under) {
+    thickness = env.mathConsts().underbarRuleThickness() * env.scale();
+    const float gap = env.mathConsts().underbarVerticalGap() * env.scale();
+    raise = -(b->_depth + gap + thickness / 2);
+  } else {
+    thickness = env.mathConsts().fractionRuleThickness() * env.scale();
+    raise = env.xHeight() / 2;
+  }
+  auto box = sptrOf<RuleDecorBox>(b, raise, thickness);
+  box->_openable = true;
+  return box;
+}
+
 sptr<Box> VCenterAtom::createBox(Env& env) {
   auto b = _base->createBox(env);
   auto a = env.mathConsts().axisHeight() * env.scale();

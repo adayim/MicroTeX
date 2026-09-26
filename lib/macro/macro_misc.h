@@ -66,8 +66,14 @@ inline cmdmacro(xcancel) {
   return _cancel(CancelAtom::CROSS, args);
 }
 
+// ulem's: a strike-out and an underline that break with their text, which
+// is text in text and math in math.
 inline cmdmacro(sout) {
-  return _cancel(CancelAtom::HORIZONTAL, args);
+  return sptrOf<RuleDecorAtom>(args.formula(1, args.isMathMode()), false);
+}
+
+inline cmdmacro(uline) {
+  return sptrOf<RuleDecorAtom>(args.formula(1, args.isMathMode()), true);
 }
 
 inline cmdmacro(underscore) {
@@ -90,16 +96,17 @@ inline cmdmacro(smash) {
   return sptrOf<SmashedAtom>(args.formula(1), args.text(2));
 }
 
+// As in LaTeX, a phantom of text is text, and of math is math.
 inline cmdmacro(hphantom) {
-  return sptrOf<PhantomAtom>(args.formula(1), true, false, false);
+  return sptrOf<PhantomAtom>(args.formula(1, args.isMathMode()), true, false, false);
 }
 
 inline cmdmacro(vphantom) {
-  return sptrOf<PhantomAtom>(args.formula(1), false, true, true);
+  return sptrOf<PhantomAtom>(args.formula(1, args.isMathMode()), false, true, true);
 }
 
 inline cmdmacro(phantom) {
-  return sptr<Atom>(new PhantomAtom(args.formula(1), true, true, true));
+  return sptrOf<PhantomAtom>(args.formula(1, args.isMathMode()), true, true, true);
 }
 
 inline cmdmacro(surd) {

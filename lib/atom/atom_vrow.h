@@ -50,15 +50,22 @@ public:
 };
 
 /** A display on a line of its own (`\[...\]`, equation, align ... in a
- *  document), centred in the text width as TeX centres one in \hsize. With
- *  no text width, the VRowAtom it is a line of centres it on its widest
- *  line instead. */
+ *  document), centred in the text width as TeX centres one in \hsize; or a
+ *  line of a centred or right-aligned paragraph, broken to the width and
+ *  each of its lines aligned. With no text width, the VRowAtom it is a
+ *  line of centres it on its widest line instead. */
 class DisplayAtom : public Atom {
 private:
   sptr<Atom> _base;
+  Alignment _align;
 
 public:
-  explicit DisplayAtom(const sptr<Atom>& base) : _base(base) {}
+  /** `align`: centred (a display, \centering) or to the right
+   *  (\raggedleft). */
+  explicit DisplayAtom(const sptr<Atom>& base, Alignment align = Alignment::center)
+      : _base(base), _align(align) {}
+
+  Alignment alignment() const { return _align; }
 
   sptr<Box> createBox(Env& env) override;
 };

@@ -31,8 +31,10 @@ inline cmdmacro(overline) {
   return sptrOf<OverUnderBar>(args.formula(1), true);
 }
 
+// A box in both modes, as LaTeX's: in text it underlines text, in the
+// text's own font.
 inline cmdmacro(underline) {
-  return sptrOf<OverUnderBar>(args.formula(1), false);
+  return sptrOf<OverUnderBar>(args.formula(1, args.isMathMode()), false);
 }
 
 inline cmdmacro(Braket) {

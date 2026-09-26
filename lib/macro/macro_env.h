@@ -175,7 +175,11 @@ inline cmdmacro(cline) {
     valueOf(spec.substr(dash + 1), b);
   }
   auto at = sptrOf<HlineAtom>();
-  // LaTeX columns are 1-indexed; HlineAtom uses 0-indexed.
+  // LaTeX columns are 1-indexed; HlineAtom uses 0-indexed. Kept in a range
+  // `- 1` cannot overflow; MatrixAtom clamps them to the table's columns.
+  constexpr int most = 1 << 20;
+  a = std::min(std::max(a, 0), most);
+  b = std::min(std::max(b, 0), most);
   at->setColumnRange(a - 1, b - 1);
   return at;
 }

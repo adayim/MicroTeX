@@ -203,6 +203,23 @@ public:
   AtomType rightType() const override;
 };
 
+/** RowAtom::_mergeText turned off for a scope, as the line breaker needs
+ *  it (p{} and X cells, a minipage), and put back on every way out:
+ *  createBox() can throw, and a flag left cleared would stop every later
+ *  row in the formula from merging. */
+class MergeTextGuard {
+public:
+  explicit MergeTextGuard(bool disable) : _saved(RowAtom::_mergeText) {
+    if (disable) RowAtom::_mergeText = false;
+  }
+  ~MergeTextGuard() { RowAtom::_mergeText = _saved; }
+  MergeTextGuard(const MergeTextGuard&) = delete;
+  MergeTextGuard& operator=(const MergeTextGuard&) = delete;
+
+private:
+  const bool _saved;
+};
+
 }  // namespace microtex
 
 #endif  // MICROTEX_ATOM_ROW_H

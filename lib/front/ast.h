@@ -98,6 +98,9 @@ public:
   std::size_t size() const { return _nodes.size(); }
 
   NodeId root = kNoNode;
+  /** How many of the root's first items are a whole file's preamble: read
+   *  for what they define, not drawn. */
+  std::uint32_t preamble = 0;
 
 private:
   std::vector<Node> _nodes;

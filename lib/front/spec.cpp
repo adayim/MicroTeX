@@ -102,6 +102,9 @@ struct Table {
     add({"tiny", "scriptsize", "footnotesize", "small", "normalsize", "large", "Large",
          "LARGE", "huge", "Huge"},
         "", Shape::declaration);
+    // relsize's: the size times a factor, to the end of the group
+    // (\textscale{f}{text} is the prelude's).
+    add({"relscale"}, "r", Shape::declaration);
     add({"big", "Big", "bigg", "Bigg", "bigl", "Bigl", "biggl", "Biggl", "bigr", "Bigr",
          "biggr", "Biggr"},
         "l");
@@ -114,9 +117,10 @@ struct Table {
     add({"sideset", "prescript"}, "mmm");
     add({"overrightarrow", "overleftarrow", "overleftrightarrow", "underrightarrow",
          "underleftarrow", "underleftrightarrow", "overbrace", "overbracket", "overparen",
-         "underbrace", "underbracket", "underparen", "overline", "underline", "Braket",
-         "Set"},
+         "underbrace", "underbracket", "underparen", "overline", "Braket", "Set"},
         "m");
+    // A box in both modes, as LaTeX's: text in text, math in math.
+    add({"underline"}, "c");
     // \( and \[ open math; \left, \middle and \right delimit a group.
     add({"(", "["}, "", Shape::prefix, Bare::none, true);
     add({"ensuremath"}, "m", Shape::prefix, Bare::none, true);
@@ -179,9 +183,10 @@ struct Table {
         "");
     add({"st"}, "c");
     add({"longdiv"}, "rr");
-    add({"cancel", "bcancel", "xcancel", "sout", "sqrtsign", "phantom", "hphantom",
-         "vphantom"},
-        "m");
+    add({"cancel", "bcancel", "xcancel", "sqrtsign"}, "m");
+    // ulem's strike-out and underline, which break with their text, and the
+    // phantoms: text in text, math in math, as in LaTeX.
+    add({"sout", "uline", "phantom", "hphantom", "vphantom"}, "c");
     add({"stackinset"}, "rdrdmm");
     // Row ends, and a line break outside an array.
     add({"cr", "\\"}, "", Shape::prefix, Bare::none, true);
@@ -195,7 +200,7 @@ struct Table {
         true);
     add({"noindent"}, "", Shape::prefix, Bare::none, true);
     // Centres the lines of a document until the end of its group.
-    add({"centering"}, "", Shape::prefix, Bare::none, true);
+    add({"centering", "raggedleft", "raggedright"}, "", Shape::prefix, Bare::none, true);
     // A float's caption: a line of text, unnumbered, where it is written.
     add({"caption"}, "Rt", Shape::prefix, Bare::none, true);
     // Commands a single grob cannot carry out: there is no bibliography to
@@ -262,6 +267,14 @@ bool isBlockEnvironment(const std::string& name) {
 
 bool isCitation(const std::string& name) {
   return name == "cite" || name == "citep" || name == "citet" || name == "citealp";
+}
+
+bool isRule(const std::string& name) {
+  return name == "hline" || name == "thickhline" || name == "cline" || name == "specialrule";
+}
+
+bool isLineAlignment(const std::string& name) {
+  return name == "centering" || name == "raggedleft" || name == "raggedright";
 }
 
 bool isDisplayEnvironment(const std::string& name) {
