@@ -1,0 +1,1 @@
+\newenvironment{e}[1][d]{[#1}{]}\begin{e}[x]y\end{e}\makeatletter\def\a@b##1{Q}\a@b

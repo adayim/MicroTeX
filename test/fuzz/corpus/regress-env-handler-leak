@@ -1,0 +1,1 @@
+\newenvirvironment{e}[1][d]{[{[#1}{]}\begin{e}[x]y\endme}\makeatletr\def\a@b##1\a@b

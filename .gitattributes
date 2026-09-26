@@ -1,0 +1,4 @@
+# Shell scripts run in bash, which a CRLF checkout breaks.
+*.sh text eol=lf
+# Fuzz inputs are bytes: a checkout must not change their line ends.
+test/fuzz/corpus/** -text

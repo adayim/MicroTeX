@@ -38,13 +38,21 @@ if (HAVE_LOG)
     add_definitions(-DHAVE_LOG)
 endif ()
 option(BUILD_STATIC "If build for static library" OFF)
-if (BUILD_STATIC)
+option(MICROTEX_TESTS "Build the tests in test/ (run them with ctest)" OFF)
+option(MICROTEX_FUZZ "Build the libFuzzer targets in test/fuzz/ (clang only)" OFF)
+# The tests reach the engine's internals, which a shared library hides.
+if (BUILD_STATIC OR MICROTEX_TESTS OR MICROTEX_FUZZ)
     set(_BUILD_STATIC ON)
 endif ()
 
 include(MicroTeXInstall.cmake)
 
 add_subdirectory(lib)
+
+if (MICROTEX_TESTS OR MICROTEX_FUZZ)
+    enable_testing()
+    add_subdirectory(test)
+endif ()
 
 file(COPY res DESTINATION .)
 

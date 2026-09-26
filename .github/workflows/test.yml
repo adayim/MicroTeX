@@ -1,0 +1,52 @@
+# Every step is test/run.sh, so a local run checks exactly what CI checks.
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (${{ matrix.cxx }}, bidi ${{ matrix.bidi }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cxx: g++, bidi: "ON" }
+          - { cxx: clang++, bidi: "OFF" }
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libfreetype-dev libfribidi-dev libclang-rt-18-dev
+      - run: test/run.sh test ${{ matrix.bidi }}
+        env:
+          CXX: ${{ matrix.cxx }}
+
+  strict:
+    name: strict warnings
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libfreetype-dev libfribidi-dev
+      - run: CXX=g++ test/run.sh strict
+      - run: CXX=clang++ test/run.sh strict
+
+  fuzz:
+    name: fuzz (past findings, then 2 min each)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libfreetype-dev libclang-rt-18-dev
+      - run: test/run.sh fuzz 120
+        env:
+          CXX: clang++
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: build/fuzz-artifacts

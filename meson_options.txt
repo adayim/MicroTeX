@@ -5,9 +5,6 @@ option('TARGET_DEVEL', type : 'boolean', value : true)
 # generate documentation for gtk (requires TAGET_DEVEL)
 option('TARGET_DOCUMENTATION', type: 'boolean', value: false)
 
-# if build tests
-option('TEST', type: 'boolean', value: true)
-
 # if build cairo
 option('CAIRO', type: 'boolean', value: true)
 # if build gtkmm example

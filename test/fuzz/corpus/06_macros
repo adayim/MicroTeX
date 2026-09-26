@@ -1,0 +1,1 @@
+\newcommand{\sq}[1]{#1^2}\def\a#1.{<#1>}\sq x \a b.\let\b\frac\b12

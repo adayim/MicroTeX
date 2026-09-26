@@ -29,7 +29,7 @@ color Graphics2D_Recorder::getColor() const { return _currentColor; }
 void Graphics2D_Recorder::setStroke(const Stroke& s) { _currentStroke = s; }
 const Stroke& Graphics2D_Recorder::getStroke() const { return _currentStroke; }
 void Graphics2D_Recorder::setStrokeWidth(float w) { _currentStroke.lineWidth = w; }
-void Graphics2D_Recorder::setDash(const std::vector<float>& dash) { /* ignored */ }
+void Graphics2D_Recorder::setDash(const std::vector<float>&) { /* ignored */ }
 std::vector<float> Graphics2D_Recorder::getDash() { return {}; }
 
 sptr<Font> Graphics2D_Recorder::getFont() const { return _currentFont; }
@@ -123,7 +123,7 @@ void Graphics2D_Recorder::drawGlyph(u16 glyph, float x, float y) {
     _records.push_back(std::move(rec));
 }
 
-bool Graphics2D_Recorder::beginPath(i32 id) {
+bool Graphics2D_Recorder::beginPath(i32) {
     _currentPath.clear();
     return false;
 }
@@ -174,7 +174,7 @@ void Graphics2D_Recorder::closePath() {
     _currentPath.push_back(seg);
 }
 
-void Graphics2D_Recorder::fillPath(i32 id) {
+void Graphics2D_Recorder::fillPath(i32) {
     DrawRecord rec;
     rec.type = DrawRecord::PATH;
     rec.col = _currentColor;

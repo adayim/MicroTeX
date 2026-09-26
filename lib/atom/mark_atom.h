@@ -33,7 +33,7 @@ class MarkAtom : public Atom {
 public:
     explicit MarkAtom(std::string name) : _name(std::move(name)) {}
 
-    sptr<Box> createBox(Env& env) override {
+    sptr<Box> createBox(Env&) override {
         return sptr<Box>(new MarkBox(_name));
     }
 
