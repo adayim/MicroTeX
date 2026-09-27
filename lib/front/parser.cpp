@@ -1218,7 +1218,11 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
 
   const std::size_t mark = startRecording();
   if (spec != nullptr && spec->body == EnvBody::raw) {
-    // Kept as text up to the matching \end{name}, nested ones counted.
+    // Kept as text up to the \end that closes it. Every environment begun
+    // in it is counted, so the first \end with none open is that one,
+    // whatever its name: LaTeX's "\begin{itemize} ended by \end{enumerate}"
+    // ends the list, where looking for \end{itemize} read the rest of the
+    // input into its last item.
     int depth = 0;
     while (true) {
       ExpandedToken t = next();
@@ -1234,28 +1238,30 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
       std::string inner;
       ExpandedToken brace = next();
       used++;
-      if (brace.tok.isChar(Cat::beginGroup)) {
-        while (true) {
-          ExpandedToken u = next();
-          if (u.tok.kind == TokKind::end) {
-            unread(std::move(u));
-            break;
-          }
-          used++;
-          if (u.tok.isChar(Cat::endGroup)) break;
-          inner += u.text;
-        }
-      } else {
+      if (!brace.tok.isChar(Cat::beginGroup)) {
         unread(std::move(brace));
-        used--;
+        continue;
       }
-      if (trim(inner) != name) continue;
+      while (true) {
+        ExpandedToken u = next();
+        if (u.tok.kind == TokKind::end) {
+          unread(std::move(u));
+          break;
+        }
+        used++;
+        if (u.tok.isChar(Cat::endGroup)) break;
+        inner += u.text;
+      }
       if (open) {
         depth++;
         continue;
       }
       if (depth-- > 0) continue;
-      // The body is everything before this `\end{name}`.
+      const std::string closing = trim(inner);
+      if (closing != name) {
+        _diags.warn(t.tok.span, "\\end{" + closing + "} ends \\begin{" + name + "}");
+      }
+      // The body is everything before this \end.
       n.raw = stopRecording(mark, used);
       return _ast.add(std::move(n), kids);
     }

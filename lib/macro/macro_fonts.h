@@ -17,6 +17,12 @@ inline cmdmacro(text) {
   return sptrOf<FontStyleAtom>(FontStyle::rm, false, atom, true);
 }
 
+// \textnormal: LaTeX's \normalfont -- upright, medium, in the caller's
+// family -- whatever is around it, so the style around it is replaced.
+inline cmdmacro(textnormal) {
+  return sptrOf<FontStyleAtom>(FontStyle::rm, false, args.formula(1, false));
+}
+
 // \oldstylenums{digits}: the digits as text. Old-style figures are a font
 // feature the engine does not select, so they are the font's own figures;
 // the \textfont handler it shared with \cal lost them altogether.

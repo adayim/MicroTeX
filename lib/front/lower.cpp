@@ -85,6 +85,29 @@ std::size_t codepoints(const std::string& s) {
   return n;
 }
 
+/** The directories of the last \graphicspath in the input being lowered.
+ *  One input is lowered by several Lowerers -- a list's items and every
+ *  fragment (a raw argument, a column's @{...}) get their own -- and all of
+ *  them look for images where the input says. */
+std::vector<std::string>* graphicsDirs = nullptr;
+
+/** Holds graphicsDirs for as long as it lives, unless an outer one already
+ *  does: each Lowerer has one, so the outermost Lowerer's lives for the
+ *  whole input and no input sees another's. */
+class GraphicsDirs {
+public:
+  GraphicsDirs() : _outer(graphicsDirs) {
+    if (_outer == nullptr) graphicsDirs = &_dirs;
+  }
+  ~GraphicsDirs() { graphicsDirs = _outer; }
+  GraphicsDirs(const GraphicsDirs&) = delete;
+  GraphicsDirs& operator=(const GraphicsDirs&) = delete;
+
+private:
+  std::vector<std::string>* _outer;
+  std::vector<std::string> _dirs;
+};
+
 class Lowerer {
 public:
   Lowerer(const Ast& ast, Diagnostics& diags) : _ast(ast), _diags(diags) {}
@@ -105,8 +128,12 @@ private:
   std::vector<std::int8_t> _breaks;
   /** The same for a document's block structure (hasBlock). */
   std::vector<std::int8_t> _blocks;
-  /** Where images are looked for: the last \graphicspath. */
-  std::vector<std::string> _graphicsDirs;
+  /** Where images are looked for (graphicsDirs). */
+  GraphicsDirs _graphicsDirs;
+  /** A text argument that stands for one line's part of it while its
+   *  command is built once per line (piecesOf()), and that part. */
+  NodeId _linePartOf = kNoNode;
+  sptr<Atom> _linePart;
 
   const Node& node(NodeId id) const { return _ast.node(id); }
   NodeId child(NodeId id, std::uint32_t i) const { return _ast.child(id, i); }
@@ -448,8 +475,7 @@ private:
   /** \url and \href. A grob has no links, so only their look, LaTeX's
    *  rather than HTML's: hyperref's colorlinks colours the text, and the url
    *  package sets a URL in monospace, its characters as written. */
-  sptr<Atom> link(NodeId id, Formula& f, NodeId replaced = kNoNode,
-                  const sptr<Atom>& replacement = nullptr) {
+  sptr<Atom> link(NodeId id, Formula& f) {
     static const std::string colour = "#0969DA";
     const bool math = node(id).mode == Mode::math;
     auto* cm = dynamic_cast<CommandMacro*>(MacroInfo::get("textcolor"));
@@ -457,7 +483,6 @@ private:
     if (node(id).text == "href") {
       const NodeId text = child(id, 1);
       TreeArgs a(*this, math, {"textcolor", colour, rawOf(text)}, {kNoNode, kNoNode, text}, &f);
-      if (replaced != kNoNode) a.replace(replaced, replacement);
       return cm->call(a);
     }
     std::string chars;
@@ -486,7 +511,7 @@ private:
     const auto first = path.find_first_not_of(" \t\r\n");
     path = first == std::string::npos ? "" : path.substr(first, path.find_last_not_of(" \t\r\n") - first + 1);
     std::string latex;
-    if (const ImageResolver& resolve = imageResolver()) latex = resolve(path, options, _graphicsDirs);
+    if (const ImageResolver& resolve = imageResolver()) latex = resolve(path, options, *graphicsDirs);
     if (!latex.empty()) return fragment(latex, node(id).mode == Mode::math);
     // The name without its directory, character by character, so that a
     // `_` or `%` in it is itself. Either separator: it may be a Windows path.
@@ -496,7 +521,8 @@ private:
 
   /** \graphicspath{{dir/}{dir/}}: the directories, in place of the last. */
   void graphicsPath(const std::string& raw) {
-    _graphicsDirs.clear();
+    std::vector<std::string>& dirs = *graphicsDirs;
+    dirs.clear();
     std::size_t i = 0;
     while ((i = raw.find('{', i)) != std::string::npos) {
       const auto j = raw.find('}', i + 1);
@@ -504,7 +530,7 @@ private:
       std::string dir = raw.substr(i + 1, j - i - 1);
       const auto a = dir.find_first_not_of(" \t\r\n");
       if (a != std::string::npos) {
-        _graphicsDirs.push_back(dir.substr(a, dir.find_last_not_of(" \t\r\n") - a + 1));
+        dirs.push_back(dir.substr(a, dir.find_last_not_of(" \t\r\n") - a + 1));
       }
       i = j + 1;
     }
@@ -535,15 +561,7 @@ private:
     }
 
     sptr<Atom> formula(std::size_t i, bool math, bool) override {
-      const NodeId arg = i < _nodes.size() ? _nodes[i] : kNoNode;
-      if (arg != kNoNode && arg == _replaced) return _replacement;
-      return _lx.argumentFormula(arg, text(i), math);
-    }
-
-    /** The argument `arg` is `atom` instead: one line's part of it. */
-    void replace(NodeId arg, sptr<Atom> atom) {
-      _replaced = arg;
-      _replacement = std::move(atom);
+      return _lx.argumentFormula(i < _nodes.size() ? _nodes[i] : kNoNode, text(i), math);
     }
 
     bool isMathMode() const override { return _math; }
@@ -588,8 +606,6 @@ private:
     std::vector<std::string> _texts;
     std::vector<NodeId> _nodes;
     Formula* _here;
-    NodeId _replaced = kNoNode;
-    sptr<Atom> _replacement;
     SourceSpan _at;
     std::string _who;
   };
@@ -623,6 +639,7 @@ private:
    *  gives an accent command without its argument, and means to. */
   sptr<Atom> argumentFormula(NodeId arg, const std::string& text, bool math) {
     if (arg == kNoNode || !node(arg).flag) return nullptr;
+    if (arg == _linePartOf) return _linePart;
     const Node& a = node(arg);
     const Mode want = math ? Mode::math : Mode::text;
     if (count(arg) == 1 && a.mode == want) return build(child(arg, 0));
@@ -631,9 +648,8 @@ private:
 
   /** Build a command with its engine handler, its arguments laid out as the
    *  old parser laid them out: mandatory ones from 1, optional ones after
-   *  them. The argument `replaced`, if any, is `replacement` instead. */
-  sptr<Atom> bridge(NodeId id, const std::string& name, const CommandSpec* spec, Formula& f,
-                    NodeId replaced = kNoNode, const sptr<Atom>& replacement = nullptr) {
+   *  them. */
+  sptr<Atom> bridge(NodeId id, const std::string& name, const CommandSpec* spec, Formula& f) {
     MacroInfo* mac = MacroInfo::get(name);
     if (mac == nullptr) return unknownAtom(name);
     std::vector<std::string> args(static_cast<std::size_t>(mac->argc) + 12);
@@ -657,7 +673,6 @@ private:
     // the old parser only (definitions, \over and kin, ...).
     if (cm == nullptr) return unknownAtom(name);
     TreeArgs a(*this, node(id).mode == Mode::math, std::move(args), std::move(nodes), &f);
-    if (replaced != kNoNode) a.replace(replaced, replacement);
     try {
       return cm->call(a);
     } catch (const std::exception& e) {
@@ -998,8 +1013,11 @@ private:
     return found;
   }
 
-  /** The text argument of command `id` that holds a line break, if any. */
+  /** The text argument of command `id` that holds a line break, if any. A
+   *  heading line is one heading, however many lines its title takes: it
+   *  is not built once per line, which would number it once per line. */
   NodeId textArgumentWithBreak(NodeId id) {
+    if (isHeadingLine(node(id).text)) return kNoNode;
     for (std::uint32_t i = 0; i < count(id); i++) {
       const NodeId arg = child(id, i);
       const Node& a = node(arg);
@@ -1046,16 +1064,28 @@ private:
       }
       return out;
     }
+    // The command as it is built anywhere, its argument standing for each
+    // line's part in turn: \footnote, \caption and \paragraph are the
+    // lowering's own, and a handler's rebuild knew only handlers.
     const NodeId arg = textArgumentWithBreak(id);
-    const CommandSpec* spec = findCommand(x.text);
     for (const auto& line : linesOf(child(arg, 0))) {
-      if (line->_root == nullptr || spec == nullptr) {
+      if (line->_root == nullptr) {
         out.push_back({});
         continue;
       }
+      struct Restore {
+        Lowerer& lx;
+        NodeId of;
+        sptr<Atom> part;
+        ~Restore() {
+          lx._linePartOf = of;
+          lx._linePart = part;
+        }
+      } restore{*this, _linePartOf, _linePart};
+      _linePartOf = arg;
+      _linePart = line->_root;
       Formula here;
-      out.push_back({x.text == "href" ? link(id, here, arg, line->_root)
-                                      : bridge(id, x.text, spec, here, arg, line->_root)});
+      out.push_back({commandAtom(id, here)});
     }
     return out;
   }

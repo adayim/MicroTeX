@@ -190,6 +190,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_textsf, "textsf"),
   mac(1, macro_texttt, "texttt"),
   mac(1, macro_textrm, "textrm"),
+  mac(1, macro_textnormal, "textnormal"),
   // endregion
   // region text accents
   mac(1, macro_accentbiss, "^"),

@@ -265,6 +265,18 @@ TEST(parser_itemize_keeps_its_body_as_text_for_its_builder) {
            (Strings{" \\item a \\begin{itemize}\\item b\\end{itemize} "}));
 }
 
+TEST(parser_an_end_of_another_name_ends_a_list) {
+  // LaTeX's "\begin{itemize} ended by \end{enumerate}": the list ends
+  // there. Looking only for \end{itemize} read the rest into its last item.
+  const std::string tex = "\\begin{itemize}\\item a\\end{enumerate} b";
+  CHECK_EQ(raws(tex, "environment"), (Strings{"\\item a"}));
+  CHECK_EQ(messages(tex), (Strings{"\\end{enumerate} ends \\begin{itemize}"}));
+  // A list in it still ends its own.
+  const std::string nested = "\\begin{itemize}\\item a\\begin{enumerate}\\item b\\end{enumerate}\\end{itemize}";
+  CHECK_EQ(raws(nested, "environment"), (Strings{"\\item a\\begin{enumerate}\\item b\\end{enumerate}"}));
+  CHECK_EQ(messages(nested), Strings{});
+}
+
 TEST(parser_modes_switch_at_text_and_at_dollar) {
   CHECK_EQ(tree("\\text{a $b$ c}"), std::string("[\\text(<a _ $(b) _ c>)]"));
   const Parsed p = parse("\\text{a $b$}");

@@ -10,8 +10,8 @@ namespace microtex::front {
 // Then the document commands a grob has no use for, which used to be
 // rewritten in R: the preamble, title and cross-reference metadata, and
 // alignment declarations, dropped with their arguments; skips and \hfill as
-// fixed space (a grob has no glue to fill); \emph, \em, \textnormal,
-// \newline and booktabs' rules as their nearest equivalents. (\caption is
+// fixed space (a grob has no glue to fill); \emph, \em, \newline and
+// booktabs' rules as their nearest equivalents. (\caption is
 // the parser's, which knows whether it is in a document.) article's
 // abstract, and a bibliography as the list of [n] it sets, whose keys have
 // nothing to point at; both are transparent, as their text is a document's
@@ -91,7 +91,6 @@ std::string_view preludeSource() {
 \newenvironment{thebibliography}[1]{\section*{References}\begin{enumerate}[{[}\arabic*{]}]}{\end{enumerate}}
 \newcommand{\bibitem}[2][]{\item}
 \newcommand{\newblock}{}
-\newcommand{\textnormal}[1]{\text{#1}}
 \newcommand{\newline}{\\}
 \newcommand{\toprule}{\thickhline}
 \newcommand{\bottomrule}{\thickhline}
