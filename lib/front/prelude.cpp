@@ -76,6 +76,7 @@ std::string_view preludeSource() {
 \newcommand{\DeclareGraphicsExtensions}[1]{}
 \newcommand{\flushleft}{}
 \newcommand{\arraybackslash}{}
+\newcommand{\extracolsep}[1]{}
 \newcommand{\flushright}{}
 \newcommand{\relax}{}
 \newcommand{\smallskip}{\vspace{0.25em}}

@@ -6,6 +6,9 @@
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
 #include "render/builder.h"
+#include "atom/atom_basic.h"
+#include "atom/atom_box.h"
+#include "atom/atom_matrix.h"
 #include "atom/atom_row.h"
 #include "utils/bidi.h"
 
@@ -126,6 +129,13 @@ Render* MicroTeX::parse(
   bool fillWidth, const OverrideTeXStyle& overrideTeXStyle,
   const string& mathFontName, const string& mainFontFamily, InputMode mode
 ) {
+  // What a document sets is its own: \definecolor, \arrayrulecolor,
+  // \newcolumntype, \cornersize and \breakEverywhere start afresh in each.
+  ColorAtom::resetDefinitions();
+  MatrixAtom::resetDefinitions();
+  OvalAtom::_multiplier = 0.5f;
+  OvalAtom::_diameter = 0.f;
+  RowAtom::_breakEverywhere = false;
   auto built = std::make_unique<Formula>();
   front::buildModern(latex, mode, *built);
   Formula& formula = *built;

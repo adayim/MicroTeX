@@ -221,12 +221,15 @@ struct Table {
     add({"begin", "end"}, "r", Shape::prefix, Bare::none, true);
 
     // --- environments the engine builds (the @@env ones in macro_def.cpp) --
-    env({"matrix", "smallmatrix", "align", "flalign", "aligned", "multline", "gather",
-         "gathered"},
-        "", EnvBody::alignment);
-    env({"array", "alignat", "alignedat"}, "r", EnvBody::alignment);
+    env({"matrix", "smallmatrix", "align", "flalign", "multline", "gather"}, "",
+        EnvBody::alignment);
+    // [t|b|c]: LaTeX's vertical position, read and not used (a grob has no
+    // baseline of lines around it to align to).
+    env({"aligned", "gathered"}, "R", EnvBody::alignment);
+    env({"alignat"}, "r", EnvBody::alignment);
+    env({"array", "alignedat"}, "Rr", EnvBody::alignment);
     // As array, but its cells are text, as LaTeX's are.
-    env({"tabular"}, "r", EnvBody::alignment, true);
+    env({"tabular"}, "Rr", EnvBody::alignment, true);
     env({"itemize", "enumerate"}, "", EnvBody::raw, true);
     // [position][height][inner position]{width}: a box of paragraphs.
     env({"minipage"}, "RDRd", EnvBody::text);

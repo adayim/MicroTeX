@@ -1,6 +1,8 @@
 #ifndef MICROTEX_MACRO_BOXES_H
 #define MICROTEX_MACRO_BOXES_H
 
+#include <algorithm>
+
 #include "atom/atom_box.h"
 #include "atom/atom_misc.h"
 #include "macro/macro_decl.h"
@@ -15,7 +17,7 @@ inline cmdmacro(rotatebox) {
 }
 
 inline cmdmacro(reflectbox) {
-  return sptrOf<ReflectAtom>(args.formula(1, true, true));
+  return sptrOf<ReflectAtom>(orEmpty(args.formula(1, true, true)));
 }
 
 inline cmdmacro(scalebox) {
@@ -29,6 +31,12 @@ inline cmdmacro(scalebox) {
 
   if (sx == 0) sx = 1;
   if (sy == 0) sy = 1;
+  // TeX's largest dimension is 16383.99998pt: past that as a factor, a
+  // scaled size is `Dimension too large' there, and here a font size no
+  // renderer can measure.
+  constexpr float most = 16384.f;
+  sx = std::max(-most, std::min(sx, most));
+  sy = std::max(-most, std::min(sy, most));
   return sptrOf<ScaleAtom>(args.formula(2, args.isMathMode()), sx, sy);
 }
 

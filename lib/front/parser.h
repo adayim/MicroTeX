@@ -72,8 +72,11 @@ private:
     /** At `\end` only: the body of an unknown environment met in text. */
     bool end = false;
     /** At `\\` and `\cr` even outside an alignment, and at `&`: the reach
-     *  of a declaration such as \bf. */
+     *  of a declaration such as \bf, and of \over's denominator. */
     bool overArg = false;
+    /** At a line end: \over's denominator met in a label's prose, whose
+     *  line end is a `\\`, while the denominator itself is math. */
+    bool lineEnd = false;
     /** At `\middle` and `\right`. */
     bool right = false;
     /** At `$` (inline) or `$$` (display) closing math. */
@@ -88,14 +91,21 @@ private:
 
   /** A token put back. `replay` marks one read a second time (an optional
    *  argument's content), which is not recorded again. */
+  /** A token's `origin` when it is read for the first time. */
+  static constexpr std::size_t kFresh = static_cast<std::size_t>(-1);
+
   struct Pending {
     ExpandedToken tok;
     bool replay;
+    /** For a token read again, where the tokens put back with it were first
+     *  read: a recording begun before that has them already. */
+    std::size_t origin;
   };
 
   struct Logged {
     std::size_t index;
     ExpandedToken tok;
+    std::size_t origin;
   };
 
   Expander& _in;
@@ -106,17 +116,21 @@ private:
   /** Tokens put back, the next one last. */
   std::vector<Pending> _ahead;
   bool _lastReplay = false;
+  std::size_t _lastOrigin = kFresh;
   /** Tokens consumed while an argument's source text is being recorded,
    *  each with its position in the whole stream of consumed tokens. */
   std::vector<Logged> _log;
   std::size_t _consumed = 0;
   int _recording = 0;
   int _depth = 0;
+  /** For each \ensuremath in math whose argument is being read again, the
+   *  size `_ahead` had before it was put back: while tokens stand above a
+   *  mark, that argument is still being read, so the marks are how deep
+   *  \ensuremath nests. */
+  std::vector<std::size_t> _ensureMarks;
   /** Inside an argument read as text (\text{}, \mbox{}): TeX's restricted
    *  horizontal mode, where `$$` is an empty formula, not display math. */
   int _restricted = 0;
-  /** Set when an infix command took the rest of the list. */
-  bool _listDone = false;
   /** Set when a rule or \intertext ended the row of the cell being read. */
   bool _rowEnded = false;
   /** In the prose of a mixed-mode input, where a line end breaks the line. */
@@ -151,7 +165,7 @@ private:
                       std::vector<NodeId>& items, bool& consumedRest);
   NodeId parseArgument(const ArgSpec& spec, Mode mode, const std::string& who);
   NodeId parseRawArgument(const ArgSpec& spec, const std::string& who);
-  NodeId parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceSpan at);
+  NodeId parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceSpan at, std::size_t origin);
   NodeId parseGroupAfterOpen(const ExpandedToken& open, Mode mode);
   NodeId parseScripts(NodeId base, Mode mode, SourceSpan at);
   NodeId parseScriptArgument(Mode mode, SourceSpan at);

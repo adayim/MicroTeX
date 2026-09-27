@@ -9,10 +9,6 @@ namespace microtex::front {
 
 namespace {
 
-/** Nesting deeper than this is read flat, with an error, rather than
- *  recursing until the stack runs out. */
-constexpr int kMaxDepth = 400;
-
 bool isOther(const Token& t, char c) {
   return t.kind == TokKind::character && t.cat == Cat::other && t.cp == static_cast<unsigned char>(c);
 }
@@ -74,21 +70,26 @@ ExpandedToken Parser::next() {
     ExpandedToken end;
     end.tok.kind = TokKind::end;
     _lastReplay = false;
+    _lastOrigin = kFresh;
     _consumed++;
     return end;
   }
   ExpandedToken t;
   bool replay = false;
+  std::size_t origin = kFresh;
   if (!_ahead.empty()) {
     t = std::move(_ahead.back().tok);
     replay = _ahead.back().replay;
+    origin = _ahead.back().origin;
     _ahead.pop_back();
   } else {
     t = _in.next();
   }
   _lastReplay = replay;
-  // A replayed token was recorded when it was first read.
-  if (_recording > 0 && !replay) _log.push_back({_consumed, t});
+  _lastOrigin = origin;
+  // A token read again is recorded again, for a recording begun since it was
+  // first read; one begun before has it already (stopRecording()).
+  if (_recording > 0) _log.push_back({_consumed, t, origin});
   _consumed++;
   return t;
 }
@@ -96,7 +97,7 @@ ExpandedToken Parser::next() {
 void Parser::unread(ExpandedToken t) {
   _consumed--;
   if (!_log.empty() && _log.back().index == _consumed) _log.pop_back();
-  _ahead.push_back({std::move(t), _lastReplay});
+  _ahead.push_back({std::move(t), _lastReplay, _lastOrigin});
 }
 
 const ExpandedToken& Parser::peek() {
@@ -140,6 +141,8 @@ std::string Parser::stopRecording(std::size_t mark, std::size_t dropLast, bool f
       if (l.index == end) s += l.tok.lead;
       break;
     }
+    // Read again, and first read since `mark`: recorded then.
+    if (l.origin != kFresh && l.origin >= mark) continue;
     if (!first || firstLead) s += l.tok.lead;
     s += l.tok.text;
     first = false;
@@ -161,6 +164,7 @@ bool Parser::atStop(const ExpandedToken& t, const Stop& stop) const {
   // a document it is a space, and a paragraph break does not end a
   // declaration either: \small lasts to the end of its group, as in TeX.
   if (stop.overArg && _prose && _opts.lineEndsBreak && k.lineEnds > 0) return true;
+  if (stop.lineEnd && k.lineEnds > 0) return true;
   if ((stop.cell || stop.end) && k.isCs("end")) return true;
   if (stop.right && (k.isCs("right") || k.isCs("middle"))) return true;
   if ((stop.dollar || stop.displayDollar) && k.isChar(Cat::mathShift)) return true;
@@ -283,7 +287,6 @@ NodeId Parser::parseList(Mode mode, const Stop& stop, SourceSpan at) {
 }
 
 void Parser::readItems(Mode mode, const Stop& stop, std::vector<NodeId>& items) {
-  _listDone = false;
   _rowEnded = false;
   while (true) {
     const ExpandedToken& t = peek();
@@ -301,10 +304,6 @@ void Parser::readItems(Mode mode, const Stop& stop, std::vector<NodeId>& items) 
       continue;
     }
     if (!parseItem(mode, stop, items)) break;
-    if (_listDone) {
-      _listDone = false;
-      break;
-    }
     if (_rowEnded && stop.cellTop) break;
   }
 }
@@ -594,11 +593,22 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
     if (name == "ensuremath" && mode == Mode::math) {
       // In math it is not there, as in LaTeX: its argument is read on as
       // part of this list, so `90\degree` is 90^\circ.
+      // An argument is still being read while replayed tokens stand above
+      // its mark (a token peeked from the input may sit on top).
+      std::size_t pending = _ahead.size();
+      while (pending > 0 && !_ahead[pending - 1].replay) pending--;
+      while (!_ensureMarks.empty() && _ensureMarks.back() >= pending) _ensureMarks.pop_back();
+      if (static_cast<int>(_ensureMarks.size()) >= kMaxDepth) {
+        // Each level reads what is inside it again: nesting costs its square.
+        _diags.error(at, "Input nested too deeply");
+        return kNoNode;
+      }
       ExpandedToken open = nextNonSpace();
       if (!open.tok.isChar(Cat::beginGroup)) {
         unread(std::move(open));
         return kNoNode;
       }
+      const std::size_t origin = _consumed;
       std::vector<ExpandedToken> inner;
       int depth = 0;
       while (true) {
@@ -612,7 +622,8 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
         if (u.tok.isChar(Cat::endGroup) && depth-- == 0) break;
         inner.push_back(std::move(u));
       }
-      for (auto it = inner.rbegin(); it != inner.rend(); ++it) _ahead.push_back({std::move(*it), true});
+      _ensureMarks.push_back(_ahead.size());
+      for (auto it = inner.rbegin(); it != inner.rend(); ++it) _ahead.push_back({std::move(*it), true, origin});
       return kNoNode;
     }
     if (name == "ensuremath") {
@@ -763,22 +774,33 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
 
   if (spec->shape == Shape::infix && !single) {
     // The numerator is everything before it in this list; the denominator
-    // everything after, up to where the list ends.
+    // everything after, up to where the list ends or a `\\` or \cr at this
+    // level (a line end in a label's prose), which the list goes on past,
+    // as the old parser's getOverArgument() stopped there.
     Node num;
     num.kind = NodeKind::list;
     num.mode = mode;
     num.span = at;
-    const NodeId numerator = _ast.add(std::move(num), items);
-    items.clear();
+    // The row it is in, that is: a `\\` or \cr before it ends a row, which
+    // stays in the list with the rows before it.
+    auto from = items.end();
+    while (from != items.begin()) {
+      const Node& x = _ast.node(*(from - 1));
+      if (x.kind == NodeKind::command && (x.text == "\\" || x.text == "cr")) break;
+      --from;
+    }
+    const NodeId numerator = _ast.add(std::move(num), std::vector<NodeId>(from, items.end()));
+    items.erase(from, items.end());
     Stop rest = stop;
     rest.cellTop = false;
+    rest.overArg = true;
+    rest.lineEnd = _prose && _opts.lineEndsBreak;
     // The engine reads the denominator in math mode, even in text.
     const NodeId denominator = parseList(Mode::math, rest, at);
     n.kind = NodeKind::infix;
     std::vector<NodeId> kids{numerator, denominator};
     kids.insert(kids.end(), args.begin(), args.end());
     consumedRest = true;
-    _listDone = true;
     return _ast.add(std::move(n), kids);
   }
 
@@ -832,12 +854,13 @@ NodeId Parser::parseArgument(const ArgSpec& spec, Mode mode, const std::string& 
       return absentArgument(at, argMode);
     }
     arg.span = t.tok.span;
+    const std::size_t origin = _consumed;
     std::vector<ExpandedToken> toks = collectBracketed(who);
     for (const ExpandedToken& u : toks) {
       arg.raw += u.lead;
       arg.raw += u.text;
     }
-    const NodeId list = parseTokens(std::move(toks), argMode, arg.span);
+    const NodeId list = parseTokens(std::move(toks), argMode, arg.span, origin);
     return _ast.add(std::move(arg), {list});
   }
 
@@ -871,9 +894,16 @@ NodeId Parser::parseArgument(const ArgSpec& spec, Mode mode, const std::string& 
   single.argument = true;
   ExpandedToken u = next();
   if (u.tok.isControl()) {
-    bool unused = false;
-    const NodeId n = parseCommand(std::move(u), argMode, single, items, unused);
-    if (n != kNoNode) items.push_back(n);
+    // A command's arguments nest like a group's: `\frac\frac\frac...`.
+    if (_depth >= kMaxDepth) {
+      _diags.error(u.tok.span, "Input nested too deeply");
+    } else {
+      _depth++;
+      bool unused = false;
+      const NodeId n = parseCommand(std::move(u), argMode, single, items, unused);
+      _depth--;
+      if (n != kNoNode) items.push_back(n);
+    }
   } else if (u.tok.isChar(Cat::active)) {
     unread(std::move(u));
     parseItem(argMode, single, items);
@@ -998,7 +1028,8 @@ std::vector<ExpandedToken> Parser::collectBracketed(const std::string& who) {
   return toks;
 }
 
-NodeId Parser::parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceSpan at) {
+NodeId Parser::parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceSpan at,
+                           std::size_t origin) {
   // Read the tokens again, then an `end` that stops the list, then carry on
   // with whatever was waiting before.
   std::vector<Pending> saved = std::move(_ahead);
@@ -1006,8 +1037,8 @@ NodeId Parser::parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceS
   ExpandedToken sentinel;
   sentinel.tok.kind = TokKind::end;
   sentinel.tok.span = at;
-  _ahead.push_back({std::move(sentinel), true});
-  for (auto it = tokens.rbegin(); it != tokens.rend(); ++it) _ahead.push_back({std::move(*it), true});
+  _ahead.push_back({std::move(sentinel), true, origin});
+  for (auto it = tokens.rbegin(); it != tokens.rend(); ++it) _ahead.push_back({std::move(*it), true, origin});
   const NodeId list = parseList(mode, Stop{}, at);
   next();  // the sentinel
   _ahead = std::move(saved);
@@ -1098,9 +1129,7 @@ std::string Parser::readGroupName() {
     unread(std::move(t));
     return "";
   }
-  // Built from the tokens, not from the recorded source: tokens read a
-  // second time (an optional argument's) are not recorded again, so the
-  // name of an environment in `\sqrt[...]` came out empty.
+  // Built from the tokens, not from the recorded source.
   std::string name;
   int depth = 0;
   while (true) {

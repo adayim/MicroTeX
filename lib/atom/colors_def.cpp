@@ -7,7 +7,8 @@
 using namespace std;
 using namespace microtex;
 
-map<string, microtex::color> microtex::ColorAtom::_colors{
+// The colours named without \definecolor.
+static const map<string, microtex::color> builtinColors{
   {"black",   black  },
   {"white",   white  },
   {"red",     red    },
@@ -78,6 +79,12 @@ map<string, microtex::color> microtex::ColorAtom::_colors{
   c("tan", 0.14f, 0.42f, 0.56f, 0.f),
   c("gray", 0.f, 0.f, 0.f, 0.50f),
 };
+
+map<string, microtex::color> microtex::ColorAtom::_colors = builtinColors;
+
+void ColorAtom::resetDefinitions() {
+  _colors = builtinColors;
+}
 
 color ColorAtom::getColor(std::string name) {
   if (name.empty()) return _default;

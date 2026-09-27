@@ -212,6 +212,9 @@ public:
 
   /** Define a color with given name */
   static void defineColor(const std::string& name, color c);
+
+  /** Forget the colors defined, for a new document. */
+  static void resetDefinitions();
 };
 
 /** An atom representing another atom that should be drawn invisibly */

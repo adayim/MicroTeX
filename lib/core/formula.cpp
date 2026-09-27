@@ -12,8 +12,6 @@
 using namespace std;
 using namespace microtex;
 
-map<string, sptr<Formula>> Formula::_predefFormulas;
-
 const std::vector<sptr<MiddleAtom>>& Formula::middle() {
   return _middle;
 }
@@ -41,22 +39,24 @@ Formula* Formula::add(const sptr<Atom>& a) {
 }
 
 sptr<Formula> Formula::get(const string& name) {
-  auto it = _predefFormulas.find(name);
-  if (it != _predefFormulas.end()) return it->second;
-
   auto i = _predefFormulaStrs.find(name);
   if (i == _predefFormulaStrs.end()) return nullptr;
 
-  // Read by the front end like any input, as math. The definitions are
-  // ours and read cleanly, so there is nothing in them to report.
+  // Read once by the front end, as math, without define_macro()'s macros:
+  // the definitions are the engine's, as \sin is LaTeX's, and read cleanly,
+  // so there is nothing in them to report. The tree is what is kept; each
+  // use lowers atoms of its own, which it may change (`\sin\limits`).
+  static map<string, front::Ast> trees;
   front::Diagnostics unreported;
-  const front::Ast ast = front::parseLatex(i->second, front::Mode::math, unreported);
-  auto tf = sptrOf<Formula>();
-  front::lowerInto(ast, *tf, unreported);
-  auto* ra = dynamic_cast<RowAtom*>(tf->_root.get());
-  if (ra == nullptr) {
-    _predefFormulas[name] = tf;
+  auto it = trees.find(name);
+  if (it == trees.end()) {
+    it = trees
+           .emplace(name, front::parseLatex(i->second, front::Mode::math, unreported, false,
+                                            false, 0, UINT32_MAX, false))
+           .first;
   }
+  auto tf = sptrOf<Formula>();
+  front::lowerInto(it->second, *tf, unreported);
   return tf;
 }
 

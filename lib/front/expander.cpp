@@ -151,6 +151,8 @@ struct Expander::Impl {
   std::unordered_map<std::string, MacroDef> envs;
   std::size_t expansions = 0;
   std::size_t expandedBytes = 0;
+  /** How deep readArg() is in commands given as arguments with their own. */
+  int argDepth = 0;
   int atLetter = 0;
   // Set after runaway expansion in recover mode: the input ends there.
   bool halted = false;
@@ -318,7 +320,14 @@ struct Expander::Impl {
     }
     if (t.tok.isChar(Cat::beginGroup)) return readGroupContent(t);
     std::string s(t.text);
-    if (greedy && t.tok.isControl()) appendOwnArgs(t.tok.text, s);
+    if (greedy && t.tok.isControl()) {
+      // `\emph\emph\emph...` nests one level per command: a capacity, as
+      // nesting is in the parser, before the stack runs out.
+      if (argDepth >= kMaxDepth) throw ExpansionLimit("Input nested too deeply");
+      argDepth++;
+      appendOwnArgs(t.tok.text, s);
+      argDepth--;
+    }
     return s;
   }
 
@@ -837,6 +846,18 @@ struct Expander::Impl {
     if (depth <= 0) return;
     const auto& table = environment ? envs : macros;
     const auto it = table.find(name);
+    if (it != table.end()) {
+      // What the group keeps to put back counts against the byte cap: a
+      // loop redefining a large macro in a group, `{\def\a{\let\c\b\a}\a}`,
+      // would otherwise hold a copy of it per turn.
+      std::size_t kept = it->second.optionalDefault.size();
+      for (const auto& p : it->second.body) kept += p.text.size();
+      for (const auto& p : it->second.endBody) kept += p.text.size();
+      expandedBytes += kept;
+      if (expandedBytes > opts.maxExpandedBytes) {
+        throw ExpansionLimit("Macro expansion is too large: is a macro defined in terms of itself?");
+      }
+    }
     undoStack.push_back(
       {name, environment, it != table.end(), it != table.end() ? it->second : MacroDef(), depth});
   }

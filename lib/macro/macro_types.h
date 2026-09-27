@@ -7,7 +7,7 @@
 namespace microtex {
 
 inline sptr<Atom> _math_type(CommandArgs& args, AtomType type) {
-  return sptrOf<TypedAtom>(type, type, args.formula(1));
+  return sptrOf<TypedAtom>(type, type, orEmpty(args.formula(1)));
 }
 
 inline cmdmacro(mathop) {

@@ -689,7 +689,9 @@ float BoxSplitter::canBreak(stack<Position>& s, const sptr<HBox>& hbox, const fl
     // a level down, and was missed, so the line ran on to a later break.
     for (int j = i - 1; j >= std::max(pos, 0); j--) {
       const auto hj = dynamic_pointer_cast<HBox>(children[j]);
-      if (hj == nullptr) continue;
+      // Off the baseline (a script, a raised box) is no place for the
+      // line to end.
+      if (hj == nullptr || hj->_shift != 0) continue;
       stack<Position> last;
       const float x = lastBreak(last, hj, width - cumWidth[j]);
       if (x >= 0 && cumWidth[j] + x > 0) {
@@ -731,7 +733,8 @@ float BoxSplitter::lastBreak(stack<Position>& s, const sptr<HBox>& hb, const flo
       return cum[j + 1];
     }
     const auto h = dynamic_pointer_cast<HBox>(children[j]);
-    if (h == nullptr) continue;
+    // Not into a script's box: the line ends on its baseline.
+    if (h == nullptr || h->_shift != 0) continue;
     stack<Position> sub;
     const float x = lastBreak(sub, h, limit - cum[j]);
     if (x >= 0 && cum[j] + x > 0) {

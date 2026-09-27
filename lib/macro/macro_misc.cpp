@@ -17,6 +17,8 @@ cmdmacro(longdiv) {
   long divisor = 0;
   valueOf(args.text(2), divisor);
   if (divisor == 0) throw ex_parse("Divisor must not be 0.");
+  // Long division of whole numbers: its digits are read off the quotient.
+  if (divisor < 0 || dividend < 0) throw ex_parse("Dividend and divisor must not be negative.");
   return sptrOf<LongDivAtom>(divisor, dividend);
 }
 
@@ -38,7 +40,7 @@ cmdmacro(raisebox) {
   auto r = Units::getDimen(args.text(1));
   auto h = Units::getDimen(args.text(3));
   auto d = Units::getDimen(args.text(4));
-  return sptrOf<RaiseAtom>(args.formula(2, args.isMathMode()), -r, h, d);
+  return sptrOf<RaiseAtom>(orEmpty(args.formula(2, args.isMathMode())), -r, h, d);
 }
 
 cmdmacro(romannumeral) {

@@ -16,9 +16,10 @@
 namespace microtex::front {
 
 Ast parseLatex(const std::string& latex, Mode mode, Diagnostics& diagnostics, bool lineBreaks,
-               bool paragraphs, std::uint32_t bodyStart, std::uint32_t bodyEnd) {
+               bool paragraphs, std::uint32_t bodyStart, std::uint32_t bodyEnd, bool userMacros) {
   ExpanderOptions eo;
   eo.prelude = true;
+  eo.persistent = userMacros;
   eo.recover = true;
   eo.lex.blankLineIsPar = paragraphs;
   eo.isBuiltinCommand = [](const std::string& name) { return findCommand(name) != nullptr; };

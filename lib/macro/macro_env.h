@@ -111,13 +111,20 @@ inline sptr<Atom> cellContent(CommandArgs& args, std::size_t i) {
   return sptrOf<FontStyleAtom>(FontStyle::rm, false, args.formula(i, false));
 }
 
+// No table has more columns than a column specification can list (the cap
+// in MatrixAtom::parsePositions): a larger span is a runaway, not a table.
+constexpr int kMaxSpan = 1 << 14;
+
 inline cmdmacro(multicolumn) {
   ArrayFormula* arr = args.alignmentHere();
   if (arr == nullptr) throw ex_parse("Command 'multicolumn' only available in array mode!");
   int n = 0;
   valueOf(args.text(1), n);
+  n = std::min(n, kMaxSpan);
   arr->add(sptrOf<MulticolumnAtom>(n, args.text(2), cellContent(args, 3)));
-  arr->addCol(n);
+  // addCol() leaves the last column it spans to the next & or \\, which for
+  // one column is the cell itself.
+  if (n > 1) arr->addCol(n);
   return nullptr;
 }
 
@@ -126,6 +133,7 @@ inline cmdmacro(hdotsfor) {
   if (arr == nullptr) throw ex_parse("Command 'hdotsfor' only available in array mode!");
   int n = 0;
   valueOf(args.text(1), n);
+  n = std::min(n, kMaxSpan);
   float f = 1.f;
   if (!args.text(2).empty()) valueOf(args.text(2), f);
   arr->add(sptrOf<HdotsforAtom>(n, f));
@@ -226,13 +234,13 @@ inline cmdmacro(rowcolor) {
 }
 
 inline cmdmacro(shoveright) {
-  auto a = args.formula(1, true, true);
+  auto a = orEmpty(args.formula(1, true, true));
   a->_alignment = Alignment::right;
   return a;
 }
 
 inline cmdmacro(shoveleft) {
-  auto a = args.formula(1, true, true);
+  auto a = orEmpty(args.formula(1, true, true));
   a->_alignment = Alignment::left;
   return a;
 }

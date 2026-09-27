@@ -23,7 +23,6 @@ class CellSpecifier;
 class Formula {
 private:
   // predefined TeX formulas
-  static std::map<std::string, sptr<Formula>> _predefFormulas;
   static std::map<std::string, std::string> _predefFormulaStrs;
 
   std::vector<sptr<MiddleAtom>> _middle;

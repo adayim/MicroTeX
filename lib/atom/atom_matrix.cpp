@@ -35,6 +35,11 @@ void MatrixAtom::defineColumnSpecifier(const string& rep, const string& spe) {
   _colspeReplacement[rep] = spe;
 }
 
+void MatrixAtom::resetDefinitions() {
+  _colspeReplacement.clear();
+  LINE_COLOR = transparent;
+}
+
 namespace {
 
 /** One argument in a column specification, read TeX's way: a braced group
@@ -111,6 +116,14 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
   int len = opt.length();
   int pos = 0;
   char ch;
+  // Column types and *{n}{...} insert text to be read on. A type defined
+  // in terms of itself, or a count past any table, would never end.
+  constexpr int maxReplacements = 1000;
+  constexpr size_t maxLength = 1 << 14;
+  int replacements = 0;
+  const auto runaway = []() {
+    return ex_parse("Column specification expands without end: is a column type defined in terms of itself?");
+  };
   // clear first
   lpos.clear();
   _fillCols.clear();
@@ -155,6 +168,9 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         const SpecArgument cols = specArgument(opt, times.end);
         int nrep = 0;
         valueOf(times.text, nrep);
+        if (nrep > 0 && static_cast<size_t>(nrep) * cols.text.size() + opt.size() > maxLength) {
+          throw runaway();
+        }
         string str;
         for (int j = 0; j < nrep; j++) str += cols.text;
         pos = cols.end;
@@ -211,6 +227,9 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         while (--spos > pos) {
           auto it = _colspeReplacement.find(opt.substr(pos, spos - pos));
           if (it != _colspeReplacement.end()) {
+            if (++replacements > maxReplacements || opt.size() + it->second.size() > maxLength) {
+              throw runaway();
+            }
             hasrep = true;
             opt.insert(spos, it->second);
             len = opt.length();
@@ -406,7 +425,8 @@ void MatrixAtom::recalculateLine(
         }
       }
     }
-    m->_n = abs(n);
+    // The rows it spans, which end at the table's edge.
+    m->_n = n < 0 ? r - m->_i + 1 : std::min(r + n, rows) - r;
     auto b = boxarr[m->_i][m->_j];
     const float bh = b->_height + b->_depth + vspace;
     if (h > bh) {
@@ -967,7 +987,12 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     return MatrixAtom(_isPartial, _column, "").createBox(env);
 
   auto vb = sptrOf<VBox>();
-  auto atom = _column->_array[0][0];
+  // An empty line's cell is null.
+  const auto cell = [&](size_t row) -> sptr<Atom> {
+    const auto& a = _column->_array[row][0];
+    return a != nullptr ? a : sptrOf<EmptyAtom>();
+  };
+  auto atom = cell(0);
   Alignment alignment = _lineType == MultiLineType::gather ? Alignment::center : Alignment::left;
   if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
 
@@ -983,7 +1008,7 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
   gapAfter(0);
   auto Vsep = _vsep_in.createBox(env);
   for (size_t i = 1; i < _column->rows() - 1; i++) {
-    atom = _column->_array[i][0];
+    atom = cell(i);
     alignment = Alignment::center;
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
     vb->add(Vsep);
@@ -992,7 +1017,7 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
   }
 
   if (_column->rows() > 1) {
-    atom = _column->_array[_column->rows() - 1][0];
+    atom = cell(_column->rows() - 1);
     alignment = _lineType == MultiLineType::gather ? Alignment::center : Alignment::right;
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
     vb->add(Vsep);

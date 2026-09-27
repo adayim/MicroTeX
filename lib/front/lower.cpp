@@ -869,7 +869,8 @@ private:
           _diags.warn(x.span, "\\relscale: `" + raw + "' is not a positive number; the size is kept");
           return a;
         }
-        return sized(a, factor);
+        // As \scalebox's: at most TeX's largest dimension, as a factor.
+        return sized(a, std::min(factor, 16384.f));
       }
       // \displaystyle and kin
       auto g = body();
@@ -1596,14 +1597,28 @@ private:
           l.line->add(sptrOf<StyleAtom>(TexStyle::display, g == nullptr ? sptrOf<EmptyAtom>() : g));
           return;
         }
+        // A span of math is a list of its own, as in TeX: \over, \limits
+        // and a script take what is before them in the span, never the
+        // prose, and a sign that opens it is unary. To the prose it is an
+        // ordinary atom, with no math spacing against the text.
+        auto g = std::make_unique<Formula>();
+        const auto place = [&]() {
+          if (g->_root != nullptr) {
+            beforeLine(l);
+            l.line->add(wrap(l, sptrOf<TypedAtom>(AtomType::ordinary, AtomType::ordinary, g->_root)));
+          }
+          g = std::make_unique<Formula>();
+        };
         for (std::uint32_t j = 0; j < count(list); j++) {
           const NodeId m = child(list, j);
           if (isBreakNode(node(m))) {
+            place();
             lineBreak(l, m);
             continue;
           }
-          placeOnLine(l, m);
+          lowerItem(m, *g);
         }
+        place();
       } else if (x.kind == NodeKind::environment || isEnvironmentGroup(id)) {
         placeOnLine(l, id);
       } else if (!hasBreak(id)) {
@@ -1672,6 +1687,9 @@ private:
     for (std::uint32_t i = 0; i < count(id); i++) {
       const NodeId c = child(id, i);
       if (node(c).kind != NodeKind::argument) break;
+      // An optional argument is LaTeX's position ([t]), which no builder
+      // takes.
+      if (spec != nullptr && i < spec->args.size() && spec->args[i].optional) continue;
       if (k < args.size()) args[k++] = rawOf(c);
     }
     // The old template put the body between spaces.
@@ -1764,6 +1782,14 @@ void lowerInto(const Ast& ast, Formula& formula, Diagnostics& diagnostics, bool 
 
 sptr<Atom> buildFragment(const std::string& latex, bool math) {
   if (latex.empty()) return nullptr;
+  // A fragment is parsed afresh, its depth from 0, so a fragment inside a
+  // fragment (a raw argument in a raw argument) is counted here.
+  static int depth = 0;
+  if (depth >= kMaxDepth) throw ex_parse("Input nested too deeply");
+  struct Deeper {
+    Deeper() { depth++; }
+    ~Deeper() { depth--; }
+  } deeper;
   Diagnostics unreported;
   const Ast ast = parseLatex(latex, math ? Mode::math : Mode::text, unreported);
   if (ast.root == kNoNode) return nullptr;

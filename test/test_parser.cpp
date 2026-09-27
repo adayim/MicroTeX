@@ -245,7 +245,10 @@ TEST(parser_alignment_is_rows_of_cells_and_a_rule_ends_its_row) {
   CHECK_EQ(tree("\\begin{matrix} a & b \\\\ c & d \\end{matrix}"),
            std::string("[env:matrix(row:\\([a] [b]) row:([c] [d]))]"));
   CHECK_EQ(tree("\\begin{array}{cc} \\hline a & b \\end{array}"),
-           std::string("[env:array('cc' row:hline([\\hline]) row:([a] [b]))]"));
+           std::string("[env:array(- 'cc' row:hline([\\hline]) row:([a] [b]))]"));
+  // LaTeX's vertical position comes first, and is not the column spec.
+  CHECK_EQ(tree("\\begin{array}[t]{cc} a & b \\end{array}"),
+           std::string("[env:array('t' 'cc' row:([a] [b]))]"));
   CHECK_EQ(raws("\\begin{aligned} a \\\\[4pt] b \\end{aligned}", "row"), (Strings{"4pt", ""}));
   CHECK_EQ(raws("\\begin{matrix} a & b \\end{matrix}", "environment"), (Strings{" a & b "}));
 }

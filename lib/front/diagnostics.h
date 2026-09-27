@@ -25,6 +25,12 @@ struct SourceSpan {
 
 enum class Severity : std::uint8_t { warning, error };
 
+/** Nesting deeper than this is a capacity error ("Input nested too deeply")
+ *  rather than recursion until the stack runs out: groups and arguments in
+ *  the parser, a command's own arguments read for a macro in the expander,
+ *  and a fragment parsed inside a fragment in the lowering. */
+constexpr int kMaxDepth = 400;
+
 struct Diagnostic {
   Severity severity;
   SourceSpan span;

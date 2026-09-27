@@ -49,8 +49,10 @@ inline void valueOf(const std::string& s, T& val) {
       val = static_cast<T>(d);
     }
   } else {
-    const double top = static_cast<double>(std::numeric_limits<T>::max());
-    val = static_cast<T>(d > top ? top : d < -top ? -top : d);
+    // A float is kept to what TeX's integers hold, so that the unit it is
+    // then multiplied by cannot take it to infinity; NaN is no number.
+    const double top = static_cast<double>(std::numeric_limits<int>::max());
+    val = d != d ? T(0) : static_cast<T>(d > top ? top : d < -top ? -top : d);
   }
 }
 

@@ -119,6 +119,10 @@ public:
   // The color to draw the rule of the matrix
   static color LINE_COLOR;
 
+  /** Forget the column types defined and the rule color set, for a new
+   *  document. */
+  static void resetDefinitions();
+
   static SpaceAtom _hsep, _semihsep, _vsep_in, _vsep_ext_top, _vsep_ext_bot;
 
   static sptr<Box> _nullbox;
