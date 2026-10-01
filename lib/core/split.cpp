@@ -35,7 +35,10 @@ const DecorBox* decoration(const sptr<Box>& b) {
   if (d == nullptr || !d->_openable) return nullptr;
   const auto* s = dynamic_cast<const ScaleBox*>(d);
   if (s != nullptr && (s->sx() <= 0 || s->sy() <= 0)) return nullptr;
-  return dynamic_pointer_cast<HBox>(d->_base) != nullptr ? d : nullptr;
+  if (dynamic_pointer_cast<HBox>(d->_base) != nullptr) return d;
+  // A decoration with nothing but another decoration in it (\large \uline{..})
+  // has no row of its own: it is opened as a row of one.
+  return decoration(d->_base) != nullptr ? d : nullptr;
 }
 
 const ScaleBox* scaling(const sptr<Box>& b) {
@@ -76,7 +79,9 @@ sptr<HBox> wrapRow(const sptr<Box>& w, const sptr<HBox>& row, float shift) {
 
 // The wrapper `w` opened: its row, piece by piece.
 sptr<HBox> openWrapper(const sptr<Box>& w) {
-  const auto row = static_pointer_cast<HBox>(static_pointer_cast<DecorBox>(w)->_base);
+  const auto& base = static_pointer_cast<DecorBox>(w)->_base;
+  auto row = dynamic_pointer_cast<HBox>(base);
+  if (row == nullptr) row = sptrOf<HBox>(base);
   return wrapRow(w, row, w->_shift);
 }
 

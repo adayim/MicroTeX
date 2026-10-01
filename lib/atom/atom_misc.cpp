@@ -52,16 +52,20 @@ sptr<Box> RaiseAtom::createBox(Env& env) {
 
 sptr<Box> ResizeAtom::createBox(Env& env) {
   auto box = _base->createBox(env);
-  if (!_width.isValid() && !_height.isValid()) return box;
+  // A size the box does not have cannot be scaled to: it is ignored, as
+  // `!` would be.
+  const bool w = _width.isValid() && box->_width > 0;
+  const bool h = _height.isValid() && box->vlen() > 0;
+  if (!w && !h) return box;
   auto sx = 1.f, sy = 1.f;
-  if (_width.isValid() && _height.isValid()) {
+  if (w && h) {
     sx = Units::fsize(_width, env) / box->_width;
     sy = Units::fsize(_height, env) / box->vlen();
     if (_keepAspectRatio) {
       sx = std::min(sx, sy);
       sy = sx;
     }
-  } else if (_width.isValid() && !_height.isValid()) {
+  } else if (w) {
     sx = Units::fsize(_width, env) / box->_width;
     sy = sx;
   } else {

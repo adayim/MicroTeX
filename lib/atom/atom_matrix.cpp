@@ -970,13 +970,13 @@ sptr<Box> VlineAtom::createBox(Env& env) {
   const auto drt = env.ruleThickness();
   auto rb = sptrOf<RuleBox>(_height, drt, _shift, MatrixAtom::LINE_COLOR, true);
   auto sep = sptrOf<StrutBox>(2 * drt, 0.f, 0.f, 0.f);
-  auto hb = new HBox();
+  auto hb = sptrOf<HBox>();
   for (int i = 0; i < _n - 1; i++) {
     hb->add(rb);
     hb->add(sep);
   }
   if (_n > 0) hb->add(rb);
-  return sptr<Box>(hb);
+  return hb;
 }
 
 SpaceAtom MultlineAtom::_vsep_in(UnitType::ex, 0.f, 1.f, 0.f);

@@ -47,7 +47,9 @@ int Render::getWidth() const {
 
 float Render::getBaseline() const {
   auto box = _data->root;
-  return box->_height / box->vlen();
+  const auto len = box->vlen();
+  // Nothing drawn has no height to take a share of.
+  return len > 0 ? box->_height / len : 0.f;
 }
 
 bool Render::isSplit() const {

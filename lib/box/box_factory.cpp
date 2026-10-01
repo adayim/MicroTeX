@@ -107,9 +107,14 @@ static sptr<Box> createDelim(
   // thus:
   //   repeat_cnt > (len - fixed_len + (fixed_part_size - 1) * min_connector_overlap)
   //                / (repeat_len - repeat_part_size * min_connector_overlap)
-  const auto cnt = (int)std::ceil((len - fl + (f.size() - 1) * m) / (rl - r.size() * m));
+  // A delimiter asked to be absurdly tall is drawn as tall as this many
+  // repeats make it, rather than building millions of pieces.
+  constexpr float kMaxRepeat = 10000.f;
+  const auto want = std::ceil((len - fl + (f.size() - 1) * m) / (rl - r.size() * m));
+  const auto capped = !(want < kMaxRepeat);
+  const auto cnt = capped ? static_cast<int>(kMaxRepeat) : static_cast<int>(want);
   const auto p = r.size() * cnt + f.size() - 1;
-  const auto e = (cnt * rl + fl - p * m - len) / p;
+  const auto e = capped ? 0.f : (cnt * rl + fl - p * m - len) / p;
   const auto s = std::min(m + e, max);
   const auto space = (isVertical ? sptrOf<StrutBox>(0.f, -s, 0.f, 0.f) : StrutBox::create(-s));
 

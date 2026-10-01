@@ -93,11 +93,16 @@ std::map<u16, u16> read_coverage(const BeReader& r, std::size_t off) {
         }
     } else if (format == 2) {
         const u16 n = r.u16be(off + 2);
+        // The spec has the ranges sorted and disjoint, which bounds the work
+        // to the number of glyphs; a record that is not is skipped.
+        u32 next = 0;
         for (u16 i = 0; i < n; ++i) {
             const std::size_t rec = off + 4 + i * 6;
             const u16 start_g = r.u16be(rec);
             const u16 end_g   = r.u16be(rec + 2);
             const u16 start_c = r.u16be(rec + 4);
+            if (start_g < next || end_g < start_g) continue;
+            next = static_cast<u32>(end_g) + 1;
             // u32 counter: a range ending at glyph 0xFFFF (legal per the
             // spec) would wrap a u16 and never terminate.
             for (u32 g = start_g; g <= end_g; ++g) {
