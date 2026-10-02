@@ -74,7 +74,6 @@ std::string_view preludeSource() {
 \newenvironment{center}{}{}
 \newenvironment{flushleft}{}{}
 \newenvironment{flushright}{}{}
-\newenvironment{tabular*}[2]{\begin{tabular}{#2}}{\end{tabular}}
 \newcommand{\maketitle}{}
 \newcommand{\title}[1]{}
 \newcommand{\author}[1]{}
@@ -97,6 +96,22 @@ std::string_view preludeSource() {
 \newcommand{\bibitem}[2][]{\item}
 \newcommand{\newblock}{}
 \newcommand{\newline}{\\}
+\newcommand{\bfseries}{\bf}
+\newcommand{\itshape}{\it}
+\newcommand{\ttfamily}{\tt}
+\newcommand{\sffamily}{\sf}
+\newcommand{\rmfamily}{\rm}
+\newcommand{\normalfont}{\rm}
+\newcommand{\upshape}{\rm}
+\newcommand{\mdseries}{\rm}
+\newcommand{\selectfont}{}
+\newcommand{\makecell}[2][c]{\begin{tabular}{#1}#2\end{tabular}}
+\newcommand{\thead}[2][c]{\makecell[#1]{\bfseries #2}}
+\newcommand{\hhline}[1]{\hline}
+\newcommand{\tnote}[1]{\textsuperscript{#1}}
+\newenvironment{threeparttable}{}{}
+\newenvironment{tablenotes}[1][]{\small}{}
+\newcommand{\tinytableDefineColor}[3]{\definecolor{#1}{#2}{#3}}
 \newcommand{\toprule}{\thickhline}
 \newcommand{\bottomrule}{\thickhline}
 \newcommand{\midrule}{\hline}

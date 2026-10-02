@@ -6,6 +6,7 @@ front_src = [
     'front/lower.cpp',
     'front/parser.cpp',
     'front/prelude.cpp',
+    'front/tblr.cpp',
     'front/spec.cpp'
 ]
 

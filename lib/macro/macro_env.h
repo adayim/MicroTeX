@@ -10,6 +10,7 @@
 #include "atom/atom_matrix.h"
 #include "core/formula.h"
 #include "env/units.h"
+#include "front/tblr.h"
 #include "macro/macro.h"
 #include "macro/macro_decl.h"
 #include "utils/exceptions.h"
@@ -34,6 +35,39 @@ inline cmdmacro(eqnarrayATATenv) {
   const auto arr = args.alignment(1);
   arr->checkDimensions();
   return sptrOf<MatrixAtom>(args.isPartial(), arr, "rcl", true);
+}
+
+// tabular*{width}{columns} and tabularx{width}{columns}.
+inline sptr<Atom> widthTable(CommandArgs& args, bool spread) {
+  const auto arr = args.alignment(3);
+  arr->checkDimensions();
+  auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(2), true);
+  table->setTableWidth(Units::getDimen(args.text(1)), spread);
+  return table;
+}
+
+inline cmdmacro(tabularstarATATenv) {
+  return widthTable(args, true);
+}
+
+inline cmdmacro(tabularxATATenv) {
+  return widthTable(args, false);
+}
+
+// longtable[position]{columns}: a tabular. The lowering has set its rows in
+// order, and its caption above.
+inline cmdmacro(longtableATATenv) {
+  const auto arr = args.alignment(2);
+  arr->checkDimensions();
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
+}
+
+// tabularray's tblr[options]{spec}: a tabular, of the columns its spec gives.
+inline cmdmacro(tblrATATenv) {
+  const auto arr = args.alignment(2);
+  arr->checkDimensions();
+  const auto spec = front::parseTblr("", args.text(1));
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, front::tblrColumns(spec, arr->cols()), true);
 }
 
 inline cmdmacro(arrayATATenv) {
@@ -173,6 +207,22 @@ inline cmdmacro(specialrule) {
   } else {
     a->setThicknessScale(2.f);  // an unreadable thickness: \toprule's
   }
+  return a;
+}
+
+// booktabs' \addlinespace[len]: space of that height between two rows, or
+// .5em.
+inline cmdmacro(addlinespace) {
+  if (args.alignmentHere() == nullptr)
+    throw ex_parse("The macro \\addlinespace only available in array mode!");
+  auto a = sptrOf<HlineAtom>();
+  const Dimen gap = Units::getDimen(args.text(1));
+  if (gap.isValid()) {
+    a->setThickness(gap.val, gap.unit);
+  } else {
+    a->setThickness(0.5f, UnitType::em);
+  }
+  a->setBlank(true);
   return a;
 }
 

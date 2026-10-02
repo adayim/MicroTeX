@@ -52,6 +52,10 @@ sptr<Box> RaiseAtom::createBox(Env& env) {
 
 sptr<Box> ResizeAtom::createBox(Env& env) {
   auto box = _base->createBox(env);
+  // Only if it is wider than the line, which there may be none of.
+  if (_atMost && (env.textWidth() == POS_INF || box->_width <= Units::fsize(_width, env))) {
+    return box;
+  }
   // A size the box does not have cannot be scaled to: it is ignored, as
   // `!` would be.
   const bool w = _width.isValid() && box->_width > 0;

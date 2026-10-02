@@ -87,12 +87,22 @@ struct Table {
     add({"fatalIfCmdConflict", "breakEverywhere"}, "r");
     add({"makeatletter", "makeatother"}, "");
     // Their content is a cell's: text in a tabular met in text.
-    add({"multicolumn", "multirow"}, "rrc");
+    add({"multicolumn"}, "rrc");
+    // \multirow{rows}[bigstruts]{width}[vmove]{text}: the two options set
+    // where the text sits against its rows, which it is not set to.
+    add({"multirow"}, "rRrRc");
     // Rules end the row they are in, as they did in the old parser.
     add({"hline", "thickhline"}, "", Shape::prefix, Bare::none, true);
     add({"cline"}, "r", Shape::prefix, Bare::none, true);
     // booktabs' rule of a given thickness, and the space above and below.
     add({"specialrule"}, "ddd", Shape::prefix, Bare::none, true);
+    // booktabs' \addlinespace[len]: space between two rows, as a rule that
+    // draws nothing.
+    add({"addlinespace"}, "D", Shape::prefix, Bare::none, true);
+    // A longtable's markers: each ends the row it is in, as a rule does, and
+    // names the group of rows that ends there.
+    add({"endhead", "endfirsthead", "endfoot", "endlastfoot"}, "", Shape::prefix, Bare::none,
+        true);
     add({"rowcolor", "columncolor", "arrayrulecolor", "cellcolor"}, "r");
     add({"newcolumntype"}, "rr");
     add({"color"}, "r", Shape::groupDeclaration);
@@ -105,6 +115,10 @@ struct Table {
     // relsize's: the size times a factor, to the end of the group
     // (\textscale{f}{text} is the prelude's).
     add({"relscale"}, "r", Shape::declaration);
+    // LaTeX's \fontsize{size}{baselineskip}, which \selectfont puts in
+    // force: the size, against the 10pt a grob is drawn at; the baseline
+    // skip is the line spacing's, which gp sets.
+    add({"fontsize"}, "rr", Shape::declaration);
     add({"big", "Big", "bigg", "Bigg", "bigl", "Bigl", "biggl", "Biggl", "bigr", "Bigr",
          "biggr", "Biggr"},
         "l");
@@ -241,6 +255,13 @@ struct Table {
     env({"array", "alignedat"}, "Rr", EnvBody::alignment);
     // As array, but its cells are text, as LaTeX's are.
     env({"tabular"}, "Rr", EnvBody::alignment, true);
+    // With a width: tabular* spreads its columns across it, tabularx's X
+    // columns share it; longtable is a table too long for a page, which a
+    // grob has not got.
+    env({"tabular*", "tabularx"}, "rr", EnvBody::alignment, true);
+    env({"longtable"}, "Rr", EnvBody::alignment, true);
+    // tabularray's tables, as tinytable writes them: [options]{spec}.
+    env({"tblr", "talltblr", "longtblr"}, "Rr", EnvBody::alignment, true);
     env({"itemize", "enumerate"}, "", EnvBody::raw, true);
     // [position][height][inner position]{width}: a box of paragraphs.
     env({"minipage"}, "RDRd", EnvBody::text);
@@ -284,7 +305,9 @@ bool isCitation(const std::string& name) {
 }
 
 bool isRule(const std::string& name) {
-  return name == "hline" || name == "thickhline" || name == "cline" || name == "specialrule";
+  return name == "hline" || name == "thickhline" || name == "cline" || name == "specialrule" ||
+         name == "addlinespace" || name == "endhead" || name == "endfirsthead" ||
+         name == "endfoot" || name == "endlastfoot";
 }
 
 bool isLineAlignment(const std::string& name) {

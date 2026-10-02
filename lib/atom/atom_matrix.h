@@ -8,6 +8,7 @@
 #include "box/box_group.h"
 #include "box/box_single.h"
 #include "env/units.h"
+#include "graphic/font_style.h"
 
 namespace microtex {
 
@@ -83,6 +84,10 @@ private:
   // The style a column's cells are set in, from a `>{\displaystyle}` (or
   // \textstyle, \scriptstyle, \scriptscriptstyle) before it.
   std::map<int, TexStyle> _colStyles;
+  // The font a column's cells are set in, from a `>{\bfseries}` before it, and
+  // what follows each of them, from a `<{...}` after it.
+  std::map<int, FontStyle> _colFonts;
+  std::map<int, sptr<Atom>> _colSuffixes;
 
   MatrixType _matType;
   bool _isPartial;
@@ -91,6 +96,10 @@ private:
   // the display stays centred on the page and clear of them. Set by
   // createBoxInner() before the columns are spaced.
   float _tagReserve = 0;
+  // A table's own width, from tabular*{w} and tabularx{w}: tabularx's X
+  // columns share it, and tabular* spreads its columns across it.
+  Dimen _tableWidth;
+  bool _spread = false;
 
   void parsePositions(std::string opt, std::vector<Alignment>& lpos);
 
@@ -151,6 +160,13 @@ public:
   MatrixAtom(bool isPartial, const sptr<ArrayFormula>& arr, MatrixType type);
 
   sptr<Box> createBox(Env& env) override;
+
+  /** The width of `tabular*` (`spread`: its columns take up what the text
+   *  leaves of it) or `tabularx` (its X columns do). */
+  void setTableWidth(const Dimen& width, bool spread) {
+    _tableWidth = width;
+    _spread = spread;
+  }
 
   static void defineColumnSpecifier(const std::string& rep, const std::string& spe);
 };

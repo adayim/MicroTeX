@@ -1131,6 +1131,11 @@ struct Expander::Impl {
         cats.set('@', atLetter > 0 ? Cat::letter : Cat::other);
         return false;
       }
+      if ((name == "begingroup" || name == "endgroup") && !macros.count(name)) {
+        // TeX's group without braces, which kableExtra's font_size writes.
+        pushExpansion(name == "begingroup" ? "{" : "}", e.tok.span);
+        return true;
+      }
       if ((name == "begin" || name == "end") && !macros.count(name)) {
         return environment(e, name == "begin");
       }

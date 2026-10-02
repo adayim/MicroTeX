@@ -93,8 +93,10 @@ color ColorAtom::getColor(std::string name) {
   // #AARRGGBB formatted color
   if (name[0] == '#') return decodeColor(name);
   if (name.find(',') == string::npos) {
-    // find from predefined colors
-    auto it = _colors.find(toLower(name));
+    // find from predefined colors; a name is case-sensitive, as LaTeX's
+    // are, and the predefined ones are lower case
+    auto it = _colors.find(name);
+    if (it == _colors.end()) it = _colors.find(toLower(name));
     if (it != _colors.end()) return it->second;
     // AARRGGBB formatted color
     if (name.find('.') == string::npos) return decodeColor("#" + name);

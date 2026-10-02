@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "atom/atom_basic.h"
+#include "atom/atom_font.h"
 #include "atom/atom_row.h"
 #include "core/formula.h"
 #include "core/glue.h"
@@ -128,6 +129,9 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
   lpos.clear();
   _fillCols.clear();
   _lineAligns.clear();
+  _colStyles.clear();
+  _colFonts.clear();
+  _colSuffixes.clear();
   while (pos < len) {
     ch = opt[pos];
     switch (ch) {
@@ -151,6 +155,13 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         }
         _vlines[lpos.size()] = sptrOf<VlineAtom>(nb);
       } break;
+      case '<': {
+        // What follows each cell of the column before it.
+        const SpecArgument a = specArgument(opt, pos + 1);
+        if (!lpos.empty()) _colSuffixes[static_cast<int>(lpos.size()) - 1] = specAtom(a);
+        pos = a.end - 1;
+      } break;
+      case '!':  // between columns, as @ is, but keeping the space there
       case '@': {
         const SpecArgument a = specArgument(opt, pos + 1);
         // Keep columns same with the matrix
@@ -190,6 +201,26 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
           _lineAligns[col] = Alignment::right;
         } else if (a.text.find("\\raggedright") != string::npos) {
           _lineAligns[col] = Alignment::left;
+        }
+        // A font switch sets the column's cells in that font.
+        const auto has = [&](const string& name) {
+          for (size_t at = a.text.find(name); at != string::npos; at = a.text.find(name, at + 1)) {
+            const size_t next = at + name.size();
+            if (next >= a.text.size() || !isalpha(static_cast<unsigned char>(a.text[next]))) {
+              return true;
+            }
+          }
+          return false;
+        };
+        for (const auto& [name, style] : {pair<const char*, const char*>{"\\bfseries", "bf"},
+                                         {"\\bf", "bf"}, {"\\itshape", "it"}, {"\\it", "it"},
+                                         {"\\ttfamily", "tt"}, {"\\tt", "tt"},
+                                         {"\\sffamily", "sf"}, {"\\sf", "sf"},
+                                         {"\\rmfamily", "rm"}, {"\\rm", "rm"}}) {
+          if (has(name)) {
+            _colFonts[col] = FontContext::mainFontStyleOf(style);
+            break;
+          }
         }
         // "scriptscriptstyle" holds "scriptstyle": the longer name first.
         if (a.text.find("\\displaystyle") != string::npos) {
@@ -529,9 +560,19 @@ MatrixAtom::MatrixAtom(bool isPartial, const sptr<ArrayFormula>& arr, MatrixType
 }
 
 sptr<Box> MatrixAtom::cellBox(const sptr<Atom>& atom, int col, Env& env) const {
+  sptr<Atom> content = atom;
+  const auto font = _colFonts.find(col);
+  if (font != _colFonts.end()) content = sptrOf<FontStyleAtom>(font->second, false, content);
+  const auto suffix = _colSuffixes.find(col);
+  if (suffix != _colSuffixes.end()) {
+    auto row = sptrOf<RowAtom>();
+    row->add(content);
+    row->add(suffix->second);
+    content = row;
+  }
   const auto style = _colStyles.find(col);
-  if (style == _colStyles.end()) return atom->createBox(env);
-  return env.withStyle(style->second, [&](Env& styled) { return atom->createBox(styled); });
+  if (style == _colStyles.end()) return content->createBox(env);
+  return env.withStyle(style->second, [&](Env& styled) { return content->createBox(styled); });
 }
 
 void MatrixAtom::applyCell(WrapperBox& box, int i, int j) {
@@ -652,7 +693,15 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   // its column's share is made again at that width -- so a list or a table
   // inside it fits in turn -- with the word-level runs the breaker needs,
   // and broken to it as p{} is.
-  if (!_fillCols.empty() && env.textWidth() != POS_INF) {
+  // What the table is given to fill: its own width, which a width that is
+  // the measure leaves out where there is no measure -- the table is as wide
+  // as it is -- or else the measure.
+  float given = env.textWidth();
+  if (_tableWidth.isValid() &&
+      !(_tableWidth.unit == UnitType::tw && env.textWidth() == POS_INF)) {
+    given = Units::fsize(_tableWidth, env);
+  }
+  if (!_fillCols.empty() && given != POS_INF) {
     float used = 0;
     for (int j = 0; j < cols; j++) {
       if (std::find(_fillCols.begin(), _fillCols.end(), j) == _fillCols.end()) {
@@ -665,14 +714,16 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       const auto it = _vlines.find(j);
       if (it != _vlines.end()) used += it->second->getWidth(env);
     }
-    float avail = env.textWidth() - used;
+    float avail = given - used;
     vector<int> wide;
     for (const int j : _fillCols) {
       if (j < cols) wide.push_back(j);
     }
     // Those that fit an equal share keep their width; the share of the
-    // rest grows by what they left, until none more fit.
-    for (bool fitted = true; fitted && !wide.empty();) {
+    // rest grows by what they left, until none more fit. In a tabularx, which
+    // has a width of its own, the X columns all take an equal share of it.
+    const bool fills = _tableWidth.isValid() && !_spread;
+    for (bool fitted = !fills; fitted && !wide.empty();) {
       fitted = false;
       const float share = avail / static_cast<float>(wide.size());
       for (auto it = wide.begin(); it != wide.end();) {
@@ -713,7 +764,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           lineDepth[i] = max(boxarr[i][j]->_depth, lineDepth[i]);
         }
       }
-      for (const int j : wide) colWidth[j] = min(colWidth[j], xw);
+      for (const int j : wide) colWidth[j] = fills ? xw : min(colWidth[j], xw);
     }
   }
 
@@ -741,7 +792,24 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   const float leftShift = centred && env.textWidth() != POS_INF ? _tagReserve : 0.f;
 
   // The horizontal separator's width
-  const vector<float> Hsep = getColumnSep(env, matW);
+  vector<float> Hsep = getColumnSep(env, matW);
+  // tabular*'s \extracolsep{\fill}: what its width has left over goes
+  // between the columns.
+  if (_spread && given != POS_INF && cols > 1) {
+    float natural = matW;
+    for (const float s : Hsep) natural += s;
+    for (const auto& [col, vline] : _vlines) natural += vline->getWidth(env);
+    // Only between the columns of the table: an @{...} is no column of its
+    // text, and the gap beside it is not for stretching.
+    vector<int> gaps;
+    for (int j = 1; j < cols; j++) {
+      if (_position[j - 1] != Alignment::none && _position[j] != Alignment::none) gaps.push_back(j);
+    }
+    if (given > natural && !gaps.empty()) {
+      const float extra = (given - natural) / static_cast<float>(gaps.size());
+      for (const int j : gaps) Hsep[j] += extra;
+    }
+  }
 
   for (auto& i : multiCols) {
     auto* multi = (MulticolumnAtom*)i.get();

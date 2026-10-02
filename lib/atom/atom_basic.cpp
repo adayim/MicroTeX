@@ -35,7 +35,18 @@ sptr<Box> SmashedAtom::createBox(Env& env) {
 }
 
 sptr<Box> ScaleAtom::createBox(Env& env) {
-  auto box = sptrOf<ScaleBox>(_base->createBox(env), _sx, _sy);
+  // A size declaration scales what it holds, but not the measure the text
+  // is set to (LaTeX's size changes do not touch the line width): what
+  // inside it is as wide as the measure -- a table given the line width --
+  // is built to the measure over the scale, to be the measure once scaled.
+  const float measure = env.textWidth();
+  sptr<Box> base;
+  if (_declaration && measure != POS_INF && _sx > 0) {
+    base = env.withTextWidth(measure / _sx, [&](Env& e) { return _base->createBox(e); });
+  } else {
+    base = _base->createBox(env);
+  }
+  auto box = sptrOf<ScaleBox>(base, _sx, _sy);
   box->_openable = _declaration;
   return box;
 }
@@ -57,9 +68,12 @@ sptr<Box> HlineAtom::createBox(Env& env) {
   const auto drt = _thicknessUnit != UnitType::none
                      ? Units::fsize(_thicknessUnit, _thickness, env)
                      : env.ruleThickness() * _thicknessScale;
-  auto b = new RuleBox(drt, _width, _shift, _color, false);
   auto vb = new VBox();
-  vb->add(sptr<Box>(b));
+  if (_blank) {
+    vb->add(sptrOf<StrutBox>(0.f, drt, 0.f, 0.f));
+  } else {
+    vb->add(sptrOf<RuleBox>(drt, _width, _shift, _color, false));
+  }
   vb->_type = AtomType::hline;
   return sptr<Box>(vb);
 }

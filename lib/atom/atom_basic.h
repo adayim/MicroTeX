@@ -139,6 +139,8 @@ private:
   UnitType _thicknessUnit = UnitType::none;
   int _colStart, _colEnd;
   color _color;
+  // Draws nothing, and leaves the thickness as space (\addlinespace).
+  bool _blank = false;
 
 public:
   HlineAtom() noexcept
@@ -154,6 +156,8 @@ public:
   inline void setColor(color c) { _color = c; }
 
   inline void setThicknessScale(float s) { _thicknessScale = s; }
+
+  inline void setBlank(bool blank) { _blank = blank; }
 
   inline void setThickness(float value, UnitType unit) {
     _thickness = value;

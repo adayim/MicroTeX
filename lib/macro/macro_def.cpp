@@ -37,6 +37,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
 #define mac mac4
   mac(2, 1, macro_rule, "rule"),
   mac(1, 1, macro_includegraphics, "includegraphics"),
+  mac(0, 1, macro_addlinespace, "addlinespace"),
   mac(2, 1, macro_cfrac, "cfrac"),
   // region arrows
   mac(1, 1, macro_xarrow, "xleftarrow"),
@@ -74,6 +75,12 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(2, macro_arrayATATenv, "array@@env"),
   mac(2, macro_arrayATATenv, "tabular@@env"),
   mac(2, macro_eqnarrayATATenv, "eqnarray@@env"),
+  mac(3, macro_tabularstarATATenv, "tabular*@@env"),
+  mac(3, macro_tabularxATATenv, "tabularx@@env"),
+  mac(2, macro_longtableATATenv, "longtable@@env"),
+  mac(2, macro_tblrATATenv, "tblr@@env"),
+  mac(2, macro_tblrATATenv, "talltblr@@env"),
+  mac(2, macro_tblrATATenv, "longtblr@@env"),
   mac(2, macro_alignATATenv, "align@@env"),
   mac(2, macro_alignedATATenv, "aligned@@env"),
   mac(2, macro_flalignATATenv, "flalign@@env"),

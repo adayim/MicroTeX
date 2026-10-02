@@ -85,6 +85,9 @@ private:
   sptr<Atom> _base;
   Dimen _width, _height;
   bool _keepAspectRatio;
+  // kableExtra's scale_down, \resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}: the
+  // line width, but only if the box is wider than it.
+  bool _atMost = false;
 
 public:
   ResizeAtom() = delete;
@@ -101,6 +104,11 @@ public:
     _keepAspectRatio = keepAspectRatio;
     _width = Units::getDimen(ws);
     _height = Units::getDimen(hs);
+    // The box's own width, \width, in a TeX conditional: not a length.
+    if (ws.find("\\width") != std::string::npos) {
+      _atMost = ws.find("\\ifdim") != std::string::npos;
+      _width = _atMost ? Dimen{1.f, UnitType::tw} : Dimen{};
+    }
   }
 
   AtomType leftType() const override { return _base->leftType(); }

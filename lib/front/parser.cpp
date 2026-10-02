@@ -667,6 +667,9 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
     if (name == "caption") {
       // A line of text, ended as the prelude used to end it, with a line
       // break. A document also starts it on a line of its own (lower.cpp).
+      // Its star (no number, and a table has none to give) is read and
+      // means nothing here.
+      if (isOther(peek().tok, '*')) next();
       std::vector<NodeId> args;
       for (const ArgSpec& a : spec->args) args.push_back(parseArgument(a, Mode::text, who));
       items.push_back(_ast.add(std::move(n), args));

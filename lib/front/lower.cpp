@@ -32,6 +32,7 @@
 #include "front/front.h"
 #include "front/hooks.h"
 #include "front/spec.h"
+#include "front/tblr.h"
 #include "graphic/graphic.h"
 #include "macro/macro.h"
 #include "macro/macro_args.h"
@@ -600,6 +601,8 @@ private:
     if (name == "color" && f.isArrayMode()) {
       return sptrOf<CellForegroundAtom>(ColorAtom::getColor(stripComments(rawOf(child(id, 0)))));
     }
+    // A longtable's marker ends its row, and draws nothing.
+    if (isLongtableMarker(name)) return nullptr;
     // In an alignment, a rule or \intertext is its handler's, which works
     // on the alignment's rows.
     if (f.isArrayMode() && (isRule(name) || name == "intertext")) return bridge(id, name, spec, f);
@@ -1011,6 +1014,20 @@ private:
       if (name == "color") {
         const color c = ColorAtom::getColor(rawOf(child(id, 0)));
         return sptrOf<ColorAtom>(body(), TRANSPARENT, c);
+      }
+      if (name == "fontsize") {
+        // The size over the 10pt of \normalsize, which a grob's own size
+        // stands for, as \large's 1.2 does.
+        const std::string raw = rawOf(child(id, 0));
+        char* end = nullptr;
+        const float points = std::strtof(raw.c_str(), &end);
+        auto a = body();
+        if (a == nullptr) a = sptrOf<EmptyAtom>();
+        if (end == raw.c_str() || !std::isfinite(points) || points <= 0) {
+          _diags.warn(x.span, "\\fontsize: `" + raw + "' is not a positive size; the size is kept");
+          return a;
+        }
+        return sized(a, std::min(points / 10.f, 16384.f));
       }
       if (name == "relscale") {
         // relsize's: a size relative to the one around it, which still
@@ -1888,6 +1905,7 @@ private:
   sptr<ArrayFormula> alignmentOf(NodeId env) {
     auto arr = sptrOf<ArrayFormula>();
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
+    if (isTblrEnvironment(node(env).text)) return tblrAlignmentOf(env);
     const bool text = node(env).flag;
     // The rows of align, gather, ... are numbered, unless the environment is
     // starred; a multline has one number, on its last line.
@@ -1900,9 +1918,19 @@ private:
     _note = RowNote();
     _inRow++;
     int lastRow = -1;
+    std::vector<NodeId> rows;
     for (std::uint32_t r = 0; r < count(env); r++) {
-      const NodeId row = child(env, r);
-      if (node(row).kind != NodeKind::row) continue;
+      if (node(child(env, r)).kind == NodeKind::row) rows.push_back(child(env, r));
+    }
+    // A longtable's head and foot rows are set once: first and last.
+    const bool longtable = node(env).text == "longtable";
+    if (longtable) rows = longtableOrder(rows);
+    for (std::size_t k = 0; k < rows.size(); k++) {
+      const NodeId row = rows[k];
+      if (longtable && k == 0 && captionRow(env, row, *arr)) {
+        arr->addRow();
+        continue;
+      }
       for (std::uint32_t c = 0; c < count(row); c++) {
         if (c > 0) arr->addCol();
         if (text) {
@@ -1913,12 +1941,16 @@ private:
       }
       const std::string& end = node(row).text;
       // A rule or \intertext ends its row too, and is not an equation.
-      const bool equation = end.empty() || end == "\\" || end == "cr";
+      const bool marker = isLongtableMarker(end);
+      const bool equation = end.empty() || end == "\\" || end == "cr" || marker;
       const bool blank = isBlankRow(row);
       if (equation && !blank) lastRow = arr->rows();
       if (family && equation && !once) finishRow(*arr, arr->rows(), automatic && !blank);
       if (!node(row).raw.empty()) arr->addRowGap(Units::getDimen(node(row).raw));
-      if (end == "\\" || end == "cr") arr->addRow();
+      // A row moved from the end of the table has no end of its own.
+      if (end == "\\" || end == "cr" || marker || (end.empty() && k + 1 < rows.size())) {
+        arr->addRow();
+      }
     }
     if (family && once && lastRow >= 0) finishRow(*arr, lastRow, automatic);
     _inRow--;
@@ -1934,6 +1966,212 @@ private:
       }
       _note.notag = _note.notag || inner.notag;
       _note.labels.insert(_note.labels.end(), inner.labels.begin(), inner.labels.end());
+    }
+    return arr;
+  }
+
+  static bool isLongtableMarker(const std::string& name) {
+    return name == "endhead" || name == "endfirsthead" || name == "endfoot" ||
+           name == "endlastfoot";
+  }
+
+  /** A longtable's rows, in the order a single page sets them: the first
+   *  head (the head, where there is no first one), the rows, and the last
+   *  foot (the foot). A group ends at the row that has its marker. */
+  std::vector<NodeId> longtableOrder(const std::vector<NodeId>& rows) const {
+    std::vector<NodeId> firstHead, head, foot, lastFoot, group;
+    for (const NodeId row : rows) {
+      group.push_back(row);
+      const std::string& end = node(row).text;
+      std::vector<NodeId>* to = end == "endfirsthead"  ? &firstHead
+                                : end == "endhead"     ? &head
+                                : end == "endfoot"     ? &foot
+                                : end == "endlastfoot" ? &lastFoot
+                                                       : nullptr;
+      if (to == nullptr) continue;
+      to->insert(to->end(), group.begin(), group.end());
+      group.clear();
+    }
+    std::vector<NodeId> order = firstHead.empty() ? head : firstHead;
+    order.insert(order.end(), group.begin(), group.end());
+    const std::vector<NodeId>& tail = lastFoot.empty() ? foot : lastFoot;
+    order.insert(order.end(), tail.begin(), tail.end());
+    return order;
+  }
+
+  /** How many columns a column specification sets: its letters, with what
+   *  is in braces after p, m, b, @, !, > and < left out, and *{n}{cols}
+   *  counted n times. */
+  static int columnCount(const std::string& spec, int depth = 0) {
+    int n = 0;
+    // The index of the `}` that closes the `{` at or after `from`.
+    const auto close = [&](std::size_t from) {
+      std::size_t j = from;
+      for (int open = 0; j < spec.size(); j++) {
+        if (spec[j] == '{') open++;
+        if (spec[j] == '}' && --open == 0) break;
+      }
+      return j;
+    };
+    for (std::size_t i = 0; i < spec.size(); i++) {
+      const char c = spec[i];
+      const bool braced = i + 1 < spec.size() && spec[i + 1] == '{';
+      if (c == '@' || c == '!' || c == '>' || c == '<') {
+        i = close(i + 1);
+      } else if (c == 'p' || c == 'm' || c == 'b' || c == 'X') {
+        n++;
+        if (braced) i = close(i + 1);
+      } else if (c == '*' && depth < 8) {
+        const std::size_t first = close(i + 1);
+        const int times = std::atoi(spec.substr(i + 2, first - i - 2).c_str());
+        const std::size_t last = close(first + 1);
+        n += std::min(std::max(times, 0), 1000) *
+             columnCount(spec.substr(first + 2, last - first - 2), depth + 1);
+        i = last;
+      } else if (c == 'l' || c == 'c' || c == 'r' || c == 'S' || c == 'Q') {
+        n++;
+        if (i + 1 < spec.size() && spec[i + 1] == '[') {
+          const std::size_t end = spec.find(']', i + 1);
+          i = end == std::string::npos ? spec.size() : end;
+        }
+      }
+    }
+    return n;
+  }
+
+  /** A longtable's first row, when it holds only its caption: set as a
+   *  line centred across the table, as LaTeX sets one above it. */
+  bool captionRow(NodeId env, NodeId row, ArrayFormula& arr) {
+    if (count(row) != 1) return false;
+    const NodeId list = child(child(row, 0), 0);
+    std::uint32_t i = 0;
+    while (i < count(list) && isSpace(node(child(list, i)))) i++;
+    if (i >= count(list)) return false;
+    const NodeId cap = child(list, i);
+    if (node(cap).kind != NodeKind::command || node(cap).flag || node(cap).text != "caption") {
+      return false;
+    }
+    // The environment's arguments are [position]{columns}: the last one
+    // that was given is the columns.
+    int columns = 1;
+    for (std::uint32_t a = 0; a < count(env); a++) {
+      const Node& arg = node(child(env, a));
+      if (arg.kind == NodeKind::argument && arg.flag && !arg.raw.empty()) {
+        columns = columnCount(arg.raw);
+      }
+    }
+    columns = std::min(std::max(columns, 1), 1 << 14);
+    arr.add(sptrOf<MulticolumnAtom>(columns, "c", commandAtom(cap, arr)));
+    if (columns > 1) arr.addCol(columns);
+    return true;
+  }
+
+  /** The rules of a tblr at one position (above row `at`), those that
+   *  meet joined: one row of the table draws one rule. */
+  static std::vector<TblrRule> rulesAt(const TblrSpec& spec, int at, int rows, int columns) {
+    std::vector<TblrRule> found;
+    for (TblrRule r : spec.horizontal) {
+      if (!r.at.matches(at, rows + 1)) continue;
+      if (r.from == 0) r.from = 1;
+      if (r.to == 0 || r.to > columns) r.to = columns;
+      found.push_back(r);
+    }
+    std::stable_sort(found.begin(), found.end(),
+                     [](const TblrRule& a, const TblrRule& b) { return a.from < b.from; });
+    std::vector<TblrRule> merged;
+    for (const TblrRule& r : found) {
+      if (!merged.empty() && r.from <= merged.back().to + 1) {
+        merged.back().to = std::max(merged.back().to, r.to);
+      } else {
+        merged.push_back(r);
+      }
+    }
+    return merged;
+  }
+
+  /** A tblr (tabularray's table, tinytable's) as an alignment: the rules
+   *  its spec puts between rows, and the spans, colours, fonts and
+   *  alignments it sets for cells. */
+  sptr<ArrayFormula> tblrAlignmentOf(NodeId env) {
+    auto arr = sptrOf<ArrayFormula>();
+    const bool text = node(env).flag;
+    const NodeId outerArg = count(env) > 0 ? child(env, 0) : kNoNode;
+    const NodeId innerArg = count(env) > 1 ? child(env, 1) : kNoNode;
+    TblrSpec spec = parseTblr(outerArg == kNoNode ? std::string() : rawOf(outerArg),
+                              innerArg == kNoNode ? std::string() : rawOf(innerArg));
+    std::vector<NodeId> rows;
+    for (std::uint32_t r = 0; r < count(env); r++) {
+      if (node(child(env, r)).kind == NodeKind::row) rows.push_back(child(env, r));
+    }
+    // The empty row after the last \\ is no row of the table.
+    while (!rows.empty() && isBlankRow(rows.back()) && node(rows.back()).text.empty()) {
+      rows.pop_back();
+    }
+    int columns = 0;
+    for (const NodeId row : rows) columns = std::max(columns, static_cast<int>(count(row)));
+    const int n = static_cast<int>(rows.size());
+
+    // A caption, as a longtable's: a line across the table, above it.
+    if (!spec.caption.empty() && columns > 0) {
+      auto caption = sptrOf<FontStyleAtom>(FontStyle::rm, false, fragment(spec.caption, false));
+      arr->add(sptrOf<MulticolumnAtom>(columns, "c", caption));
+      if (columns > 1) arr->addCol(columns);
+      arr->addRow();
+    }
+
+    const auto rule = [&](int at) {
+      for (const TblrRule& r : rulesAt(spec, at, n, columns)) {
+        auto line = sptrOf<HlineAtom>();
+        if (r.thickness.isValid()) line->setThickness(r.thickness.val, r.thickness.unit);
+        if (r.from > 1 || r.to < columns) line->setColumnRange(r.from - 1, r.to - 1);
+        arr->add(line);
+        arr->addRow();
+      }
+    };
+
+    bool noted = false;
+    for (int k = 0; k < n; k++) {
+      const NodeId row = rows[static_cast<std::size_t>(k)];
+      rule(k + 1);
+      const std::uint32_t cells = count(row);
+      for (std::uint32_t c = 0; c < cells;) {
+        if (c > 0) arr->addCol();
+        const NodeId list = child(child(row, c), 0);
+        if (text) {
+          textCell(list, *arr);
+        } else {
+          lowerList(list, *arr, 0);
+        }
+        const TblrSetting s = tblrCell(spec, k + 1, static_cast<int>(c) + 1, n, columns);
+        if (s.rowspan > 1 && !noted) {
+          noted = true;
+          _diags.warn(node(env).span, "tabularray: a row span (r=) is not supported: left out");
+        }
+        if (!s.font.empty()) {
+          arr->_root = sptrOf<FontStyleAtom>(FontContext::mainFontStyleOf(s.font), false, arr->_root,
+                                              true);
+        }
+        if (!s.background.empty()) {
+          arr->addCellSpecifier(sptrOf<CellColorAtom>(ColorAtom::getColor(s.background)));
+        }
+        if (!s.foreground.empty()) {
+          arr->addCellSpecifier(sptrOf<CellForegroundAtom>(ColorAtom::getColor(s.foreground)));
+        }
+        const int span = std::min(s.colspan, static_cast<int>(cells - c));
+        if (span > 1 || !s.halign.empty()) {
+          arr->_root = sptrOf<MulticolumnAtom>(std::max(span, 1), s.halign.empty() ? "l" : s.halign,
+                                               arr->_root);
+          if (span > 1) arr->addCol(span);
+        }
+        // What it spans was written as cells of its own, which are empty.
+        c += static_cast<std::uint32_t>(std::max(span, 1));
+      }
+      if (!node(row).raw.empty()) arr->addRowGap(Units::getDimen(node(row).raw));
+      arr->addRow();
+    }
+    rule(n + 1);
+    for (const std::string& key : spec.unsupported) {
+      _diags.warn(node(env).span, "tabularray: `" + key + "' is not supported: left out");
     }
     return arr;
   }
@@ -2060,7 +2298,8 @@ private:
     std::unique_ptr<Formula> text;
     const auto flush = [&] {
       if (text != nullptr && text->_root != nullptr) {
-        arr.add(sptrOf<FontStyleAtom>(FontStyle::rm, false, text->_root));
+        // Nested, so the font a column or a group around the table sets stays.
+        arr.add(sptrOf<FontStyleAtom>(FontStyle::rm, false, text->_root, true));
       }
       text.reset();
     };
