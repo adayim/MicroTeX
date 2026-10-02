@@ -20,6 +20,7 @@ if install_headerfiles
         'macro_colors.h',
         'macro_decl.h',
         'macro_delims.h',
+        'macro_diagram.h',
         'macro_env.h',
         'macro_fonts.h',
         'macro_frac.h',

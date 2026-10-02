@@ -1,0 +1,14 @@
+\begin{tikzcd}[row sep=large, column sep=2em, ampersand replacement=\&]
+A \arrow[r, "f"] \arrow[d, "g"'] \arrow[dr, dashed] \& B \arrow[d, "h"{near start, swap}] \\
+C \arrow[r, hook, "k"', bend left=30] \& D \arrow[ul, Rightarrow, "\alpha"{description}, shift right=2]
+\end{tikzcd}
+\begin{tikzcd}
+A \arrow[rr, two heads, mapsto, shorten <=1ex, shorten >=2pt] & & B \arrow[l, tail] \arrow[d, leftrightarrow] \\
+\ar{r}{f} & {} & C \rar \dar \\ & wibble \arrow[x, "unclosed & \arrow[
+\end{tikzcd}
+\begin{CD}
+A @>f>> B @<<g< C @= D @>>> \\
+@VhVV @. @AAkA @| \\
+E @>{\text{long label}}>> F @. @@ G @X H
+\end{CD}
+\begin{CD} @VVV \\ A @> \end{CD}

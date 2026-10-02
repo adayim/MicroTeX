@@ -849,6 +849,21 @@ private:
       return arr;
     }
 
+    sptr<Atom> formulaChecked(const std::string& latex, bool math) override {
+      if (latex.empty()) return nullptr;
+      Diagnostics found;
+      const Ast ast = parseLatex(latex, math ? Mode::math : Mode::text, found);
+      if (ast.root == kNoNode) return nullptr;
+      Formula g;
+      Lowerer(ast, found).run(g, false, false);
+      for (const Diagnostic& d : found.items()) warn(d.message);
+      return g._root;
+    }
+
+    void warn(const std::string& message) override {
+      if (!_who.empty()) _lx._diags.warn(_at, _who + ": " + message);
+    }
+
     /** Report what alignmentOfText() finds at `at`, as `who`'s. */
     void reportAt(SourceSpan at, std::string who) {
       _at = at;

@@ -272,6 +272,9 @@ struct Table {
     env({"tblr", "talltblr", "longtblr"}, "Rr", EnvBody::alignment, true);
     env({"itemize", "enumerate", "description"}, "", EnvBody::raw, true);
     env({"verbatim", "verbatim*"}, "", EnvBody::verbatim, true);
+    // Commutative diagrams: amscd's, and tikz-cd's, which a handler reads
+    // whole (its options and arrows are in the body).
+    env({"CD", "tikzcd"}, "", EnvBody::raw);
     // [position][height][inner position]{width}: a box of paragraphs.
     env({"minipage"}, "RDRd", EnvBody::text);
   }

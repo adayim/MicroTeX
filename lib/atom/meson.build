@@ -23,6 +23,7 @@ atom_src = [
     'atom/colors_def.cpp',
     'atom/font_family_atom.cpp',
     'atom/image_atom.cpp',
+    'atom/diagram_atom.cpp',
     'atom/mark_atom.cpp'
 ]
 
@@ -51,6 +52,7 @@ if install_headerfiles
         'atom_zstack.h',
         'font_family_atom.h',
         'image_atom.h',
+        'diagram_atom.h',
         'mark_atom.h'
 	], subdir: 'microtex/atom')
 endif

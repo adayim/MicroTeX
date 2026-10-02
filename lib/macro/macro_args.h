@@ -52,6 +52,15 @@ public:
   /** The old parser's partial flag: an unknown command is drawn, not an
    *  error. Always so now; the handlers that still ask go in Stage 8. */
   virtual bool isPartial() const = 0;
+
+  /** As formulaOf(), but its problems are reported at the command, for
+   *  text of the user's that a handler cut out of an environment. */
+  virtual sptr<Atom> formulaChecked(const std::string& latex, bool math = true) {
+    return formulaOf(latex, math);
+  }
+
+  /** Say something about the command's input, at the command. */
+  virtual void warn(const std::string& message) { (void)message; }
 };
 
 typedef sptr<Atom> (*CommandDelegate)(CommandArgs& args);
