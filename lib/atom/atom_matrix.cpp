@@ -191,6 +191,16 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         } else if (a.text.find("\\raggedright") != string::npos) {
           _lineAligns[col] = Alignment::left;
         }
+        // "scriptscriptstyle" holds "scriptstyle": the longer name first.
+        if (a.text.find("\\displaystyle") != string::npos) {
+          _colStyles[col] = TexStyle::display;
+        } else if (a.text.find("\\textstyle") != string::npos) {
+          _colStyles[col] = TexStyle::text;
+        } else if (a.text.find("\\scriptscriptstyle") != string::npos) {
+          _colStyles[col] = TexStyle::scriptScript;
+        } else if (a.text.find("\\scriptstyle") != string::npos) {
+          _colStyles[col] = TexStyle::script;
+        }
         pos = a.end - 1;
       } break;
       case 'p':
@@ -515,6 +525,12 @@ MatrixAtom::MatrixAtom(bool isPartial, const sptr<ArrayFormula>& arr, MatrixType
   }
 }
 
+sptr<Box> MatrixAtom::cellBox(const sptr<Atom>& atom, int col, Env& env) const {
+  const auto style = _colStyles.find(col);
+  if (style == _colStyles.end()) return atom->createBox(env);
+  return env.withStyle(style->second, [&](Env& styled) { return atom->createBox(styled); });
+}
+
 void MatrixAtom::applyCell(WrapperBox& box, int i, int j) {
   // 1. apply column specifier
   const auto col = _columnSpecifiers.find(j);
@@ -584,7 +600,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
         // would be unbreakable, and the column would silently size to its
         // content instead of wrapping.
         MergeTextGuard guard(_colWidths.find(j) != _colWidths.end());
-        boxarr[i][j] = (atom == nullptr) ? _nullbox : atom->createBox(env);
+        boxarr[i][j] = (atom == nullptr) ? _nullbox : cellBox(atom, j, env);
       }
       if (atom != nullptr && atom->_type == AtomType::interText) {
         boxarr[i][j]->_type = AtomType::interText;
@@ -679,7 +695,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           sptr<Box> cell;
           {
             MergeTextGuard guard(true);
-            cell = env.withTextWidth(xw, [&](Env& e) { return atom->createBox(e); });
+            cell = env.withTextWidth(xw, [&](Env& e) { return cellBox(atom, j, e); });
           }
           const auto [wasSplit, splitBox] = BoxSplitter::split(cell, xw, env.lineSpace());
           (void)wasSplit;

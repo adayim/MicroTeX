@@ -93,6 +93,21 @@ TEST(expander_starred_definition_commands_define) {
            std::string("\\mathop{\\mathrm{am}}\\limits"));
 }
 
+TEST(expander_paired_delimiters_have_a_plain_a_sized_and_a_starred_form) {
+  const std::string decl = "\\DeclarePairedDelimiter{\\abs}{\\lvert}{\\rvert}";
+  CHECK_EQ(ex(decl + "\\abs{x}"), std::string("\\lvert x\\rvert"));
+  CHECK_EQ(ex(decl + "\\abs[\\big]{x}"), std::string("\\big\\lvert x\\big\\rvert"));
+  CHECK_EQ(ex(decl + "\\abs*{x}"), std::string("\\left\\lvert x\\right\\rvert"));
+  // A star that is not directly after it is not its star.
+  CHECK_EQ(ex(decl + "\\abs {x}*"), std::string("\\lvert x\\rvert*"));
+  // Delimiters that are single characters.
+  CHECK_EQ(ex("\\DeclarePairedDelimiter{\\p}{(}{)}\\p{a}\\p*{b}"),
+           std::string("( a)\\left( b\\right)"));
+  // Local to the group that defines it, both forms.
+  CHECK_EQ(ex("{" + decl + "\\abs{x}}\\abs*"), std::string("{\\lvert x\\rvert}\\abs*"));
+  CHECK_THROWS(ex("\\DeclarePairedDelimiter{\\frac}{(}{)}"), "already exists");
+}
+
 TEST(expander_starred_builtins_become_forms_the_parser_reads) {
   CHECK_EQ(ex("\\operatorname*{x}"), std::string("\\mathop{\\mathrm{x}}\\limits"));
   CHECK_EQ(ex("\\hspace*{1em}"), std::string("\\hspace{1em}"));

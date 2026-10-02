@@ -175,7 +175,9 @@ struct Table {
     add({"cornersize"}, "r");
     add({"llap", "rlap", "clap", "mathllap", "mathrlap", "mathclap"}, "m");
     add({"nolimits", "limits", "normal"}, "", Shape::postfix);
-    add({"kern"}, "", Shape::prefix, Bare::dimen);
+    // TeX's skips, read as \kern is: the glue's stretch and shrink have
+    // nothing to act on in a grob, so a `plus` or `minus` part is not read.
+    add({"kern", "mkern", "hskip", "mskip"}, "", Shape::prefix, Bare::dimen);
     add({"char"}, "", Shape::prefix, Bare::number);
     add({"roman", "Roman"}, "r");
     add({"surd", "lmoustache", "rmoustache", "-", "nbsp", "joinrel", "underscore",
@@ -184,6 +186,8 @@ struct Table {
     add({"st"}, "c");
     add({"longdiv"}, "rr");
     add({"cancel", "bcancel", "xcancel", "sqrtsign"}, "m");
+    // cancel's \cancelto{value}{base}.
+    add({"cancelto"}, "mm");
     // ulem's strike-out and underline, which break with their text, and the
     // phantoms: text in text, math in math, as in LaTeX.
     add({"sout", "uline", "phantom", "hphantom", "vphantom"}, "c");

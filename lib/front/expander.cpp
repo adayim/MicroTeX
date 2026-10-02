@@ -711,7 +711,20 @@ struct Expander::Impl {
         unread(std::move(t));
       }
     }
-    if (def == nullptr) def = lookup(name);
+    if (def == nullptr) {
+      def = lookup(name);
+      // A macro with a starred twin, `cmd*`, as \DeclarePairedDelimiter makes.
+      if (def != nullptr) {
+        if (const MacroDef* twin = lookup(name + "*")) {
+          ExpToken t = raw();
+          if (isChar(t, '*')) {
+            def = twin;
+          } else {
+            unread(std::move(t));
+          }
+        }
+      }
+    }
     if (def == nullptr) return false;
 
     const std::string who = "\\" + name;
@@ -962,6 +975,32 @@ struct Expander::Impl {
     macros[name] = std::move(def);
   }
 
+  /** mathtools' \DeclarePairedDelimiter{\cmd}{left}{right}: `\cmd{x}` sets
+   *  the delimiters at the size they are in, `\cmd[\big]{x}` at the size
+   *  given, and `\cmd*{x}` as \left...\right does. The starred form is
+   *  the macro `cmd*`, which expandMacro() looks for after a `*`. */
+  void declarePairedDelimiter(const ExpToken& e) {
+    const std::string name = readCsName("newcommand");
+    const std::string left = readArg("\\DeclarePairedDelimiter");
+    const std::string right = readArg("\\DeclarePairedDelimiter");
+    if (isDefined(name)) {
+      fail("newcommand", "Command " + name + " already exists! Use renewcommand instead!");
+    }
+    const std::string who = "\\" + name;
+    // A space after the left delimiter, which an argument could run into.
+    MacroDef plain;
+    plain.nparams = 2;
+    plain.hasOptional = true;
+    plain.body = splitBody("#1" + left + " #2#1" + right, 2, who, e.tok.span);
+    MacroDef starred;
+    starred.nparams = 1;
+    starred.body = splitBody("\\left" + left + " #1\\right" + right, 1, who + "*", e.tok.span);
+    defineLocally(name);
+    macros[name] = std::move(plain);
+    defineLocally(name + "*");
+    macros[name + "*"] = std::move(starred);
+  }
+
   void defineDef(const ExpToken& e) {
     ExpToken n = raw();
     if (!n.tok.isControl()) failDefinition("def", "\\def: expected '\\' before the name", 1);
@@ -1066,6 +1105,10 @@ struct Expander::Impl {
       }
       if (name == "DeclareMathOperator") {
         declareOperator();
+        return true;
+      }
+      if (name == "DeclarePairedDelimiter") {
+        declarePairedDelimiter(e);
         return true;
       }
       if (name == "def" || name == "gdef") {

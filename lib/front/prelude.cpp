@@ -29,12 +29,18 @@ std::string_view preludeSource() {
 \newenvironment{eqnarray}{\begin{array}{rcl}}{\end{array}}
 \newenvironment{cases}{\left\{\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
 \newenvironment{rcases}{\left.\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
+\newenvironment{dcases}{\left\{\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
+\newenvironment{subarray}[1]{\scriptstyle\begin{array}{#1}}{\end{array}}
 \newenvironment{split}{\begin{array}{r@{\;}l}}{\end{array}}
 \newenvironment{math}{\(}{\)}
 \newenvironment{displaymath}{\[}{\]}
 \newenvironment{equation}{\begin{align}}{\end{align}}
 \newcommand{\operatorname}[1]{\mathop{\mathrm{#1}}\nolimits }
 \newcommand{\substack}[1]{{\scriptstyle\begin{array}{c}#1\end{array}}}
+\newcommand{\shortintertext}[1]{\intertext{#1}}
+\newcommand{\mspace}[1]{\hspace{#1}}
+\newcommand{\leftroot}[1]{}
+\newcommand{\uproot}[1]{}
 \newcommand{\dfrac}[2]{\genfrac{}{}{1}{}{#1}{#2}}
 \newcommand{\tfrac}[2]{\genfrac{}{}{1}{1}{#1}{#2}}
 \newcommand{\dbinom}[2]{\genfrac{(}{)}{0pt}{}{#1}{#2}}

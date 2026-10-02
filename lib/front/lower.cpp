@@ -369,7 +369,7 @@ private:
       }
       return unknownAtom(name);
     }
-    if (name == "kern") {
+    if (name == "kern" || name == "mkern" || name == "hskip" || name == "mskip") {
       const auto [value, unit] = Units::getDimen(rawOf(child(id, 0)));
       return sptrOf<SpaceAtom>(unit, value, 0.f, 0.f);
     }

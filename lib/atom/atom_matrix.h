@@ -80,6 +80,9 @@ private:
   // How the lines of a paragraph column (p{}, X) are aligned, from a
   // `>{\centering}` or `>{\raggedleft}` before it; left when not here.
   std::map<int, Alignment> _lineAligns;
+  // The style a column's cells are set in, from a `>{\displaystyle}` (or
+  // \textstyle, \scriptstyle, \scriptscriptstyle) before it.
+  std::map<int, TexStyle> _colStyles;
 
   MatrixType _matType;
   bool _isPartial;
@@ -88,6 +91,9 @@ private:
   void parsePositions(std::string opt, std::vector<Alignment>& lpos);
 
   Alignment lineAlign(int col) const;
+
+  /** The box of a cell of column `col`, in the style the column asks for. */
+  sptr<Box> cellBox(const sptr<Atom>& atom, int col, Env& env) const;
 
   sptr<Box> generateMulticolumn(
     Env& env,

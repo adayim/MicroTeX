@@ -199,7 +199,7 @@ private:
   int _cancelType;
 
 public:
-  enum CancelType { SLASH, BACKSLASH, CROSS, HORIZONTAL };
+  enum CancelType { SLASH, BACKSLASH, CROSS, HORIZONTAL, ARROW };
 
   CancelAtom() = delete;
 

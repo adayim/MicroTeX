@@ -223,10 +223,29 @@ void LongDivAtom::calculate(vector<string>& results) const {
 sptr<Box> CancelAtom::createBox(Env& env) {
   auto box = _base->createBox(env);
   vector<float> lines;
+  const float rt = env.mathConsts().fractionRuleThickness() * env.scale();
+  // y runs down from the top of the box: a slash, as the cancel package's
+  // \cancel draws it, goes from the bottom left to the top right.
   if (_cancelType == SLASH) {
-    lines = {0, 0, box->_width, box->_height + box->_depth};
+    lines = {0, box->_height + box->_depth, box->_width, 0};
   } else if (_cancelType == BACKSLASH) {
-    lines = {box->_width, 0, 0, box->_height + box->_depth};
+    lines = {0, 0, box->_width, box->_height + box->_depth};
+  } else if (_cancelType == ARROW) {
+    // \cancelto: the slash, ending in an arrow head at the top right.
+    const float w = box->_width;
+    const float h = box->_height + box->_depth;
+    lines = {0, h, w, 0};
+    const float len = std::sqrt(w * w + h * h);
+    if (len > 0) {
+      const float head = std::min(len, std::max(0.25f * len, 4 * rt));
+      const float bx = -w / len, by = h / len;  // back along the shaft
+      const float theta = 0.45f;
+      for (const float sign : {1.f, -1.f}) {
+        const float c = std::cos(theta), s = sign * std::sin(theta);
+        lines.insert(
+          lines.end(), {w, 0.f, w + head * (bx * c - by * s), head * (bx * s + by * c)});
+      }
+    }
   } else if (_cancelType == CROSS) {
     lines = {
       0,
@@ -248,7 +267,6 @@ sptr<Box> CancelAtom::createBox(Env& env) {
     return box;
   }
 
-  const float rt = env.mathConsts().fractionRuleThickness() * env.scale();
   auto overlap = sptrOf<LineBox>(lines, rt);
   overlap->_width = box->_width;
   overlap->_height = box->_height;

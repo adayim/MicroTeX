@@ -5,6 +5,7 @@
 
 #include "atom/atom_basic.h"
 #include "atom/atom_misc.h"
+#include "atom/atom_scripts.h"
 #include "atom/atom_sideset.h"
 #include "core/formula.h"
 #include "core/split.h"
@@ -64,6 +65,15 @@ inline cmdmacro(bcancel) {
 
 inline cmdmacro(xcancel) {
   return _cancel(CancelAtom::CROSS, args);
+}
+
+// cancel's \cancelto{value}{base}: the base struck by an arrow, with the
+// value at its tip as a superscript.
+inline cmdmacro(cancelto) {
+  auto value = args.formula(1);
+  auto base = args.formula(2);
+  if (base == nullptr) throw ex_parse("Cancel content must not be empty!");
+  return sptrOf<ScriptsAtom>(sptrOf<CancelAtom>(base, CancelAtom::ARROW), nullptr, value);
 }
 
 // ulem's: a strike-out and an underline that break with their text, which
