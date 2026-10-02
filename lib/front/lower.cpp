@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -121,6 +122,13 @@ std::string trimmed(std::string s) {
 struct Numbering {
   /** The equation counter. */
   int equation = 0;
+  /** A theorem counter, and the section it was last stepped in: it starts
+   *  again from 1 in the next. */
+  struct Counter {
+    int value = 0;
+    std::string where;
+  };
+  std::map<std::string, Counter> counters;
   /** What a \label names now, as \@currentlabel: the number of the last
    *  equation or heading. */
   std::string current;
@@ -587,6 +595,14 @@ private:
       return sptrOf<FontStyleAtom>(FontStyle::rm, false, argumentFormula(text, rawOf(text), false));
     }
     if (name == "url" || name == "href") return link(id, f);
+    if (name == "textsc") {
+      return fragment(smallCaps(rawOf(child(id, 0))), node(id).mode == Mode::math);
+    }
+    if (name == "gmtheorem") return fragment(theoremHead(id), false);
+    if (name == "verb") {
+      const NodeId text = child(id, 0);
+      return fragment(typewriter(rawOf(text), node(text).star), node(id).mode == Mode::math);
+    }
     if (name == "includegraphics") return image(id);
     if (name == "graphicspath") {
       graphicsPath(rawOf(child(id, 0)));
@@ -613,6 +629,106 @@ private:
     // operand here; the old parser read on past the argument for one.
     if (spec->shape != Shape::prefix) return nullptr;
     return bridge(id, name, spec, f);
+  }
+
+  /** `text` as written, set in the typewriter face: every character that
+   *  means something to TeX is named by its code, a space is one that is
+   *  kept (a `\verb*` shows it as U+2423), and nothing is a ligature. */
+  static std::string typewriter(const std::string& text, bool visibleSpaces) {
+    std::string out = "\\texttt{";
+    for (const char c : text) {
+      if (c == ' ') {
+        out += visibleSpaces ? "\xe2\x90\xa3" : "~";
+      } else if (std::string("\\{}$&#_%~^-`'<>|\"").find(c) != std::string::npos) {
+        out += "\\char" + std::to_string(static_cast<unsigned char>(c)) + "{}";
+      } else {
+        out += c;
+      }
+    }
+    return out + "}";
+  }
+
+  /** Small capitals, faked as every device has to: the lowercase letters of
+   *  `text` as capitals at 0.8 of the size, the rest as it is. A command's
+   *  name and what is in math are left alone. Only ASCII letters change. */
+  static std::string smallCaps(const std::string& text) {
+    std::string out, run;
+    const auto flush = [&] {
+      if (!run.empty()) out += "\\textscale{0.8}{" + run + "}";
+      run.clear();
+    };
+    bool math = false;
+    for (std::size_t i = 0; i < text.size(); i++) {
+      const char c = text[i];
+      if (c == '$') {
+        flush();
+        math = !math;
+        out += c;
+      } else if (math) {
+        out += c;
+      } else if (c == '\\') {
+        flush();
+        out += c;
+        // A control word whole, else the one character it escapes.
+        const bool word = i + 1 < text.size() && std::isalpha(static_cast<unsigned char>(text[i + 1])) != 0;
+        do {
+          if (++i < text.size()) out += text[i];
+        } while (word && i + 1 < text.size() && std::isalpha(static_cast<unsigned char>(text[i + 1])) != 0);
+      } else if (c >= 'a' && c <= 'z') {
+        run += static_cast<char>(c - 'a' + 'A');
+      } else {
+        flush();
+        out += c;
+      }
+    }
+    flush();
+    return out;
+  }
+
+  /** The head of a theorem: "Theorem 2 (note)." in bold, as amsthm's plain
+   *  style sets it, a remark's in italics. `style`, the counter, the
+   *  counter it is set within, the title and the note are its arguments
+   *  (the expander's \newtheorem writes them). A numbered theorem steps its
+   *  counter, which starts again when the section it is within does, and is
+   *  what a \label after it names. */
+  std::string theoremHead(NodeId id) {
+    const std::string style = rawOf(child(id, 0));
+    const std::string counter = rawOf(child(id, 1));
+    const std::string within = rawOf(child(id, 2));
+    const std::string title = rawOf(child(id, 3));
+    const std::string note = rawOf(child(id, 4));
+    std::string number;
+    if (!counter.empty()) {
+      std::string where;
+      if (within == "section") where = std::to_string(_section[0]);
+      if (within == "subsection") where = std::to_string(_section[0]) + "." + std::to_string(_section[1]);
+      Numbering::Counter& c = nums().counters[counter];
+      if (c.where != where) c.value = 0;
+      c.where = where;
+      number = (where.empty() ? "" : where + ".") + std::to_string(++c.value);
+      nums().current = number;
+    }
+    const std::string name = title + (number.empty() ? "" : "\\ " + number);
+    const bool italic = style == "remark";
+    std::string head = (italic ? "\\textit{" : "\\textbf{") + name + "}";
+    if (!note.empty()) head += "\\ (" + note + ")";
+    return head + (italic ? "." : "\\textbf{.}");
+  }
+
+  /** The text of a verbatim environment: a line to a row, flush left. */
+  sptr<Atom> verbatimBlock(const Node& x) {
+    std::string rows;
+    std::size_t from = 0;
+    while (true) {
+      const std::size_t to = x.raw.find('\n', from);
+      const std::string line =
+        x.raw.substr(from, to == std::string::npos ? std::string::npos : to - from);
+      if (!rows.empty()) rows += "\\\\";
+      rows += line.empty() ? "\\texttt{~}" : typewriter(line, x.text == "verbatim*");
+      if (to == std::string::npos) break;
+      from = to + 1;
+    }
+    return fragment("\\begin{tabular}{@{}l@{}}" + rows + "\\end{tabular}", false);
   }
 
   /** \url and \href. A grob has no links, so only their look, LaTeX's
@@ -998,6 +1114,7 @@ private:
         const auto atom = body();
         return sptrOf<FontStyleAtom>(FontContext::mainFontStyleOf(name), math, atom);
       }
+      if (name == "scshape") return fragment(smallCaps(x.raw), math);
       if (name == "boldmath") {
         // A math style: text in its reach keeps its own.
         return sptrOf<FontStyleAtom>(FontStyle::bf, true, body());
@@ -1449,7 +1566,10 @@ private:
     if (l.prose != nullptr && l.prose->_root != nullptr) {
       startLine(l);
       indentIfNeeded(l);
-      l.line->add(wrap(l, sptrOf<FontStyleAtom>(FontStyle::rm, false, l.prose->_root)));
+      // A font switch in force sits inside the \rm that sets the text, or
+      // the \rm would undo it; the rest of what is in force is around it.
+      const sptr<Atom> styled = wrap(l, l.prose->_root, true, true);
+      l.line->add(wrap(l, sptrOf<FontStyleAtom>(FontStyle::rm, false, styled), true, false));
       l.drawn = true;
       l.afterHeading = false;
       if (l.align != Alignment::left) l.lineAlign = l.align;
@@ -1516,10 +1636,12 @@ private:
     return x.kind == NodeKind::group && (x.aux == 2 || (x.aux >= 4 && x.aux <= 7));
   }
 
-  /** itemize or enumerate, which a document sets apart from its text. */
+  /** A list or verbatim text, which a document sets apart from its text. */
   bool isList(NodeId id) const {
     const Node& x = node(id);
-    return x.kind == NodeKind::environment && (x.text == "itemize" || x.text == "enumerate");
+    return x.kind == NodeKind::environment &&
+           (x.text == "itemize" || x.text == "enumerate" || x.text == "description" ||
+            x.text == "verbatim" || x.text == "verbatim*");
   }
 
   /** A space a break takes with it: not `~`, which TeX never drops. */
@@ -1620,9 +1742,12 @@ private:
 
   /** `atom` under the declarations whose bodies a document is reading line
    *  by line, innermost first; `sizes` false leaves out \small and kin. */
-  sptr<Atom> wrap(const Label& l, sptr<Atom> atom, bool sizes = true) {
+  sptr<Atom> wrap(const Label& l, sptr<Atom> atom, bool sizes = true,
+                  std::optional<bool> fonts = std::nullopt) {
     for (auto it = l.decls.rbegin(); it != l.decls.rend(); ++it) {
       if (!sizes && isSize(node(*it).text)) continue;
+      // Only the font switches, or none of them.
+      if (fonts && *fonts != isTextFont(node(*it).text)) continue;
       const sptr<Atom> inner = atom;
       auto wrapped = declarationAtom(*it, [&] { return inner; });
       if (wrapped != nullptr) atom = wrapped;
@@ -1865,6 +1990,7 @@ private:
   sptr<Atom> environment(NodeId id) {
     const Node& x = node(id);
     if (x.text == "minipage") return minipage(id);
+    if (x.text == "verbatim" || x.text == "verbatim*") return verbatimBlock(x);
     const EnvSpec* spec = findEnvironment(x.text);
     const std::string macName = (spec != nullptr ? x.text : std::string("matrix")) + "@@env";
     MacroInfo* mac = MacroInfo::get(macName);

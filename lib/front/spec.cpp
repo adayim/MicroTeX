@@ -11,7 +11,7 @@ namespace {
 /**
  * Arguments in source order, one letter each:
  *   m math   t text   c current mode   r raw   d dimension   l delimiter
- *   u url
+ *   u url   v verb
  * An upper-case letter is an optional `[...]` argument of that kind.
  *
  * The kinds follow what each engine command does with its argument (see
@@ -32,6 +32,7 @@ std::vector<ArgSpec> parseArgs(const char* code) {
       case 'd': kind = ArgKind::dimen; break;
       case 'l': kind = ArgKind::delim; break;
       case 'u': kind = ArgKind::url; break;
+      case 'v': kind = ArgKind::verb; break;
       default: break;
     }
     args.push_back({kind, optional});
@@ -141,7 +142,14 @@ struct Table {
     // Links: the look of one, as hyperref's colorlinks and the url package
     // set it (the lowering builds it). A URL reads its specials as text.
     add({"url"}, "u");
+    // Small capitals, as the lowering fakes them; \gmtheorem is the head of
+    // a theorem, which the expander's newtheorem writes.
+    add({"textsc"}, "t");
+    add({"scshape"}, "", Shape::declaration);
+    add({"gmtheorem"}, "rrrrr");
     add({"href"}, "uc");
+    // Its argument is its own delimited text (the parser reads it).
+    add({"verb"}, "v");
     // booktabs' \cmidrule, which the parser reads as \cline.
     add({"cmidrule"}, "r", Shape::prefix, Bare::none, true);
     add({"left", "middle", "right"}, "l", Shape::prefix, Bare::none, true);
@@ -262,7 +270,8 @@ struct Table {
     env({"longtable"}, "Rr", EnvBody::alignment, true);
     // tabularray's tables, as tinytable writes them: [options]{spec}.
     env({"tblr", "talltblr", "longtblr"}, "Rr", EnvBody::alignment, true);
-    env({"itemize", "enumerate"}, "", EnvBody::raw, true);
+    env({"itemize", "enumerate", "description"}, "", EnvBody::raw, true);
+    env({"verbatim", "verbatim*"}, "", EnvBody::verbatim, true);
     // [position][height][inner position]{width}: a box of paragraphs.
     env({"minipage"}, "RDRd", EnvBody::text);
   }
@@ -297,7 +306,7 @@ bool isFloatEnvironment(const std::string& name) {
 }
 
 bool isBlockEnvironment(const std::string& name) {
-  return name == "abstract" || name == "thebibliography";
+  return name == "abstract" || name == "thebibliography" || name == "proof";
 }
 
 bool isCitation(const std::string& name) {

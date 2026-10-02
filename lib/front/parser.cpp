@@ -48,6 +48,7 @@ char kindCode(ArgKind kind) {
     case ArgKind::dimen: return 'd';
     case ArgKind::delim: return 'l';
     case ArgKind::url: return 'u';
+    case ArgKind::verb: return 'v';
   }
   return '?';
 }
@@ -817,7 +818,11 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
     body.overArg = spec->shape == Shape::declaration;
     const Mode bodyMode = spec->body == ArgKind::math ? Mode::math : mode;
     const Scoped verbatim(_monospace, _monospace || name == "tt");
+    // Small capitals are made from the text, not from what it became.
+    const bool keepText = name == "scshape";
+    const std::size_t textFrom = keepText ? startRecording() : 0;
     const NodeId list = parseList(bodyMode, body, at);
+    if (keepText) n.raw = stopRecording(textFrom, 0);
     n.kind = NodeKind::declaration;
     args.push_back(list);
     return _ast.add(std::move(n), args);
@@ -828,7 +833,7 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
 
 NodeId Parser::parseArgument(const ArgSpec& spec, Mode mode, const std::string& who) {
   if (spec.kind == ArgKind::raw || spec.kind == ArgKind::dimen || spec.kind == ArgKind::url ||
-      spec.kind == ArgKind::delim) {
+      spec.kind == ArgKind::delim || spec.kind == ArgKind::verb) {
     return parseRawArgument(spec, who);
   }
   const Mode argMode = spec.kind == ArgKind::math   ? Mode::math
@@ -923,6 +928,7 @@ NodeId Parser::parseArgument(const ArgSpec& spec, Mode mode, const std::string& 
 }
 
 NodeId Parser::parseRawArgument(const ArgSpec& spec, const std::string& who) {
+  if (spec.kind == ArgKind::verb) return parseVerb();
   Node arg;
   arg.kind = NodeKind::argument;
   arg.mode = Mode::text;
@@ -999,6 +1005,92 @@ NodeId Parser::parseRawArgument(const ArgSpec& spec, const std::string& who) {
   for (const Saved& s : saved) _in.setCatcode(s.ch, s.cat);
   if (!closed) _diags.warn(k.span, "missing } inserted");
   return _ast.add(std::move(arg), {});
+}
+
+namespace {
+
+/** Every character TeX's `\verb` and verbatim read as itself: the specials,
+ *  spaces and line ends, so that nothing in the text is a command, a
+ *  comment, a space to collapse or a line end to join. */
+const std::string kVerbatimChars = "\\%#_^~&${} \t\r\n";
+
+}  // namespace
+
+NodeId Parser::parseVerb() {
+  Node arg;
+  arg.kind = NodeKind::argument;
+  arg.mode = Mode::text;
+  arg.flag = true;
+  arg.text = "v";
+  struct Saved {
+    c32 ch;
+    Cat cat;
+  };
+  std::vector<Saved> saved;
+  for (const char c : kVerbatimChars) {
+    saved.push_back({static_cast<c32>(c), _in.catcode(static_cast<c32>(c))});
+    _in.setCatcode(static_cast<c32>(c), Cat::other);
+  }
+  // The spaces after the control word are TeX's to skip, as for any control
+  // word; a `*` after them makes the spaces visible.
+  ExpandedToken d = next();
+  while (d.tok.kind == TokKind::character && d.text == " ") d = next();
+  arg.span = d.tok.span;
+  if (d.text == "*" && d.tok.kind == TokKind::character) {
+    arg.star = true;
+    d = next();
+  }
+  const bool noDelimiter = d.tok.kind == TokKind::end || d.text == "\n" || d.text == "\r";
+  if (noDelimiter) {
+    _diags.warn(arg.span, "\\verb needs a delimiter: an empty text is used");
+  } else {
+    const std::string delimiter = d.text;
+    while (true) {
+      ExpandedToken u = next();
+      if (u.tok.kind == TokKind::end || u.text == "\n" || u.text == "\r") {
+        _diags.warn(arg.span, "\\verb is not closed on its line: " + delimiter + " inserted");
+        break;
+      }
+      if (u.text == delimiter) break;
+      arg.raw += u.text;
+    }
+  }
+  for (const Saved& s : saved) _in.setCatcode(s.ch, s.cat);
+  return _ast.add(std::move(arg), {});
+}
+
+std::string Parser::readVerbatim(const std::string& name, const SourceSpan& at) {
+  struct Saved {
+    c32 ch;
+    Cat cat;
+  };
+  std::vector<Saved> saved;
+  for (const char c : kVerbatimChars) {
+    saved.push_back({static_cast<c32>(c), _in.catcode(static_cast<c32>(c))});
+    _in.setCatcode(static_cast<c32>(c), Cat::other);
+  }
+  const std::string closing = "\\end{" + name + "}";
+  std::string body;
+  bool closed = false;
+  while (true) {
+    ExpandedToken u = next();
+    if (u.tok.kind == TokKind::end) break;
+    // A line end is a line end whichever way the file writes it.
+    if (u.text == "\r") continue;
+    body += u.text;
+    if (body.size() >= closing.size() &&
+        body.compare(body.size() - closing.size(), closing.size(), closing) == 0) {
+      body.resize(body.size() - closing.size());
+      closed = true;
+      break;
+    }
+  }
+  for (const Saved& s : saved) _in.setCatcode(s.ch, s.cat);
+  if (!closed) _diags.warn(at, "missing \\end{" + name + "} inserted");
+  // The line end after \begin{verbatim} and the one before \end are not text.
+  if (!body.empty() && body.front() == '\n') body.erase(0, 1);
+  if (!body.empty() && body.back() == '\n') body.pop_back();
+  return body;
 }
 
 std::vector<ExpandedToken> Parser::collectBracketed(const std::string& who) {
@@ -1222,6 +1314,10 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
     return _ast.add(std::move(n), kids);
   }
 
+  if (spec != nullptr && spec->body == EnvBody::verbatim) {
+    n.raw = readVerbatim(name, at);
+    return _ast.add(std::move(n), kids);
+  }
   const std::size_t mark = startRecording();
   if (spec != nullptr && spec->body == EnvBody::raw) {
     // Kept as text up to the \end that closes it. Every environment begun

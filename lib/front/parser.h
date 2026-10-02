@@ -165,6 +165,8 @@ private:
                       std::vector<NodeId>& items, bool& consumedRest);
   NodeId parseArgument(const ArgSpec& spec, Mode mode, const std::string& who);
   NodeId parseRawArgument(const ArgSpec& spec, const std::string& who);
+  NodeId parseVerb();
+  std::string readVerbatim(const std::string& name, const SourceSpan& at);
   NodeId parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceSpan at, std::size_t origin);
   NodeId parseGroupAfterOpen(const ExpandedToken& open, Mode mode);
   NodeId parseScripts(NodeId base, Mode mode, SourceSpan at);

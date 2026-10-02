@@ -187,13 +187,13 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "cmidrule", "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
-                   "fontsize", "footnote", "footnotesize", "frak", "gmtagstar", "graphicspath", "href", "huge", "Huge",
+                   "fontsize", "footnote", "footnotesize", "frak", "gmtagstar", "gmtheorem", "graphicspath", "href", "huge", "Huge",
                    "hskip", "it", "kern", "label", "large", "Large", "LARGE", "left", "limits", "makeatletter",
                    "makeatother", "mkern", "mskip", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
                    "overwithdelims", "pageref", "par", "paragraph", "raggedleft",
                    "raggedright", "ref", "relscale", "right", "rm", "scriptscriptstyle",
-                   "scriptsize", "scriptstyle", "section", "setcounter", "sf", "small", "subsection",
-                   "subsubsection", "tag", "textstyle", "tiny", "tt", "url"}));
+                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "sf", "small", "subsection",
+                   "subsubsection", "tag", "textsc", "textstyle", "tiny", "tt", "url", "verb"}));
 }
 
 TEST(parser_argument_without_braces_is_one_character_or_one_command_with_its_arguments) {
@@ -251,6 +251,32 @@ TEST(parser_alignment_is_rows_of_cells_and_a_rule_ends_its_row) {
            std::string("[env:array('t' 'cc' row:([a] [b]))]"));
   CHECK_EQ(raws("\\begin{aligned} a \\\\[4pt] b \\end{aligned}", "row"), (Strings{"4pt", ""}));
   CHECK_EQ(raws("\\begin{matrix} a & b \\end{matrix}", "environment"), (Strings{" a & b "}));
+}
+
+TEST(parser_verb_reads_its_text_as_written_up_to_the_delimiter) {
+  // Every special character is itself, a backslash and a brace too.
+  CHECK_EQ(raws("\\verb|a_b %&{x\\y| tail", "argument"), (Strings{"a_b %&{x\\y"}));
+  CHECK_EQ(raws("\\verb+a|b+", "argument"), (Strings{"a|b"}));
+  CHECK_EQ(raws("\\verb{a}b{", "argument"), (Strings{"a}b"}));
+  // The text after it is read as before: its percent sign is a comment.
+  CHECK_EQ(raws("\\verb|%| \\frac{1}{2} % c\n", "argument"), (Strings{"%", "1", "2"}));
+  // Its star is no delimiter, and the spaces before the delimiter are TeX's.
+  const Parsed starred = parse("\\verb* |a b|");
+  bool star = false;
+  for (NodeId id : starred.order) star = star || (kindOf(starred.ast, id) == "argument" && starred.ast.node(id).star);
+  CHECK(star);
+  CHECK(check::allContain(messages("\\verb|abc\nx"), "not closed on its line"));
+  CHECK(check::allContain(messages("\\verb"), "needs a delimiter"));
+}
+
+TEST(parser_verbatim_environment_keeps_everything_up_to_its_own_end) {
+  CHECK_EQ(raws("\\begin{verbatim}\na % b\n\\end{x} \\{\n\\end{verbatim} z", "environment"),
+           (Strings{"a % b\n\\end{x} \\{"}));
+  CHECK_EQ(raws("\\begin{verbatim*}\r\na b\r\n\\end{verbatim*}", "environment"),
+           (Strings{"a b"}));
+  CHECK(check::allContain(messages("\\begin{verbatim}\nabc"), "missing \\end{verbatim}"));
+  // Catcodes are back after it.
+  CHECK_EQ(raws("\\begin{verbatim}\n_\n\\end{verbatim}\\frac{1}{2}", "argument"), (Strings{"1", "2"}));
 }
 
 TEST(parser_prelude_defines_the_engines_latex_written_environments_and_commands) {

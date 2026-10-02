@@ -474,7 +474,8 @@ inline std::vector<std::string> listParts(const std::string& item) {
   std::vector<std::string> parts{""};
   size_t i = 0;
   while (i < item.size()) {
-    if (!at(i, "\\begin{itemize}") && !at(i, "\\begin{enumerate}")) {
+    if (!at(i, "\\begin{itemize}") && !at(i, "\\begin{enumerate}") &&
+        !at(i, "\\begin{description}")) {
       if (item[i] == '\\' && i + 1 < item.size()) parts.back() += item[i++];
       parts.back() += item[i++];
       continue;
@@ -507,7 +508,8 @@ inline std::vector<std::string> listParts(const std::string& item) {
 inline sptr<Atom> listBuild(
   CommandArgs& args,
   const std::vector<std::string>& items,
-  const std::function<std::string(int)>& marker
+  const std::function<std::string(int)>& marker,
+  bool description = false
 ) {
   if (items.empty()) return nullptr;
   std::string s;
@@ -515,9 +517,21 @@ inline sptr<Atom> listBuild(
     if (!s.empty()) s += "\\\\";
     s += lead + "&" + content;
   };
+  // An item's own label stands for its marker, and a labelled item is no
+  // step of the counter, as in LaTeX.
+  int counted = 0;
   for (size_t i = 0; i < items.size(); i++) {
-    const std::string mark = marker((int)i + 1);
-    const auto parts = listParts(items[i]);
+    std::string body = items[i];
+    const std::string label = listPeelOptional(body);
+    std::string mark;
+    if (description) {
+      mark = label.empty() ? "" : "\\textbf{" + label + "}";
+    } else if (!label.empty()) {
+      mark = args.isMathMode() ? "\\text{" + label + "}" : label;
+    } else {
+      mark = marker(++counted);
+    }
+    const auto parts = listParts(body);
     bool first = true;
     for (size_t k = 0; k < parts.size(); k++) {
       const std::string part = listTrim(parts[k]);
@@ -534,7 +548,8 @@ inline sptr<Atom> listBuild(
   }
   const auto arr = args.alignmentOfText(s);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, "r@{\\quad}X", false);
+  const char* columns = description ? "l@{\\quad}X" : "r@{\\quad}X";
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, columns, false);
 }
 
 inline cmdmacro(itemizeATATenv) {
@@ -551,6 +566,12 @@ inline cmdmacro(enumerateATATenv) {
   return listBuild(args, listSplitItems(body), [&](int n) {
     return "\\mathrm{" + listFormatLabel(opt, n) + "}";
   });
+}
+
+// A description: each item's label, in bold, hangs before its text.
+inline cmdmacro(descriptionATATenv) {
+  std::string body = args.text(1);
+  return listBuild(args, listSplitItems(body), [](int) { return std::string(); }, true);
 }
 
 // endregion

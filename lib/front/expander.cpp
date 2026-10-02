@@ -156,6 +156,12 @@ struct Expander::Impl {
   /** How deep readArg() is in commands given as arguments with their own. */
   int argDepth = 0;
   int atLetter = 0;
+  /** \theoremstyle's: plain, definition or remark, for the \newtheorems
+   *  after it. */
+  std::string theoremStyle = "plain";
+  /** The counter a theorem environment is numbered within (`section`), by
+   *  environment name, for those that share its counter. */
+  std::unordered_map<std::string, std::string> theoremWithin;
   // Set after runaway expansion in recover mode: the input ends there.
   bool halted = false;
   // Where the input ends for now (Expander::endInputAt()), and the first
@@ -1003,6 +1009,43 @@ struct Expander::Impl {
     macros[name + "*"] = std::move(starred);
   }
 
+  /** amsthm's \newtheorem{name}[shared]{Title}[within], and the starred one
+   *  with no number: the environment `name`, whose head (the title, its
+   *  number and the optional note) is the lowering's \gmtheorem, which
+   *  holds the counters. The style is \theoremstyle's: plain sets its body
+   *  in italics, the others upright; a remark's head is italic too. */
+  void declareTheorem(const ExpToken& e) {
+    const bool star = takeStar();
+    const auto name = readGroupText();
+    if (!name || name->empty()) {
+      failDefinition("newtheorem", "\\newtheorem: missing the environment name", 2, true);
+    }
+    const auto shared = readOptional();
+    const std::string title = readArg("\\newtheorem", false);
+    const auto within = readOptional();
+    if (lookupEnv(*name) != nullptr ||
+        (opts.isBuiltinEnvironment && opts.isBuiltinEnvironment(*name))) {
+      fail("newtheorem", "Environment " + *name + " already defined!");
+    }
+    const std::string counter = star ? "" : shared ? trim(*shared) : *name;
+    std::string in = within && !shared && !star ? trim(*within) : "";
+    if (shared && !star) {
+      const auto it = theoremWithin.find(counter);
+      in = it == theoremWithin.end() ? "" : it->second;
+    }
+    theoremWithin[*name] = in;
+    MacroDef def;
+    def.nparams = 1;
+    def.hasOptional = true;
+    const std::string begin = "\\par\\gmtheorem{" + theoremStyle + "}{" + counter + "}{" + in +
+                              "}{" + title + "}{#1}\\ " +
+                              (theoremStyle == "plain" ? "\\itshape " : "");
+    def.body = splitBody(begin, 1, "\\begin{" + *name + "}", e.tok.span);
+    def.endBody = splitBody("\\par", 0, "\\end{" + *name + "}", e.tok.span);
+    defineLocally(*name, true);
+    envs[*name] = std::move(def);
+  }
+
   void defineDef(const ExpToken& e) {
     ExpToken n = raw();
     if (!n.tok.isControl()) failDefinition("def", "\\def: expected '\\' before the name", 1);
@@ -1111,6 +1154,14 @@ struct Expander::Impl {
       }
       if (name == "DeclarePairedDelimiter") {
         declarePairedDelimiter(e);
+        return true;
+      }
+      if (name == "newtheorem") {
+        declareTheorem(e);
+        return true;
+      }
+      if (name == "theoremstyle") {
+        if (const auto style = readGroupText()) theoremStyle = *style;
         return true;
       }
       if (name == "def" || name == "gdef") {

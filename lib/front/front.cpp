@@ -1,5 +1,6 @@
 #include "front/front.h"
 
+#include <cctype>
 #include <utility>
 
 #include "core/formula.h"
@@ -51,6 +52,29 @@ Diagnostics& lastStore() {
 /** A byte range of the input: [first, second). */
 using BodyRange = std::pair<std::uint32_t, std::uint32_t>;
 
+// Where the verbatim text that starts at `s[i]` (a backslash) ends: after its
+// \end{verbatim}, or after the closing delimiter of a \verb. `i` when none
+// starts there. An unclosed one runs to the end of the input; a \verb to the
+// end of its line.
+std::size_t verbatimEnd(const std::string& s, std::size_t i) {
+  static const std::string names[] = {"\\begin{verbatim}", "\\begin{verbatim*}"};
+  for (const std::string& open : names) {
+    if (s.compare(i, open.size(), open) != 0) continue;
+    const std::string close = "\\end{" + open.substr(7);
+    const std::size_t at = s.find(close, i + open.size());
+    return at == std::string::npos ? s.size() : at + close.size();
+  }
+  if (s.compare(i, 5, "\\verb") != 0) return i;
+  std::size_t j = i + 5;
+  if (j < s.size() && std::isalpha(static_cast<unsigned char>(s[j])) != 0) return i;  // \verbatim
+  if (j < s.size() && s[j] == '*') j++;
+  while (j < s.size() && s[j] == ' ') j++;
+  if (j >= s.size() || s[j] == '\n' || s[j] == '\r') return i;
+  const char delimiter = s[j++];
+  while (j < s.size() && s[j] != delimiter && s[j] != '\n' && s[j] != '\r') j++;
+  return j < s.size() && s[j] == delimiter ? j + 1 : j;
+}
+
 // The part of `latex` that a LaTeX file draws: from its \begin{document}
 // to the end of its \end{document}. Found as the lexer would find them --
 // outside `%` comments, and at the top level, outside braces. The whole
@@ -70,7 +94,11 @@ BodyRange documentBody(const std::string& s) {
     } else if (c == '}') {
       depth--;
     } else if (c == '\\') {
-      if (depth == 0 && !found && s.compare(i, begin.size(), begin) == 0) {
+      // Verbatim text is no LaTeX: a \end{document} in it is its own.
+      const std::size_t skip = verbatimEnd(s, i);
+      if (skip != i) {
+        i = skip - 1;
+      } else if (depth == 0 && !found && s.compare(i, begin.size(), begin) == 0) {
         body.first = static_cast<std::uint32_t>(i);
         found = true;
         i += begin.size() - 1;

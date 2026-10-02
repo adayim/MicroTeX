@@ -108,6 +108,27 @@ TEST(expander_paired_delimiters_have_a_plain_a_sized_and_a_starred_form) {
   CHECK_THROWS(ex("\\DeclarePairedDelimiter{\\frac}{(}{)}"), "already exists");
 }
 
+TEST(expander_newtheorem_makes_an_environment_with_a_head_the_lowering_numbers) {
+  const std::string thm = "\\newtheorem{thm}{Theorem}";
+  // The environment is a group, which ends the italics at its end.
+  CHECK_EQ(ex(thm + "\\begin{thm}x\\end{thm}"),
+           std::string("{\\par\\gmtheorem{plain}{thm}{}{Theorem}{}\\ \\itshape x \\par}"));
+  CHECK_EQ(ex(thm + "\\begin{thm}[Euler]x\\end{thm}"),
+           std::string("{\\par\\gmtheorem{plain}{thm}{}{Theorem}{Euler}\\ \\itshape x\\par}"));
+  // A shared counter, one within a section, and none at all.
+  CHECK_EQ(ex(thm + "\\newtheorem{lem}[thm]{Lemma}\\begin{lem}x\\end{lem}"),
+           std::string("{\\par\\gmtheorem{plain}{thm}{}{Lemma}{}\\ \\itshape x \\par}"));
+  CHECK_EQ(ex("\\newtheorem{thm}{Theorem}[section]\\newtheorem{lem}[thm]{Lemma}"
+              "\\begin{lem}x\\end{lem}"),
+           std::string("{\\par\\gmtheorem{plain}{thm}{section}{Lemma}{}\\ \\itshape x \\par}"));
+  CHECK_EQ(ex("\\newtheorem*{rem}{Remark}\\begin{rem}x\\end{rem}"),
+           std::string("{\\par\\gmtheorem{plain}{}{}{Remark}{}\\ \\itshape x \\par}"));
+  // The style is the one in force when the theorem is declared.
+  CHECK_EQ(ex("\\theoremstyle{definition}\\newtheorem{df}{Definition}\\begin{df}x\\end{df}"),
+           std::string("{\\par\\gmtheorem{definition}{df}{}{Definition}{}\\ x\\par}"));
+  CHECK_THROWS(ex(thm + thm), "already defined");
+}
+
 TEST(expander_tag_star_is_the_tag_without_parentheses) {
   CHECK_EQ(ex("\\tag*{x}"), std::string("\\gmtagstar{x}"));
   CHECK_EQ(ex("\\tag{x}"), std::string("\\tag{x}"));

@@ -92,6 +92,7 @@ std::string_view preludeSource() {
 \newcommand{\textscale}[2]{{\relscale{#1}#2}}
 \newcommand{\em}{\it}
 \newenvironment{abstract}{\small\begin{center}\textbf{Abstract}\end{center}}{\par}
+\newenvironment{proof}[1][Proof]{\par\textit{#1.}\ }{\hfill\ensuremath{\square}\par}
 \newenvironment{thebibliography}[1]{\section*{References}\begin{enumerate}[{[}\arabic*{]}]}{\end{enumerate}}
 \newcommand{\bibitem}[2][]{\item}
 \newcommand{\newblock}{}

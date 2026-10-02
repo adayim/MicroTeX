@@ -1,0 +1,15 @@
+\newtheorem{thm}{Theorem}[section]\newtheorem{lem}[thm]{Lemma}\newtheorem*{rem}{Remark}
+\theoremstyle{definition}\newtheorem{df}{Definition}
+\section{A}\begin{thm}[Euler]\label{t}Text $x^2$.\end{thm}\begin{lem}B\end{lem}\begin{df}C\end{df}
+\begin{rem}See Theorem~\ref{t}.\end{rem}
+\begin{proof}[Of $\star$]Trivial.\end{proof}
+\textsc{Small Caps $x$ \textbf{bold} \verb|x|} {\scshape Lower}
+\begin{description}\item[Alpha] one \item[$\beta$] two \item three\end{description}
+\begin{enumerate}\item[(a)] one \item next\end{enumerate}
+\verb|a_b %&{\x}| \verb*+a b+ \verb \verb|unclosed
+\begin{verbatim}
+x <- 1 # 50%
+  \end{verbatim *} \end{document} {
+\end{verbatim}
+\begin{verbatim*} a b \end{verbatim*}
+\begin{verbatim}unclosed

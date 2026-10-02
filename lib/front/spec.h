@@ -24,6 +24,9 @@ enum class ArgKind : std::uint8_t {
   /** Kept as text, read with `%`, `#`, `_`, `^`, `~`, `&` and `$` as plain
    *  characters, as a URL or file name needs. */
   url,
+  /** `\verb`'s: a delimiter, then everything up to its second one, every
+   *  character as written, a backslash and a brace included. */
+  verb,
 };
 
 struct ArgSpec {
@@ -75,6 +78,8 @@ enum class EnvBody : std::uint8_t {
   raw,
   /** Text up to its \end, paragraphs and all: a minipage's. */
   text,
+  /** Characters as written up to its \end: verbatim's. */
+  verbatim,
 };
 
 struct EnvSpec {
@@ -117,7 +122,7 @@ bool isNumberedEnvironment(const std::string& name);
  *  LaTeX's [h] placement does, apart from the paragraphs around it. */
 bool isFloatEnvironment(const std::string& name);
 
-/** A prelude environment of text blocks (abstract, thebibliography): its
+/** A prelude environment of text blocks (abstract, thebibliography, proof): its
  *  expansion is transparent, as document's is, so a document sets the
  *  headings and paragraphs in it as its own. */
 bool isBlockEnvironment(const std::string& name);
