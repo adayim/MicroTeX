@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "box/box_single.h"
 #include "env/env.h"
 #include "env/units.h"
 #include "graphic/graphic.h"
@@ -153,32 +154,69 @@ void dashed(const std::vector<Pt>& p, float on, float off, std::vector<Seg>& out
   }
 }
 
-/** One side of an arrow's head: a curve out of the tip, back and out, its
- *  tangent along the shaft at the tip, as the Computer Modern arrow's. */
-void barb(Pt tip, Pt u, float back, float wide, float shape, float side, std::vector<Seg>& out) {
-  const Pt n = leftOf(u);
-  Pt prev = tip;
-  for (int k = 1; k <= 8; k++) {
-    const float s = static_cast<float>(k) / 8.f;
-    const Pt p = tip - u * (back * s) + n * (side * wide * std::pow(s, shape));
+/** The box `f` and `by` more on every side. */
+Frame grown(const Frame& f, float by) { return {f.l - by, f.t - by, f.r + by, f.b + by}; }
+
+/** The point `x` along the way `u` goes from `at` and `y` to the right of it
+ *  (down, when it goes right), both in line widths: the frame pgf draws an
+ *  arrow tip in. */
+Pt local(Pt at, Pt u, float lw, float x, float y) {
+  return at + u * (x * lw) + Pt{-u.y, u.x} * (y * lw);
+}
+
+void cubic(Pt a, Pt b, Pt c, Pt d, std::vector<Seg>& out, int n = 10) {
+  Pt prev = a;
+  for (int k = 1; k <= n; k++) {
+    const float t = static_cast<float>(k) / static_cast<float>(n), v = 1.f - t;
+    const Pt p = a * (v * v * v) + b * (3.f * v * v * t) + c * (3.f * v * t * t) + d * (t * t * t);
     out.push_back({prev, p});
     prev = p;
   }
 }
 
-/** The path as a zigzag, straight for `ends` at each end: tikz's `squiggly`. */
-std::vector<Pt> zigzag(const std::vector<Pt>& p, float amp, float seg, float ends) {
-  const float total = pathLength(p);
-  if (p.size() < 2 || total < 2.f * ends + seg) return p;
-  const int n = std::max(2, static_cast<int>(std::lround((total - 2.f * ends) / (seg / 2.f))));
-  const float step = (total - 2.f * ends) / static_cast<float>(n);
-  std::vector<Pt> out{p.front(), pointAt(p, ends, nullptr)};
-  for (int k = 1; k < n; k++) {
-    Pt dir;
-    const Pt q = pointAt(p, ends + static_cast<float>(k) * step, &dir);
-    out.push_back(q + leftOf(dir) * ((k % 2 == 1) ? amp : -amp));
+/** The Computer Modern arrow tip as pgf draws it (its curves, lifted from a
+ *  LaTeX run, in line widths): the apex at `at`, pointing the way `u` goes.
+ *  `implies` is the double arrow's, wider and longer. `side` draws one barb
+ *  only: 1 the one to the left of the way it goes, -1 to the right. */
+void tip(Pt at, Pt u, float lw, bool implies, int side, std::vector<Seg>& out) {
+  const float x0 = implies ? -8.236f : -5.2006f, y0 = implies ? 6.417f : 6.0f;
+  const float x1 = implies ? -6.663f : -4.2501f, y1 = implies ? 3.026f : 2.4003f;
+  const float x2 = implies ? -2.424f : -2.1331f, y2 = implies ? 0.120f : 0.7002f;
+  // Up is to the left of the way it goes: a negative y.
+  if (side >= 0) {
+    cubic(local(at, u, lw, x0, -y0), local(at, u, lw, x1, -y1), local(at, u, lw, x2, -y2), at, out);
   }
-  out.push_back(pointAt(p, total - ends, nullptr));
+  if (side <= 0) {
+    cubic(at, local(at, u, lw, x2, y2), local(at, u, lw, x1, y1), local(at, u, lw, x0, y0), out);
+  }
+}
+
+/** A hook that ends at `at`, the start of the shaft, curling to the left
+ *  of the way it goes (`side` -1) or the right (1): 3.1 line widths back
+ *  and 4.9 across. */
+void hook(Pt at, Pt u, float lw, float side, std::vector<Seg>& out) {
+  const auto p = [&](float x, float y) { return local(at, u, lw, x, side * y); };
+  cubic(p(0.f, 4.9f), p(-1.712f, 4.9f), p(-3.1f, 3.803f), p(-3.1f, 2.45f), out, 8);
+  cubic(p(-3.1f, 2.45f), p(-3.1f, 1.097f), p(-1.712f, 0.f), p(0.f, 0.f), out, 8);
+}
+
+/** The shaft as pgf's zigzag decoration draws it, for tikz-cd's `squiggly`:
+ *  straight for `ends` at each end, between them a triangle wave of the
+ *  given amplitude and half period (stretched to a whole number), whose
+ *  first peak is on the left of the way it goes. */
+std::vector<Pt> zigzag(const std::vector<Pt>& p, float amp, float half, float ends) {
+  const float total = pathLength(p);
+  const float region = total - 2.f * ends;
+  if (p.size() < 2 || region < 2.f * half) return p;
+  const int n = std::max(2, static_cast<int>(std::lround(region / half)));
+  const float step = region / static_cast<float>(n);
+  std::vector<Pt> out{p.front(), pointAt(p, ends, nullptr)};
+  for (int k = 0; k < n; k++) {
+    Pt dir;
+    const Pt q = pointAt(p, ends + (static_cast<float>(k) + 0.5f) * step, &dir);
+    out.push_back(q + leftOf(dir) * ((k % 2 == 0) ? amp : -amp));
+  }
+  out.push_back(pointAt(p, ends + region, nullptr));
   out.push_back(p.back());
   return out;
 }
@@ -270,10 +308,10 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
   const float padX = cramped ? 0.3f * em : size(innerX), padY = cramped ? 0.3f * em : size(innerY);
   const float trim = cramped ? 0.3f * em : 0.f;
   const float axis = env.mathConsts().axisHeight() * env.scale();
-  const float thick = env.mathConsts().fractionRuleThickness() * env.scale();
-  // tikz-cd sizes heads, hooks and dashes in the Computer Modern rule, 0.4pt
-  // at 10pt, whatever the math font's own is.
-  const float cm = 0.04f * Units::fsize(Units::getDimen("1em"), env);
+  // As tikz-cd: the line width is the math font's rule thickness, and the heads,
+  // hooks and dashes are measured in it.
+  const float lw = env.mathConsts().fractionRuleThickness() * env.scale();
+  const float thick = lw;
   const float ex = Units::fsize(Units::getDimen("1ex"), env);
 
   const int rows = static_cast<int>(cells.size());
@@ -304,10 +342,22 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
     }
   }
 
+  // In TeX's rows a cell is as wide as its column, whose edges the arrows leave from.
+  if (texRows) {
+    for (int r = 0; r < rows; r++) {
+      for (int c = 0; c < cols; c++) w[r][c] = colWidth[c];
+    }
+  }
+
   // The labels, small as a script is, and the room they and the arrows'
   // least lengths ask of the columns.
   std::vector<std::vector<sptr<Box>>> labelBox(arrows.size());
   std::vector<float> gap(std::max(cols - 1, 0), size(colSep));
+  // texRows: the rows of arrows between the object rows, as TeX sets them. A
+  // vertical arrow is 1.8em, centred on the axis of its row.
+  std::vector<float> arrowRowHeight(std::max(rows - 1, 0), 1.15f * em), arrowRowDepth(std::max(rows - 1, 0), 0.65f * em);
+  std::vector<bool> hasVertical(std::max(rows - 1, 0), false);
+  std::vector<float> arrowRowBase(std::max(rows - 1, 0), 0.f);
   const auto inside = [&](int r, int c) { return r >= 0 && r < rows && c >= 0 && c < cols; };
   for (std::size_t i = 0; i < arrows.size(); i++) {
     const DiagramArrow& a = arrows[i];
@@ -318,6 +368,32 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
       });
       if (b != nullptr) widest = std::max(widest, b->_width);
       labelBox[i].push_back(b);
+    }
+    if (texRows && inside(a.row, a.col) && inside(a.toRow, a.toCol)) {
+      if (a.row == a.toRow) {
+        // A label over or under an arrow, the way TeX sets limits: the
+        // baseline of the one above is 0.278em + 0.2em over the row's
+        // baseline, plus the label's depth; of the one below, 0.6em under it
+        // or 1/6em and the label's height.
+        for (std::size_t k = 0; k < a.labels.size(); k++) {
+          const sptr<Box>& b = labelBox[i][k];
+          if (b == nullptr) continue;
+          const bool right = a.toCol > a.col;
+          if ((a.labels[k].side == DiagramLabel::Side::left) == right) {
+            rowHeight[a.row] = std::max(rowHeight[a.row], 0.478f * em + b->_depth + b->_height);
+          } else {
+            rowDepth[a.row] = std::max(rowDepth[a.row], std::max(em / 6.f + b->_height, 0.6f * em) + b->_depth);
+          }
+        }
+      } else if (a.col == a.toCol && std::abs(a.row - a.toRow) == 1) {
+        const int g = std::min(a.row, a.toRow);
+        for (const sptr<Box>& b : labelBox[i]) {
+          if (b == nullptr) continue;
+          arrowRowHeight[g] = std::max(arrowRowHeight[g], b->_height);
+          arrowRowDepth[g] = std::max(arrowRowDepth[g], b->_depth);
+        }
+        hasVertical[g] = true;
+      }
     }
     if (!inside(a.row, a.col) || !inside(a.toRow, a.toCol) || a.row != a.toRow ||
         std::abs(a.col - a.toCol) != 1 || !a.minLength.isValid()) {
@@ -336,7 +412,18 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
   for (int c = 1; c < cols; c++) colX[c] = colX[c - 1] + colWidth[c - 1] / 2.f + gap[c - 1] + colWidth[c] / 2.f;
   base[0] = rowHeight[0];
   for (int r = 1; r < rows; r++) {
-    base[r] = base[r - 1] + std::max(size(minRowPitch), rowDepth[r - 1] + size(rowSep) + rowHeight[r]);
+    if (texRows) {
+      // Two rows, TeX's: each at least a baselineskip (2em) after the one
+      // before, or a lineskip (0.4em) from its neighbour's depth to its height.
+      const int g = r - 1;
+      const float a = hasVertical[g] ? arrowRowHeight[g] : 0.f, b = hasVertical[g] ? arrowRowDepth[g] : 0.f;
+      const float first = std::max(2.f * em, rowDepth[g] + 0.4f * em + a);
+      const float second = std::max(2.f * em, b + 0.4f * em + rowHeight[r]);
+      arrowRowBase[g] = base[g] + first;
+      base[r] = base[g] + first + second;
+    } else {
+      base[r] = base[r - 1] + std::max(size(minRowPitch), rowDepth[r - 1] + size(rowSep) + rowHeight[r]);
+    }
   }
   const auto cellRect = [&](int r, int c) {
     return Frame{colX[c] - w[r][c] / 2.f, base[r] - h[r][c], colX[c] + w[r][c] / 2.f, base[r] + d[r][c]};
@@ -373,21 +460,29 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
     const float dist = length(to - from);
     const Pt u = unit(to - from);
 
-    // The path: straight between the cells' borders, or a curve leaving
-    // each at an angle to the straight one.
+    // The path, as TeX draws it: from the cells' outer borders (the box and
+    // half a line width of node `outer sep`), straight, or a curve leaving
+    // each at an angle to the straight one, its controls 0.3915 of the
+    // distance between the two ends out along those angles.
+    const float outer = texRows ? 0.f : lw / 2.f;
+    const Frame outerFrom = grown(fromBox, outer), outerTo = grown(toBox, outer);
     Pt s, e, c1, c2;
     const bool curved = a.bend != 0.f;
     if (curved) {
-      const float k = 0.3915f * dist;
-      c1 = from + turn(u, a.bend) * k;
-      c2 = to + turn(u * -1.f, -a.bend) * k;
-      s = from + unit(c1 - from) * exitDistance(from, unit(c1 - from), fromBox);
-      e = to + unit(c2 - to) * exitDistance(to, unit(c2 - to), toBox);
+      const Pt rough1 = from + turn(u, a.bend) * (0.3915f * dist);
+      const Pt rough2 = to + turn(u * -1.f, -a.bend) * (0.3915f * dist);
+      s = from + unit(rough1 - from) * exitDistance(from, unit(rough1 - from), outerFrom);
+      e = to + unit(rough2 - to) * exitDistance(to, unit(rough2 - to), outerTo);
+      const float k = 0.3915f * length(e - s);
+      c1 = s + unit(rough1 - from) * k;
+      c2 = e + unit(rough2 - to) * k;
     } else {
-      s = from + u * exitDistance(from, u, fromBox);
-      e = to - u * exitDistance(to, u * -1.f, toBox);
+      s = from + u * exitDistance(from, u, outerFrom);
+      e = to - u * exitDistance(to, u * -1.f, outerTo);
       if (a.fixedLength.isValid() && length(e - s) > size(a.fixedLength)) {
-        const Pt mid = (s + e) * 0.5f;
+        Pt mid = (s + e) * 0.5f;
+        // In TeX's rows the arrow is centred on its own row's axis.
+        if (texRows && a.col == a.toCol) mid.y = arrowRowBase[std::min(a.row, a.toRow)] - axis;
         s = mid - u * (size(a.fixedLength) / 2.f);
         e = mid + u * (size(a.fixedLength) / 2.f);
       }
@@ -401,8 +496,8 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
     }
     std::vector<Pt> path;
     if (curved) {
-      for (int k = 0; k <= 32; k++) {
-        const float t = static_cast<float>(k) / 32.f, v = 1.f - t;
+      for (int k = 0; k <= 48; k++) {
+        const float t = static_cast<float>(k) / 48.f, v = 1.f - t;
         path.push_back(s * (v * v * v) + c1 * (3.f * v * v * t) + c2 * (3.f * v * t * t) + e * (t * t * t));
       }
     } else {
@@ -424,6 +519,23 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
       Pt dir;
       const Pt at = pointAt(path, total * std::min(std::max(l.pos, 0.f), 1.f), &dir);
       Pt centre = at;
+      if (texRows && !a.phantom && l.side != DiagramLabel::Side::center) {
+        // amscd's: over and under a horizontal arrow as limits are set, and a
+        // vertical arrow's on the baseline of its row, 3.8pt from its stem.
+        const Pt n = leftOf(dir) * (l.side == DiagramLabel::Side::left ? 1.f : -1.f);
+        float x = at.x - b->_width / 2.f, y;
+        if (a.row == a.toRow) {
+          const float rowBase = base[a.row];
+          y = n.y < 0.f ? rowBase - (0.478f * em + b->_depth) : rowBase + std::max(em / 6.f + b->_height, 0.6f * em);
+        } else {
+          y = arrowRowBase[std::min(a.row, a.toRow)];
+          x = n.x > 0.f ? at.x + 0.38f * em : at.x - 0.38f * em - b->_width;
+        }
+        placedLabels.push_back({b, {x, y}});
+        grow({x, y - b->_height}, 0.f);
+        grow({x + b->_width, y + b->_depth}, 0.f);
+        continue;
+      }
       // A phantom arrow's labels are on its path, as tikz-cd's phantom style has it.
       const DiagramLabel::Side side = a.phantom ? DiagramLabel::Side::center : l.side;
       if (side != DiagramLabel::Side::center) {
@@ -439,25 +551,44 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
       grow({centre.x + hw, centre.y + hh}, 0.f);
     }
     if (a.phantom) continue;
-
-    // The shaft, less what a head or a tail covers, and the ends.
-    const float headBack = (a.head == DiagramArrow::Head::implies ? 8.5f : 6.2f) * cm;
-    float cutStart = 0.f, cutEnd = 0.f;
-    if (a.tail == DiagramArrow::Tail::tail) cutStart = 6.2f * cm;
-    if (a.doubled && a.head != DiagramArrow::Head::none) cutEnd = 0.7f * headBack;
-    if (a.doubled && a.tail == DiagramArrow::Tail::implies) cutStart = 0.7f * 8.5f * cm;
     paths[i] = path;
-    std::vector<Pt> shaft = trimmed(path, cutStart, cutEnd);
-    if (a.squiggly) shaft = zigzag(shaft, 1.9f * cm, 9.25f * cm, 6.f * cm);
+
+    // How much of the path the ends take, in line widths, as pgf's arrow
+    // tips do: the apex of a head is half a line width before the path's
+    // end, and a plain shaft stops half a line width before the apex.
+    using A = DiagramArrow;
+    float endTrim = 0.f, startTrim = 0.f;
+    switch (a.head) {
+      case A::Head::none: break;
+      case A::Head::implies: endTrim = a.doubled ? 5.5f : 1.f; break;
+      case A::Head::bar: endTrim = 0.75f; break;
+      default: endTrim = 1.f; break;
+    }
+    switch (a.tail) {
+      case A::Tail::none: break;
+      case A::Tail::hook:
+      case A::Tail::hookBack: startTrim = 3.6f; break;
+      case A::Tail::tail: startTrim = 5.2006f; break;
+      case A::Tail::bar: startTrim = 0.75f; break;
+      case A::Tail::head: startTrim = 1.f; break;
+      case A::Tail::implies: startTrim = 5.5f; break;
+    }
+    // amscd's arrow glyphs end with the tip at the edge of their box.
+    const float tipBack = texRows ? 0.f : 0.5f * lw;
+    if (texRows && endTrim >= 1.f) endTrim -= 0.5f;
+    std::vector<Pt> shaft = trimmed(path, startTrim * lw, endTrim * lw);
+    if (a.squiggly) shaft = zigzag(shaft, 1.9f * lw, 4.625f * lw, 6.f * lw);
     std::vector<std::vector<Pt>> lines;
     if (a.doubled) {
-      lines.push_back(offset(shaft, 2.5f * cm));
-      lines.push_back(offset(shaft, -2.5f * cm));
+      // Two lines a line width thick, 0.0969em between their centres.
+      const float half = texRows ? 0.12f * em : 0.0969f * em;
+      lines.push_back(offset(shaft, half));
+      lines.push_back(offset(shaft, -half));
     } else {
       lines.push_back(shaft);
     }
-    const float on = a.dash == DiagramArrow::Dash::dashed ? 7.f * cm : a.dash == DiagramArrow::Dash::dotted ? cm : 0.f;
-    const float off = a.dash == DiagramArrow::Dash::dashed ? 4.f * cm : 5.f * cm;
+    const float on = a.dash == A::Dash::dashed ? 7.f * lw : a.dash == A::Dash::dotted ? lw : 0.f;
+    const float off = a.dash == A::Dash::dashed ? 4.f * lw : 5.f * lw;
     std::vector<Seg> pieces;
     for (const auto& line : lines) dashed(line, on, off, pieces);
     for (const Seg& piece : pieces) clipOutside(piece, holes, segs);
@@ -465,56 +596,53 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
     Pt endDir, startDir;
     pointAt(path, total, &endDir);
     pointAt(path, 0.f, &startDir);
-    // Heads at the end, tails at the start.
+    const Pt endApex = pointAt(path, std::max(0.f, total - tipBack), nullptr);
+    // Heads at the end.
     switch (a.head) {
-      case DiagramArrow::Head::none: break;
-      case DiagramArrow::Head::one:
-      case DiagramArrow::Head::two:
-        for (const float side : {1.f, -1.f}) {
-          barb(path.back(), endDir, 6.2f * cm, 6.2f * cm, 2.5f, side, segs);
-          if (a.head == DiagramArrow::Head::two) {
-            barb(path.back() - endDir * (3.6f * cm), endDir, 6.2f * cm, 6.2f * cm, 2.5f, side, segs);
-          }
-        }
+      case A::Head::none: break;
+      case A::Head::one: tip(endApex, endDir, lw, false, 0, segs); break;
+      case A::Head::two:
+        tip(endApex, endDir, lw, false, 0, segs);
+        tip(endApex - endDir * (3.6f * lw), endDir, lw, false, 0, segs);
         break;
-      case DiagramArrow::Head::implies:
-        for (const float side : {1.f, -1.f}) barb(path.back(), endDir, 8.5f * cm, 6.4f * cm, 2.2f, side, segs);
+      case A::Head::implies: tip(endApex, endDir, lw, true, 0, segs); break;
+      case A::Head::harpoonLeft:
+        tip(endApex, endDir, lw, false, 1, segs);
+        segs.push_back({endApex, endApex - endDir * lw});
         break;
-      case DiagramArrow::Head::harpoonLeft:
-      case DiagramArrow::Head::harpoonRight:
-        barb(path.back(), endDir, 6.2f * cm, 6.2f * cm, 2.5f, a.head == DiagramArrow::Head::harpoonLeft ? 1.f : -1.f, segs);
+      case A::Head::harpoonRight:
+        tip(endApex, endDir, lw, false, -1, segs);
+        segs.push_back({endApex, endApex - endDir * lw});
         break;
-      case DiagramArrow::Head::bar:
-        segs.push_back({path.back() + leftOf(endDir) * (4.1f * cm), path.back() - leftOf(endDir) * (4.1f * cm)});
-        break;
-    }
-    switch (a.tail) {
-      case DiagramArrow::Tail::none: break;
-      case DiagramArrow::Tail::hook:
-      case DiagramArrow::Tail::hookBack: {
-        const Pt n = leftOf(startDir) * (a.tail == DiagramArrow::Tail::hook ? 1.f : -1.f);
-        Pt prev = path.front();
-        for (int k = 1; k <= 10; k++) {
-          const float phi = kPi * static_cast<float>(k) / 10.f;
-          const Pt p = path.front() - startDir * (3.f * cm * std::sin(phi)) + n * (3.2f * cm * (1.f - std::cos(phi)));
-          segs.push_back({prev, p});
-          prev = p;
-        }
+      case A::Head::bar: {
+        const Pt at = pointAt(path, std::max(0.f, total - 0.5f * lw), nullptr);
+        segs.push_back({at + leftOf(endDir) * (4.1f * lw), at - leftOf(endDir) * (4.1f * lw)});
         break;
       }
-      case DiagramArrow::Tail::tail:
-        for (const float side : {1.f, -1.f}) {
-          barb(path.front() + startDir * (6.2f * cm), startDir, 6.2f * cm, 6.2f * cm, 2.5f, side, segs);
-        }
+    }
+    // Tails at the start: the rear of a tail's head, and the end of a hook
+    // or a bar, are half a line width in from the path's start.
+    switch (a.tail) {
+      case A::Tail::none: break;
+      case A::Tail::hook:
+      case A::Tail::hookBack: {
+        const Pt at = pointAt(path, 3.6f * lw, nullptr);
+        hook(at, startDir, lw, a.tail == A::Tail::hook ? -1.f : 1.f, segs);
         break;
-      case DiagramArrow::Tail::bar:
-        segs.push_back({path.front() + leftOf(startDir) * (4.1f * cm), path.front() - leftOf(startDir) * (4.1f * cm)});
+      }
+      case A::Tail::tail:
+        tip(pointAt(path, 5.7006f * lw, nullptr), startDir, lw, false, 0, segs);
         break;
-      case DiagramArrow::Tail::head:
-        for (const float side : {1.f, -1.f}) barb(path.front(), startDir * -1.f, 6.2f * cm, 6.2f * cm, 2.5f, side, segs);
+      case A::Tail::bar: {
+        const Pt at = pointAt(path, 0.5f * lw, nullptr);
+        segs.push_back({at + leftOf(startDir) * (4.1f * lw), at - leftOf(startDir) * (4.1f * lw)});
         break;
-      case DiagramArrow::Tail::implies:
-        for (const float side : {1.f, -1.f}) barb(path.front(), startDir * -1.f, 8.5f * cm, 6.4f * cm, 2.2f, side, segs);
+      }
+      case A::Tail::head:
+        tip(pointAt(path, 0.5f * lw, nullptr), startDir * -1.f, lw, false, 0, segs);
+        break;
+      case A::Tail::implies:
+        tip(pointAt(path, 0.5f * lw, nullptr), startDir * -1.f, lw, true, 0, segs);
         break;
     }
   }
@@ -559,6 +687,137 @@ sptr<Box> DiagramAtom::createBox(Env& env) {
     result->segments.push_back(moved);
   }
   return result;
+}
+
+sptr<Box> StretchArrowAtom::createBox(Env& env) {
+  const float em = Units::fsize(Units::getDimen("1em"), env);
+  const Dimen none = Units::getDimen("0em");
+  DiagramAtom d;
+  d.cells = {{nullptr, nullptr}};
+  d.rowSep = d.innerX = d.innerY = none;
+  d.colSep = {std::max(_length(env), 0.f) / em, UnitType::em};
+  const auto arrow = [&](bool right, float shift) {
+    DiagramArrow a;
+    a.row = a.toRow = 0;
+    a.col = right ? 0 : 1;
+    a.toCol = right ? 1 : 0;
+    a.head = DiagramArrow::Head::one;
+    a.shift = shift;
+    return a;
+  };
+  switch (_kind) {
+    case Kind::twoHeadRight:
+    case Kind::twoHeadLeft: {
+      DiagramArrow a = arrow(_kind == Kind::twoHeadRight, 0.f);
+      a.head = DiagramArrow::Head::two;
+      d.arrows.push_back(a);
+      break;
+    }
+    case Kind::longEqual: {
+      DiagramArrow a = arrow(true, 0.f);
+      a.doubled = true;
+      a.head = DiagramArrow::Head::none;
+      d.arrows.push_back(a);
+      break;
+    }
+    case Kind::toFrom:
+      d.arrows.push_back(arrow(true, 1.f));
+      d.arrows.push_back(arrow(false, 1.f));
+      break;
+  }
+  // As tall as an arrow's head, so the labels stand as far from a line.
+  const sptr<Box> box = d.createBox(env);
+  const float axis = env.mathConsts().axisHeight() * env.scale();
+  const float lw = env.mathConsts().fractionRuleThickness() * env.scale();
+  box->_height = std::max(box->_height, axis + 6.f * lw);
+  box->_depth = std::max(box->_depth, 6.f * lw - axis);
+  return box;
+}
+
+sptr<Box> EncloseAtom::createBox(Env& env) {
+  const float em = Units::fsize(Units::getDimen("1em"), env);
+  const float lw = env.mathConsts().fractionRuleThickness() * env.scale();
+  // A command with no argument at the end of the input has none.
+  const sptr<Box> b = _base == nullptr ? sptrOf<StrutBox>(0.f, 0.f, 0.f, 0.f) : _base->createBox(env);
+  const float w = b->_width, h = b->_height, d = b->_depth;
+  auto box = sptrOf<DiagramBox>();
+  std::vector<Seg>& s = box->segments;
+  // The screen's y, down, from the baseline.
+  float top = -h, bottom = d, dx = 0.f, width = w;
+  switch (_kind) {
+    case Kind::overSegment: {
+      const float y = -(h + 0.28f * em);
+      s = {{{0.f, y}, {w, y}}, {{0.f, y}, {0.f, y + 0.25f * em}}, {{w, y}, {w, y + 0.25f * em}}};
+      top = y - lw / 2.f;
+      break;
+    }
+    case Kind::underSegment: {
+      const float y = d + 0.28f * em;
+      s = {{{0.f, y}, {w, y}}, {{0.f, y}, {0.f, y - 0.25f * em}}, {{w, y}, {w, y - 0.25f * em}}};
+      bottom = y + lw / 2.f;
+      break;
+    }
+    case Kind::angle: {
+      const float y = -(h + 0.2f * em), x = w + 0.1f * em;
+      s = {{{0.f, y}, {x, y}}, {{x, y}, {x, d}}};
+      top = y - lw / 2.f;
+      width = x + lw / 2.f;
+      break;
+    }
+    case Kind::phase: {
+      const float u = d + 0.2f * em, up = -(h + 0.1f * em), slant = 0.5f * (u - up);
+      dx = slant + 0.1f * em;
+      width = dx + w + 0.1f * em;
+      s = {{{0.f, u}, {slant, up}}, {{0.f, u}, {width, u}}};
+      top = up - lw / 2.f;
+      bottom = u + lw / 2.f;
+      break;
+    }
+    case Kind::harpoonLeft:
+    case Kind::harpoonRight:
+    case Kind::doubleArrow: {
+      // An arrow over the content, as long as it is: a harpoon has one barb,
+      // up, and \Overrightarrow two lines and the double head.
+      const float y = -(h + 0.22f * em);
+      const bool left = _kind == Kind::harpoonLeft;
+      const Pt u{left ? -1.f : 1.f, 0.f}, from{left ? w : 0.f, y}, apex{left ? 0.f : w, y};
+      if (_kind == Kind::doubleArrow) {
+        const float half = 0.0969f * em;
+        const Pt end = apex - u * (5.5f * lw);
+        s.push_back({{from.x, y - half}, {end.x, y - half}});
+        s.push_back({{from.x, y + half}, {end.x, y + half}});
+        tip(apex, u, lw, true, 0, s);
+      } else {
+        s.push_back({from, apex - u * lw});
+        // Up is to the right of the way a leftward harpoon goes.
+        tip(apex, u, lw, false, left ? -1 : 1, s);
+        s.push_back({apex, apex - u * lw});
+      }
+      top = y - 6.5f * lw;
+      break;
+    }
+    case Kind::circle: {
+      const float r = std::max(w, h + d) / 2.f + 0.15f * em, cy = (d - h) / 2.f;
+      dx = r - w / 2.f;
+      width = 2.f * r;
+      Pt prev{r + r, cy};
+      for (int k = 1; k <= 40; k++) {
+        const float t = 2.f * kPi * static_cast<float>(k) / 40.f;
+        const Pt p{r + r * std::cos(t), cy + r * std::sin(t)};
+        s.push_back({prev, p});
+        prev = p;
+      }
+      top = cy - r - lw / 2.f;
+      bottom = cy + r + lw / 2.f;
+      break;
+    }
+  }
+  box->children.push_back({b, dx, 0.f});
+  box->thickness = lw;
+  box->_width = width;
+  box->_height = std::max(h, -top);
+  box->_depth = std::max(d, bottom);
+  return box;
 }
 
 }  // namespace microtex

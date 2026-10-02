@@ -168,6 +168,12 @@ sptr<Box> VCenterAtom::createBox(Env& env) {
   return hb;
 }
 
+sptr<Box> MathChoiceAtom::createBox(Env& env) {
+  const TexStyle style = env.style();
+  const int k = style <= TexStyle::display1 ? 0 : style <= TexStyle::text1 ? 1 : style <= TexStyle::script1 ? 2 : 3;
+  return _choice[k] == nullptr ? sptrOf<StrutBox>(0.f, 0.f, 0.f, 0.f) : _choice[k]->createBox(env);
+}
+
 LongDivAtom::LongDivAtom(long divisor, long dividend) : _divisor(divisor), _dividend(dividend) {
   _halign = Alignment::right;
   setAlignTop(true);

@@ -70,15 +70,22 @@ struct Table {
     // [llx,lly][urx,ury] spelling.
     add({"includegraphics"}, "RRu");
     // The directories later images are looked for in; the lowering keeps them.
-    add({"graphicspath"}, "r");
+    add({"graphicspath", "gmarraystretch"}, "r");
     add({"cfrac"}, "Rmm");
     add({"xleftarrow", "xrightarrow", "xleftrightarrow", "xRightarrow", "xLeftarrow",
          "xLeftrightarrow", "xhookleftarrow", "xhookrightarrow", "xmapsto",
          "xrightharpoondown", "xrightharpoonup", "xleftharpoondown", "xleftharpoonup",
-         "xrightleftharpoons", "xleftrightharpoons"},
+         "xrightleftharpoons", "xleftrightharpoons", "xtwoheadrightarrow", "xtwoheadleftarrow",
+         "xlongequal", "xtofrom"},
         "Cc");
     add({"sqrt"}, "Mm");
     add({"smash"}, "Rm");
+    add({"vcenter", "textcircled"}, "c");
+    add({"TextOrMath"}, "cc");
+    add({"overlinesegment", "underlinesegment", "angl", "phase", "overleftharpoon", "overrightharpoon",
+         "Overrightarrow"},
+        "m");
+    add({"mathchoice"}, "mmmm");
     add({"hdotsfor"}, "Rr");
     add({"stackbin", "stackrel"}, "Mmm");
     add({"rotatebox"}, "Rrm");
@@ -110,7 +117,7 @@ struct Table {
     add({"shoveright", "shoveleft"}, "m");
     add({"DeclareMathSizes"}, "rrrr");
     add({"magnification"}, "r");
-    add({"tiny", "scriptsize", "footnotesize", "small", "normalsize", "large", "Large",
+    add({"tiny", "sixptsize", "scriptsize", "footnotesize", "small", "normalsize", "large", "Large",
          "LARGE", "huge", "Huge"},
         "", Shape::declaration);
     // relsize's: the size times a factor, to the end of the group
@@ -171,8 +178,8 @@ struct Table {
     add({"mbox", "text", "textit", "textbf", "textsf", "texttt", "textrm", "textnormal"}, "t");
     // \intertext ends the row it is in, as a rule does.
     add({"intertext"}, "t", Shape::prefix, Bare::none, true);
-    add({"^", "'", "\"", "`", "=", ".", "~", "t", "u", "v", "r"}, "m");
-    add({"not", "hat", "widehat", "check", "tilde", "widetilde", "acute", "grave", "dot",
+    add({"^", "'", "\"", "`", "=", ".", "~", "t", "u", "v", "r", "H"}, "m");
+    add({"not", "hat", "widehat", "widecheck", "check", "tilde", "widetilde", "acute", "grave", "dot",
          "ddot", "dddot", "ddddot", "breve", "bar", "vec", "mathring", "undertilde"},
         "m");
     // The first argument names an accent (`\underaccent{\dot}{x}`): a

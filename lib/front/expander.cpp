@@ -1,6 +1,7 @@
 #include "front/expander.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <deque>
 #include <iterator>
 #include <optional>
@@ -9,6 +10,7 @@
 #include <unordered_set>
 
 #include "front/prelude.h"
+#include "front/mhchem.h"
 #include "front/siunitx.h"
 #include "front/spec.h"
 #include "utils/exceptions.h"
@@ -786,6 +788,24 @@ struct Expander::Impl {
     return t;
   }
 
+  /** What \arraystretch is, as a number, when an array of this name takes
+   *  it and it is not 1; else empty. */
+  std::string arrayStretch(const std::string& env) const {
+    static const char* names[] = {"array", "tabular", "tabular*", "tabularx", "longtable", "matrix",
+                                  "pmatrix", "bmatrix", "Bmatrix", "vmatrix", "Vmatrix", "smallmatrix"};
+    bool takes = false;
+    for (const char* n : names) takes = takes || env == n;
+    const MacroDef* def = takes ? lookup("arraystretch") : nullptr;
+    if (def == nullptr || def->nparams != 0) return "";
+    std::string text;
+    for (const auto& piece : def->body) text += piece.text;
+    text = trim(text);
+    char* end = nullptr;
+    const double v = std::strtod(text.c_str(), &end);
+    if (text.empty() || end == text.c_str() || *end != '\0' || !(v > 0.0) || v == 1.0) return "";
+    return text;
+  }
+
   bool environment(const ExpToken& e, bool begin) {
     ExpToken open = nextNonSpace();
     if (!open.tok.isChar(Cat::beginGroup)) {
@@ -815,6 +835,17 @@ struct Expander::Impl {
       // Not ours: hand `\begin{name}` on as it came. The name is read
       // again, and expanded, if it holds a macro (`\begin{\env}`).
       for (auto it = consumed.rbegin(); it != consumed.rend(); ++it) unread(std::move(*it));
+      const std::string stretch = begin ? arrayStretch(name) : "";
+      if (!stretch.empty()) {
+        // \arraystretch is read where the array begins: what it says goes
+        // ahead of \begin, which then passes as it is.
+        ExpToken again = e;
+        again.lead.clear();
+        again.tok.noexpand = true;
+        unread(std::move(again));
+        pushExpansion("\\gmarraystretch{" + stretch + "}", e.tok.span);
+        return true;
+      }
       return false;
     }
     // An environment is a group, and the old parser made its expansion a
@@ -1067,6 +1098,18 @@ struct Expander::Impl {
     envs[*name] = std::move(def);
   }
 
+  /** \ce and \pu, a subset of mhchem (front/mhchem.h): the text is read and what
+   *  it makes is read in its place. */
+  void chemCommand(const ExpToken& e) {
+    const std::string name = e.tok.text;
+    const std::string arg = readArg("\\" + name);
+    std::string problem;
+    const std::string out =
+      name == "ce" ? mhchem::ce(arg, problem) : mhchem::pu(arg, siUnits, problem);
+    if (!problem.empty()) diags.warn(e.tok.span, "\\" + name + ": " + problem);
+    pushExpansion("\\ensuremath{" + out + "}", e.tok.span);
+  }
+
   static bool isSiunitx(const std::string& n) {
     static const char* names[] = {"num",      "si",      "SI",      "unit",    "qty",
                                   "ang",      "numrange", "SIrange", "qtyrange", "numlist",
@@ -1157,7 +1200,17 @@ struct Expander::Impl {
     pushExpansion("\\ensuremath{" + out + "}", at);
   }
 
+  /** \global was the last thing read: the definition after it is for good. */
+  bool globalPrefix = false;
+
+  bool takeGlobal() {
+    const bool g = globalPrefix;
+    globalPrefix = false;
+    return g;
+  }
+
   void defineDef(const ExpToken& e) {
+    const bool global = takeGlobal();
     ExpToken n = raw();
     if (!n.tok.isControl()) failDefinition("def", "\\def: expected '\\' before the name", 1);
     const std::string name = n.tok.text;
@@ -1193,13 +1246,15 @@ struct Expander::Impl {
     bool delimited = false;
     for (const auto& d : def.delimiters) delimited = delimited || !d.empty();
     if (!delimited) def.delimiters.clear();
+    if (e.tok.text == "edef" || e.tok.text == "xdef") body = expandBody(body, e.tok.span);
     def.body = splitBody(body, def.nparams, "\\" + name, e.tok.span);
     // \gdef defines globally; \def, like everything else, in its group.
-    if (e.tok.text != "gdef") defineLocally(name);
+    if (e.tok.text != "gdef" && e.tok.text != "xdef" && !global) defineLocally(name);
     macros[name] = std::move(def);
   }
 
   void defineLet() {
+    const bool global = takeGlobal();
     ExpToken n = raw();
     if (!n.tok.isControl()) fail("let", "\\let: expected a control sequence after \\let");
     const std::string name = n.tok.text;
@@ -1209,6 +1264,11 @@ struct Expander::Impl {
       if (t.tok.kind == TokKind::space) t = raw();
     }
     if (t.tok.kind == TokKind::end) fail("let", "\\let: missing the token to copy into \\" + name);
+    letFrom(name, t, global);
+  }
+
+  /** `\name` made to mean what the token `t` means now. */
+  void letFrom(const std::string& name, const ExpToken& t, bool global = false) {
     MacroDef def;
     const MacroDef* user = t.tok.isControl() ? lookup(t.tok.text) : nullptr;
     if (user != nullptr) {
@@ -1217,8 +1277,69 @@ struct Expander::Impl {
       def.alias = true;
       def.body = literal(std::string(t.text));
     }
-    defineLocally(name);
+    if (!global) defineLocally(name);
     macros[name] = std::move(def);
+  }
+
+  /** \futurelet\cs\a\b: `\cs` means what `\b` does, and `\a\b` is read as if
+   *  nothing had been looked at. */
+  void futureLet() {
+    const bool global = takeGlobal();
+    ExpToken n = raw();
+    if (!n.tok.isControl()) fail("futurelet", "\\futurelet: expected a control sequence after \\futurelet");
+    ExpToken first = raw();
+    ExpToken second = raw();
+    if (second.tok.kind == TokKind::end) fail("futurelet", "\\futurelet: missing the token to copy into \\" + n.tok.text);
+    letFrom(n.tok.text, second, global);
+    unread(std::move(second));
+    unread(std::move(first));
+  }
+
+  /** \@ifstar{yes}{no} and \@ifnextchar X{yes}{no}, as LaTeX's: `yes` when the next
+   *  token (spaces skipped) is the star, or X; \@ifstar takes the star. */
+  void ifNextChar(const ExpToken& e, bool star) {
+    const std::string who = "\\" + e.tok.text;
+    const ExpToken test = star ? ExpToken() : nextNonSpace();
+    const std::string yes = readArg(who, false), no = readArg(who, false);
+    ExpToken next = nextNonSpace();
+    const bool match = star ? isChar(next, '*') : (next.tok.kind == test.tok.kind && next.text == test.text);
+    if (!(match && star)) unread(std::move(next));
+    pushExpansion(match ? yes : no, e.tok.span);
+  }
+
+  /** \expandafter\a\b: `\b` is expanded once, then `\a` is read before what it made. */
+  void expandAfter() {
+    ExpToken first = raw();
+    ExpToken second = raw();
+    if (second.tok.kind == TokKind::controlWord && second.tok.text == "expandafter" && !second.tok.noexpand &&
+        !macros.count("expandafter")) {
+      expandAfter();
+    } else if (second.tok.kind == TokKind::end || !second.tok.isControl() || second.tok.noexpand ||
+               !expandMacro(second)) {
+      unread(std::move(second));
+    }
+    unread(std::move(first));
+  }
+
+  /** The text `body` expands to, as \edef makes a macro's: everything that expands
+   *  does, and \noexpand's token and the parameters are left alone. */
+  std::string expandBody(const std::string& body, const SourceSpan& at) {
+    std::string saved = std::move(out), savedCarry = std::move(carry);
+    const bool savedLast = lastControlWord;
+    out.clear();
+    carry.clear();
+    lastControlWord = false;
+    pushExpansion(body + "\\gmedefend ", at);
+    while (true) {
+      ExpToken t = nextExpanded();
+      if (t.tok.kind == TokKind::end || (t.tok.kind == TokKind::controlWord && t.tok.text == "gmedefend")) break;
+      emit(t);
+    }
+    std::string result = std::move(out);
+    out = std::move(saved);
+    carry = std::move(savedCarry);
+    lastControlWord = savedLast;
+    return result;
   }
 
   void defineEnvironment(const ExpToken& e, const std::string& kind) {
@@ -1267,6 +1388,10 @@ struct Expander::Impl {
         declarePairedDelimiter(e);
         return true;
       }
+      if ((name == "ce" || name == "pu") && !macros.count(name)) {
+        chemCommand(e);
+        return true;
+      }
       if (isSiunitx(name) && !macros.count(name)) {
         siunitxCommand(e);
         return true;
@@ -1279,8 +1404,30 @@ struct Expander::Impl {
         if (const auto style = readGroupText()) theoremStyle = *style;
         return true;
       }
-      if (name == "def" || name == "gdef") {
+      if (name == "def" || name == "gdef" || name == "edef" || name == "xdef") {
         defineDef(e);
+        return true;
+      }
+      if ((name == "@ifstar" || name == "@ifnextchar") && !macros.count(name)) {
+        ifNextChar(e, name == "@ifstar");
+        return true;
+      }
+      if (name == "global" && !macros.count(name)) {
+        globalPrefix = true;
+        return true;
+      }
+      if (name == "expandafter" && !macros.count(name)) {
+        expandAfter();
+        return true;
+      }
+      if (name == "noexpand" && !macros.count(name)) {
+        ExpToken t = raw();
+        t.tok.noexpand = true;
+        unread(std::move(t));
+        return true;
+      }
+      if (name == "futurelet" && !macros.count(name)) {
+        futureLet();
         return true;
       }
       if (name == "let") {

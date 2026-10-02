@@ -47,6 +47,15 @@ Expanded expand(const std::string& tex) {
 
 std::string ex(const std::string& tex) { return expand(tex).text; }
 
+// The text without its spaces: where whitespace falls around a definition is not the point.
+std::string nospace(const std::string& tex) {
+  std::string out;
+  for (const char c : ex(tex)) {
+    if (c != ' ') out += c;
+  }
+  return out;
+}
+
 // define_macro()'s macros, removed again when the test ends.
 struct PersistentMacro {
   PersistentMacro(const std::string& name, const std::string& body) {
@@ -238,4 +247,65 @@ TEST(expander_renewcommand_overrides_a_persistent_macro_for_one_parse_only) {
   CHECK_EQ(ex("\\renewcommand{\\RR}{Q}\\RR"), std::string("Q"));
   CHECK_EQ(ex("\\RR"), std::string("\\mathbb{R}"));
   CHECK_THROWS(ex("\\newcommand{\\RR}{Q}"), "already exists");
+}
+
+TEST(expander_expandafter_expands_the_second_token_once_before_the_first) {
+  CHECK_EQ(nospace("\\def\\f#1{[#1]}\\def\\g{abc}\\expandafter\\f\\g"), std::string("[a]bc"));
+  CHECK_EQ(nospace("\\def\\g{abc}\\expandafter x\\g"), std::string("xabc"));
+  // Two of them nest: the inner one expands what comes after the second.
+  CHECK_EQ(nospace("\\def\\a{A}\\def\\b{B}\\expandafter x\\expandafter y\\a"), std::string("xyA"));
+  // A token that does not expand is left as it is.
+  CHECK_EQ(nospace("\\expandafter x y"), std::string("xy"));
+}
+
+TEST(expander_noexpand_leaves_the_next_token_alone) {
+  CHECK_EQ(nospace("\\def\\a{A}\\noexpand\\a"), std::string("\\a"));
+}
+
+TEST(expander_edef_expands_its_body_when_it_is_defined) {
+  CHECK_EQ(nospace("\\def\\a{1}\\edef\\b{\\a 2}\\def\\a{9}\\b"), std::string("12"));
+  CHECK_EQ(nospace("\\def\\a{1}\\edef\\b{\\noexpand\\a 2}\\def\\a{9}\\b"), std::string("92"));
+  // Parameters are kept for the use.
+  CHECK_EQ(nospace("\\def\\a{1}\\edef\\f#1{\\a#1}\\def\\a{9}\\f x"), std::string("1x"));
+}
+
+TEST(expander_xdef_is_edef_with_a_global_result) {
+  CHECK_EQ(nospace("{\\def\\a{1}\\xdef\\b{\\a 2}}\\b"), std::string("{}12"));
+  CHECK_EQ(nospace("{\\def\\a{1}\\edef\\b{\\a 2}}\\b"), std::string("{}\\b"));
+}
+
+TEST(expander_futurelet_gives_a_name_the_meaning_of_the_second_token) {
+  CHECK_EQ(nospace("\\def\\a{A}\\futurelet\\q\\relax\\a\\q"), std::string("\\relaxAA"));
+}
+
+TEST(expander_arraystretch_goes_ahead_of_the_array_that_reads_it) {
+  CHECK_EQ(nospace("\\def\\arraystretch{2}\\begin{array}{c}a\\end{array}"),
+           std::string("\\gmarraystretch{2}\\begin{array}{c}a\\end{array}"));
+  // 1 is what it is anyway, and a group ends it.
+  CHECK_EQ(nospace("\\def\\arraystretch{1}\\begin{array}{c}a\\end{array}"),
+           std::string("\\begin{array}{c}a\\end{array}"));
+  CHECK_EQ(nospace("{\\def\\arraystretch{2}}\\begin{array}{c}a\\end{array}"),
+           std::string("{}\\begin{array}{c}a\\end{array}"));
+}
+
+TEST(expander_ce_and_pu_become_math) {
+  CHECK_EQ(nospace("\\ce{H2O}"), std::string("\\ensuremath{\\mathrm{H}_{2}\\mathrm{O}}"));
+  CHECK_EQ(nospace("\\pu{3 m}"), std::string("\\ensuremath{3\\,\\mathrm{m}}"));
+  // A document's own \ce is left alone.
+  CHECK_EQ(nospace("\\newcommand{\\ce}[1]{<#1>}\\ce{x}"), std::string("<x>"));
+}
+
+TEST(expander_global_makes_the_next_definition_outlast_its_group) {
+  CHECK_EQ(nospace("{\\global\\def\\a{1}}\\a"), std::string("{}1"));
+  CHECK_EQ(nospace("{\\global\\edef\\a{x}}\\a"), std::string("{}x"));
+  CHECK_EQ(nospace("{\\global\\let\\a=x}\\a"), std::string("{}x"));
+  // And only the next one.
+  CHECK_EQ(nospace("{\\global\\def\\a{1}\\def\\b{2}}\\b"), std::string("{}\\b"));
+}
+
+TEST(expander_ifstar_and_ifnextchar_look_at_the_next_token) {
+  CHECK_EQ(nospace("\\@ifstar{S}{N}*x"), std::string("Sx"));
+  CHECK_EQ(nospace("\\@ifstar{S}{N}x"), std::string("Nx"));
+  CHECK_EQ(nospace("\\@ifnextchar[{Y}{N}[x]"), std::string("Y[x]"));
+  CHECK_EQ(nospace("\\@ifnextchar[{Y}{N}x"), std::string("Nx"));
 }

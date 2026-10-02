@@ -841,6 +841,10 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   }
 
   auto Vsep = _vsep_in.createBox(env);
+  // \arraystretch: each row's pitch grows by that much more of a baselineskip.
+  if (_matrix->_stretch != 1.f) {
+    Vsep->_height += (_matrix->_stretch - 1.f) * 1.2f * Units::fsize(UnitType::em, 1.f, env);
+  }
   // Recalculate the height of the row
   recalculateLine(rows, boxarr, multiRows, lineHeight, lineDepth, drt, Vsep->_height);
 

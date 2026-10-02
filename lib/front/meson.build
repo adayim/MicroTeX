@@ -8,6 +8,7 @@ front_src = [
     'front/prelude.cpp',
     'front/tblr.cpp',
     'front/siunitx.cpp',
+    'front/mhchem.cpp',
     'front/spec.cpp'
 ]
 

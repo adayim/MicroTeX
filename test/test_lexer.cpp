@@ -172,3 +172,11 @@ TEST(lexer_drops_a_backslash_at_the_end_with_a_warning) {
 TEST(lexer_byte_order_mark_is_not_text) {
   CHECK_EQ(toks("\uFEFFx"), (Strings{"char:x"}));
 }
+
+TEST(lexer_at_is_a_letter_in_a_name_that_starts_with_it_as_in_katex) {
+  CHECK_EQ(toks("\\@ifstar x"), (Strings{"control_word:@ifstar", "char:x"}));
+  CHECK_EQ(toks("\\@firstoftwo@x"), (Strings{"control_word:@firstoftwo@x"}));
+  // A bare \@ stays TeX's control symbol.
+  CHECK_EQ(toks("\\@ x"), (Strings{"control_symbol:@", "space: ", "char:x"}));
+  CHECK_EQ(toks("\\@."), (Strings{"control_symbol:@", "char:."}));
+}

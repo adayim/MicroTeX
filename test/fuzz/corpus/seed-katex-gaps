@@ -1,0 +1,8 @@
+\expandafter\expandafter\expandafter\f\g\expandafter\noexpand\edef\xdef\futurelet\futurelet\q\expandafter
+\def\a{\a}\edef\b{\a}\edef\c{\noexpand}\xdef\d#1{\d#1}\edef\e#1#2{#2#1\e}\edef
+\futurelet\q\q\q\futurelet\expandafter\def\futurelet\q\relax\futurelet\q{}{}
+\mathchoice{a}{b}{c}\mathchoice{}{}{}{}x^{\mathchoice{a}{b}{c}{d}}\vcenter\vcenter{\vcenter{}}
+\xtwoheadrightarrow{abc}\xlongequal\xtofrom[x]{y}\xtwoheadleftarrow{\xtwoheadleftarrow{a}}
+\overlinesegment{}\underlinesegment\angl{\angl{n}}\angln\phase{}\textcircled{\textcircled{a}}\H{}\widecheck{}
+\ce{}\ce{^}\ce{^{}_{}}\ce{->[}\ce{<=>[a][}\ce{(aq}\ce{$}\ce{\\}\ce{{{{}}}}\ce{1/}\ce{--->}\ce{+++}\ce{A^}\ce{v}\pu{}\pu{1e}\pu{ mol}\pu{-}
+\def\arraystretch{0}\begin{array}{c}a\end{array}\def\arraystretch{-1}\begin{pmatrix}a\end{pmatrix}\def\arraystretch{x}\begin{tabular}{c}a\end{tabular}\gmarraystretch{9e99}

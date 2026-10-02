@@ -53,6 +53,7 @@ bool isTextFont(const std::string& n) {
 
 float sizeFactor(const std::string& n) {
   if (n == "tiny") return 0.5f;
+  if (n == "sixptsize") return 0.6f;
   if (n == "scriptsize") return 0.7f;
   if (n == "footnotesize") return 0.8f;
   if (n == "small") return 0.9f;
@@ -65,7 +66,7 @@ float sizeFactor(const std::string& n) {
 }
 
 bool isSize(const std::string& n) {
-  return n == "tiny" || n == "scriptsize" || n == "footnotesize" || n == "small" ||
+  return n == "tiny" || n == "sixptsize" || n == "scriptsize" || n == "footnotesize" || n == "small" ||
          n == "normalsize" || n == "large" || n == "Large" || n == "LARGE" || n == "huge" ||
          n == "Huge";
 }
@@ -254,6 +255,8 @@ private:
     std::vector<std::string> labels;
   };
   RowNote _note;
+  /** What `gmarraystretch` said for the array that comes next. */
+  float _stretch = 1.f;
   /** How many alignment rows or displays are being lowered: a \label in
    *  one names its number, which is known when it ends. */
   int _inRow = 0;
@@ -604,6 +607,11 @@ private:
       return typewriter(rawOf(text), node(text).star);
     }
     if (name == "includegraphics") return image(id);
+    if (name == "gmarraystretch") {
+      _stretch = static_cast<float>(std::atof(rawOf(child(id, 0)).c_str()));
+      if (!(_stretch > 0.f)) _stretch = 1.f;
+      return nullptr;
+    }
     if (name == "graphicspath") {
       graphicsPath(rawOf(child(id, 0)));
       return nullptr;
@@ -2032,6 +2040,8 @@ private:
    *  and a rule or \intertext ends one itself (command()). */
   sptr<ArrayFormula> alignmentOf(NodeId env) {
     auto arr = sptrOf<ArrayFormula>();
+    arr->_stretch = _stretch;
+    _stretch = 1.f;
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
     if (isTblrEnvironment(node(env).text)) return tblrAlignmentOf(env);
     const bool text = node(env).flag;

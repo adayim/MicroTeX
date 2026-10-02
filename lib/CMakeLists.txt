@@ -118,6 +118,7 @@ set(
     front/prelude.cpp
     front/tblr.cpp
     front/siunitx.cpp
+    front/mhchem.cpp
     front/lower.cpp
 
     microtex.cpp

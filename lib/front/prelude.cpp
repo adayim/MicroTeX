@@ -126,6 +126,19 @@ std::string_view preludeSource() {
 // \R or \set takes the place of these, and no \newcommand complains.
 std::string_view preludeSoftSource() {
   static constexpr std::string_view source = R"TEX(
+\newcommand{\textsection}{\S}
+\newcommand{\textparagraph}{\P}
+\newcommand{\textcopyright}{\copyright}
+\newcommand{\texttrademark}{\ensuremath{{}^{\mathrm{TM}}}}
+\newcommand{\textquotedbl}{"}
+\newcommand{\@firstoftwo}[2]{#1}
+\newcommand{\@secondoftwo}[2]{#2}
+\newcommand{\arraystretch}{1}
+\newcommand{\strut}{\rule[-0.36em]{0pt}{1.2em}}
+\newcommand{\ordinarycolon}{:}
+\newcommand{\angln}{{\angl n}}
+\newcommand{\overgroup}[1]{\overparen{#1}}
+\newcommand{\undergroup}[1]{\underparen{#1}}
 \newcommand{\alef}{\aleph}
 \newcommand{\alefsym}{\aleph}
 \newcommand{\Dagger}{\ddagger}
@@ -181,7 +194,6 @@ std::string_view preludeSoftSource() {
 \newcommand{\allowbreak}{}
 \newcommand{\nobreak}{}
 \newcommand{\long}{}
-\newcommand{\global}{}
 \newcommand{\hbox}[1]{\mbox{#1}}
 \newcommand{\htmlClass}[2]{#2}
 \newcommand{\htmlId}[2]{#2}

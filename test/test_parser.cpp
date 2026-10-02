@@ -187,12 +187,12 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "cmidrule", "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
-                   "fontsize", "footnote", "footnotesize", "frak", "gmtagstar", "gmtheorem", "graphicspath", "href", "huge", "Huge",
+                   "fontsize", "footnote", "footnotesize", "frak", "gmarraystretch", "gmtagstar", "gmtheorem", "graphicspath", "href", "huge", "Huge",
                    "hskip", "it", "kern", "label", "large", "Large", "LARGE", "left", "limits", "makeatletter",
                    "makeatother", "mkern", "mskip", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
                    "overwithdelims", "pageref", "par", "paragraph", "raggedleft",
                    "raggedright", "ref", "relscale", "right", "rm", "scriptscriptstyle",
-                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "sf", "small", "subsection",
+                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "sf", "sixptsize", "small", "subsection",
                    "subsubsection", "tag", "textsc", "textstyle", "tiny", "tt", "url", "verb"}));
 }
 

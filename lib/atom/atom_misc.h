@@ -187,6 +187,21 @@ public:
   sptr<Box> createBox(Env& env) override;
 };
 
+/** TeX's \mathchoice: one of four, by the style it is set in. */
+class MathChoiceAtom : public Atom {
+private:
+  sptr<Atom> _choice[4];
+
+public:
+  MathChoiceAtom() = delete;
+
+  MathChoiceAtom(const sptr<Atom>& display, const sptr<Atom>& text, const sptr<Atom>& script,
+                 const sptr<Atom>& scriptScript)
+      : _choice{display, text, script, scriptScript} {}
+
+  sptr<Box> createBox(Env& env) override;
+};
+
 /** An atom representing long division */
 class LongDivAtom : public VRowAtom {
 private:

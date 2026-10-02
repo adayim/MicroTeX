@@ -632,6 +632,7 @@ const Symbol _symbols[]{
   {0x025CC, ord,     "dottedcircle"},
   {0x02B1A, ord,     "dottedsquare"},
   {0x02A30, bin,     "dottimes"},
+  {0x0030B, acc,     "doubleacute"},
   {0x02A62, bin,     "doublebarvee"},
   {0x02A5E, bin,     "doublebarwedge"},
   {0x029FA, bin,     "doubleplus"},

@@ -9,6 +9,7 @@
 // and tails included, so every device draws them with no more than lines,
 // and a dashed one is made of short solid ones.
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -79,10 +80,47 @@ public:
   Dimen innerX, innerY;
   /** tikz-cd's `cramped`: less room in the cells and none around the diagram. */
   bool cramped = false;
+  /** amscd's way of setting rows: object rows and rows of arrows alternate, TeX's
+   *  baselineskip and lineskip apart, with labels in the rows' heights and depths. */
+  bool texRows = false;
 
   DiagramAtom();
 
   sptr<Box> createBox(Env& env) override;
+};
+
+/** An arrow KaTeX has that the font has no stretching glyph for (\xtwoheadrightarrow,
+ *  \xtwoheadleftarrow, \xlongequal, \xtofrom), drawn the way a diagram's are, as long
+ *  as `length` says when it is set. It stands where \xrightarrow's glyph does. */
+class StretchArrowAtom : public Atom {
+public:
+  enum class Kind { twoHeadRight, twoHeadLeft, longEqual, toFrom };
+
+  StretchArrowAtom(Kind kind, std::function<float(const Env&)>&& length)
+      : _kind(kind), _length(std::move(length)) {
+    _type = AtomType::relation;
+  }
+
+  sptr<Box> createBox(Env& env) override;
+
+private:
+  Kind _kind;
+  std::function<float(const Env&)> _length;
+};
+
+/** KaTeX's drawn enclosures: `\overlinesegment`, `\underlinesegment`, `\angl`,
+ *  `\phase` and `\textcircled`, strokes around the box of their content. */
+class EncloseAtom : public Atom {
+public:
+  enum class Kind { overSegment, underSegment, angle, phase, circle, harpoonLeft, harpoonRight, doubleArrow };
+
+  EncloseAtom(Kind kind, const sptr<Atom>& base) : _kind(kind), _base(base) {}
+
+  sptr<Box> createBox(Env& env) override;
+
+private:
+  Kind _kind;
+  sptr<Atom> _base;
 };
 
 }  // namespace microtex

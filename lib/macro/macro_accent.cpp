@@ -16,6 +16,7 @@ cmdmacro(accentbiss) {
     case 'v': acc = "check"; break;
     case 't': acc = "tie"; break;
     case 'r': acc = "mathring"; break;
+    case 'H': acc = "doubleacute"; break;
   }
 
   return sptrOf<AccentedAtom>(args.formula(1), acc);
@@ -26,6 +27,7 @@ cmdmacro(accents) {
   const auto& [acc, fit] = [&]() {
     if (name == "widehat") return std::make_pair<std::string>("hat", true);
     if (name == "widetilde") return std::make_pair<std::string>("tilde", true);
+    if (name == "widecheck") return std::make_pair<std::string>("check", true);
     return std::make_pair(name, false);
   }();
   return sptrOf<AccentedAtom>(args.formula(1), acc, fit);

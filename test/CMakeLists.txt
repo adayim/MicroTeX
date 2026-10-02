@@ -3,7 +3,7 @@
 # MICROTEX_FUZZ is on). test/run.sh builds and runs everything here.
 
 if (MICROTEX_TESTS)
-    add_executable(front_tests main.cpp test_lexer.cpp test_expander.cpp test_parser.cpp test_tblr.cpp test_siunitx.cpp)
+    add_executable(front_tests main.cpp test_lexer.cpp test_expander.cpp test_parser.cpp test_tblr.cpp test_siunitx.cpp test_mhchem.cpp)
     target_link_libraries(front_tests PRIVATE microtex)
     add_test(NAME front COMMAND front_tests)
 endif ()

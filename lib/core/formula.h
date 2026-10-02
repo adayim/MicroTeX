@@ -76,6 +76,9 @@ public:
   /** An equation's number or `\tag`, by row index: drawn at the right of the
    *  row, at the right margin of the display. */
   std::map<int, sptr<Atom>> _rowTags;
+  /** LaTeX's \arraystretch: the rows are this much further apart than their
+   *  content makes them. */
+  float _stretch = 1.f;
 
   ArrayFormula();
 

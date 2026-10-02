@@ -604,7 +604,7 @@ inline cmdmacro(CDATATenv) {
   atom->rowSep = Units::getDimen("0.7ex");
   atom->innerX = Units::getDimen("0.5em");
   atom->innerY = Units::getDimen("0ex");
-  atom->minRowPitch = Units::getDimen("9.3ex");
+  atom->texRows = true;
 
   using A = DiagramArrow;
   // The arrow `@X a X b X` starts at `at` (just after the X) and reads two
