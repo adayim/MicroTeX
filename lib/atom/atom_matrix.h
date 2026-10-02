@@ -179,6 +179,8 @@ private:
 
 public:
   float _height, _shift;
+  // Dashes, not a line (the `:` of a column specification).
+  bool _dashed = false;
 
   VlineAtom() = delete;
 

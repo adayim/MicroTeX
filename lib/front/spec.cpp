@@ -93,7 +93,7 @@ struct Table {
     // where the text sits against its rows, which it is not set to.
     add({"multirow"}, "rRrRc");
     // Rules end the row they are in, as they did in the old parser.
-    add({"hline", "thickhline"}, "", Shape::prefix, Bare::none, true);
+    add({"hline", "thickhline", "hdashline"}, "", Shape::prefix, Bare::none, true);
     add({"cline"}, "r", Shape::prefix, Bare::none, true);
     // booktabs' rule of a given thickness, and the space above and below.
     add({"specialrule"}, "ddd", Shape::prefix, Bare::none, true);
@@ -317,7 +317,7 @@ bool isCitation(const std::string& name) {
 }
 
 bool isRule(const std::string& name) {
-  return name == "hline" || name == "thickhline" || name == "cline" || name == "specialrule" ||
+  return name == "hline" || name == "thickhline" || name == "hdashline" || name == "cline" || name == "specialrule" ||
          name == "addlinespace" || name == "endhead" || name == "endfirsthead" ||
          name == "endfoot" || name == "endlastfoot";
 }

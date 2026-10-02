@@ -155,6 +155,12 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
         }
         _vlines[lpos.size()] = sptrOf<VlineAtom>(nb);
       } break;
+      case ':': {
+        // A dashed line between columns.
+        auto dashed = sptrOf<VlineAtom>(1);
+        dashed->_dashed = true;
+        _vlines[lpos.size()] = dashed;
+      } break;
       case '<': {
         // What follows each cell of the column before it.
         const SpecArgument a = specArgument(opt, pos + 1);
@@ -1084,6 +1090,7 @@ sptr<Box> VlineAtom::createBox(Env& env) {
 
   const auto drt = env.ruleThickness();
   auto rb = sptrOf<RuleBox>(_height, drt, _shift, MatrixAtom::LINE_COLOR, true);
+  if (_dashed) rb->setDash(Units::fsize(UnitType::em, 0.35f, env));
   auto sep = sptrOf<StrutBox>(2 * drt, 0.f, 0.f, 0.f);
   auto hb = sptrOf<HBox>();
   for (int i = 0; i < _n - 1; i++) {

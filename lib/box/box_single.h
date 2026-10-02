@@ -132,11 +132,15 @@ class RuleBox : public Box {
 private:
   color _color;
   float _speShift;
+  float _dash = 0.f;
 
 public:
   RuleBox() = delete;
 
   RuleBox(float thickness, float width, float shift, color c = transparent, bool trueshift = true);
+
+  /** Draw it as dashes of this length, with gaps as long. */
+  void setDash(float length) { _dash = length; }
 
   void draw(Graphics2D& g2, float x, float y) override;
 

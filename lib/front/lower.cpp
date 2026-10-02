@@ -601,7 +601,7 @@ private:
     if (name == "gmtheorem") return fragment(theoremHead(id), false);
     if (name == "verb") {
       const NodeId text = child(id, 0);
-      return fragment(typewriter(rawOf(text), node(text).star), node(id).mode == Mode::math);
+      return typewriter(rawOf(text), node(text).star);
     }
     if (name == "includegraphics") return image(id);
     if (name == "graphicspath") {
@@ -631,21 +631,20 @@ private:
     return bridge(id, name, spec, f);
   }
 
-  /** `text` as written, set in the typewriter face: every character that
-   *  means something to TeX is named by its code, a space is one that is
-   *  kept (a `\verb*` shows it as U+2423), and nothing is a ligature. */
-  static std::string typewriter(const std::string& text, bool visibleSpaces) {
-    std::string out = "\\texttt{";
+  /** `text` as written, in the typewriter face: one run of characters, none
+   *  of them read as LaTeX and none a ligature. A space is kept (a `\verb*`
+   *  shows it as U+2423). */
+  static sptr<Atom> typewriter(const std::string& text, bool visibleSpaces) {
+    std::string shown;
     for (const char c : text) {
-      if (c == ' ') {
-        out += visibleSpaces ? "\xe2\x90\xa3" : "~";
-      } else if (std::string("\\{}$&#_%~^-`'<>|\"").find(c) != std::string::npos) {
-        out += "\\char" + std::to_string(static_cast<unsigned char>(c)) + "{}";
+      if (c == ' ' && visibleSpaces) {
+        shown += "\xe2\x90\xa3";
       } else {
-        out += c;
+        shown += c;
       }
     }
-    return out + "}";
+    // Nested, as \texttt is: added to the roman the text around it is set in.
+    return sptrOf<FontStyleAtom>(FontStyle::tt, false, literalText(shown), true);
   }
 
   /** Small capitals, faked as every device has to: the lowercase letters of
@@ -717,18 +716,18 @@ private:
 
   /** The text of a verbatim environment: a line to a row, flush left. */
   sptr<Atom> verbatimBlock(const Node& x) {
-    std::string rows;
+    auto lines = sptrOf<VRowAtom>();
+    lines->_halign = Alignment::left;
     std::size_t from = 0;
     while (true) {
       const std::size_t to = x.raw.find('\n', from);
       const std::string line =
         x.raw.substr(from, to == std::string::npos ? std::string::npos : to - from);
-      if (!rows.empty()) rows += "\\\\";
-      rows += line.empty() ? "\\texttt{~}" : typewriter(line, x.text == "verbatim*");
+      lines->append(typewriter(line.empty() ? " " : line, x.text == "verbatim*"));
       if (to == std::string::npos) break;
       from = to + 1;
     }
-    return fragment("\\begin{tabular}{@{}l@{}}" + rows + "\\end{tabular}", false);
+    return lines;
   }
 
   /** \url and \href. A grob has no links, so only their look, LaTeX's
@@ -744,19 +743,7 @@ private:
       TreeArgs a(*this, math, {"textcolor", colour, rawOf(text)}, {kNoNode, kNoNode, text}, &f);
       return cm->call(a);
     }
-    std::string chars;
-    const std::string raw = rawOf(child(id, 0));
-    for (std::size_t i = 0; i < raw.size(); i++) {
-      const char c = raw[i];
-      // `- ` ' as well: a URL is verbatim, and read again as text they
-      // would form TeX's dash and quote ligatures.
-      if (std::string("\\{}$&#_%~^-`'").find(c) != std::string::npos) {
-        chars += "\\char" + std::to_string(static_cast<unsigned char>(c)) + "{}";
-      } else {
-        chars += c;
-      }
-    }
-    return fragment("\\textcolor{" + colour + "}{\\texttt{" + chars + "}}", math);
+    return sptrOf<ColorAtom>(typewriter(rawOf(child(id, 0)), false), TRANSPARENT, ColorAtom::getColor(colour));
   }
 
   /** \includegraphics[options]{path}: the host reads the file and says

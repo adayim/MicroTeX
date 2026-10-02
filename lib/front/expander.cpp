@@ -6,8 +6,10 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "front/prelude.h"
+#include "front/siunitx.h"
 #include "front/spec.h"
 #include "utils/exceptions.h"
 
@@ -122,6 +124,8 @@ std::uint64_t& generation() {
 struct Definitions {
   std::unordered_map<std::string, MacroDef> macros;
   std::unordered_map<std::string, MacroDef> envs;
+  /** The macros a document may define itself (preludeSoftSource()). */
+  std::unordered_set<std::string> soft;
 };
 
 }  // namespace
@@ -135,7 +139,16 @@ struct Expander::Impl {
       o.persistent = false;
       Impl impl(std::string(preludeSource()), std::move(o), ignored);
       impl.run();
-      return Definitions{std::move(impl.macros), std::move(impl.envs)};
+      Definitions defs{std::move(impl.macros), std::move(impl.envs), {}};
+      ExpanderOptions soft;
+      soft.persistent = false;
+      Impl more(std::string(preludeSoftSource()), std::move(soft), ignored);
+      more.run();
+      for (auto& kv : more.macros) {
+        defs.soft.insert(kv.first);
+        defs.macros.insert(std::move(kv));
+      }
+      return defs;
     }();
     return defs;
   }
@@ -159,6 +172,8 @@ struct Expander::Impl {
   /** \theoremstyle's: plain, definition or remark, for the \newtheorems
    *  after it. */
   std::string theoremStyle = "plain";
+  /** Units a document made with \DeclareSIUnit. */
+  siunitx::UserUnits siUnits;
   /** The counter a theorem environment is numbered within (`section`), by
    *  environment name, for those that share its counter. */
   std::unordered_map<std::string, std::string> theoremWithin;
@@ -670,7 +685,13 @@ struct Expander::Impl {
     frames.push_back({buffers.back(), std::make_unique<Lexer>(buffers.back(), lo, quiet, cats), false, at, {}});
   }
 
+  /** A name of the prelude's that a document is free to define itself. */
+  bool isSoft(const std::string& name) const {
+    return macros.count(name) == 0 && shared != nullptr && shared->soft.count(name) > 0;
+  }
+
   bool isDefined(const std::string& name) const {
+    if (isSoft(name)) return opts.isBuiltinCommand && opts.isBuiltinCommand(name);
     return lookup(name) != nullptr || (opts.isBuiltinCommand && opts.isBuiltinCommand(name));
   }
 
@@ -959,7 +980,7 @@ struct Expander::Impl {
     if (kind == "newcommand" && exists) {
       fail(kind, "Command " + name + " already exists! Use renewcommand instead!");
     }
-    if (kind == "renewcommand" && !exists) {
+    if (kind == "renewcommand" && !exists && !isSoft(name) && !isSiunitx(name)) {
       // LaTeX complains and defines it anyway; so does recover mode.
       if (!opts.recover) fail(kind, "Command " + name + " is no defined! Use newcommand instead!");
       diags.warn(e.tok.span, "\\renewcommand: \\" + name + " was not defined; defined now");
@@ -1044,6 +1065,96 @@ struct Expander::Impl {
     def.endBody = splitBody("\\par", 0, "\\end{" + *name + "}", e.tok.span);
     defineLocally(*name, true);
     envs[*name] = std::move(def);
+  }
+
+  static bool isSiunitx(const std::string& n) {
+    static const char* names[] = {"num",      "si",      "SI",      "unit",    "qty",
+                                  "ang",      "numrange", "SIrange", "qtyrange", "numlist",
+                                  "SIlist",   "qtylist", "sisetup", "DeclareSIUnit"};
+    for (const char* x : names) {
+      if (n == x) return true;
+    }
+    return false;
+  }
+
+  /** A subset of siunitx (front/siunitx.h): the command's arguments are
+   *  read, formatted, and what they make is read in their place. Its
+   *  options are read and not used. */
+  void siunitxCommand(const ExpToken& e) {
+    const std::string name = e.tok.text;
+    const SourceSpan at = e.tok.span;
+    readOptional();
+    std::string problem;
+    const auto say = [&] {
+      if (!problem.empty()) diags.warn(at, "\\" + name + ": " + problem);
+      problem.clear();
+    };
+    const std::string who = "\\" + name;
+    if (name == "sisetup") {
+      readArg(who);
+      return;
+    }
+    if (name == "DeclareSIUnit") {
+      std::string macro = trim(readArg(who));
+      const std::string text = readArg(who);
+      if (!macro.empty() && macro[0] == '\\') macro.erase(0, 1);
+      if (!macro.empty()) siUnits[macro] = text;
+      return;
+    }
+    const auto num = [&](const std::string& s) {
+      const std::string out = siunitx::number(s, problem);
+      say();
+      return out;
+    };
+    const auto unitOf = [&](const std::string& s) {
+      const std::string out = siunitx::unit(s, siUnits, problem);
+      say();
+      return out;
+    };
+    const auto with = [&](const std::string& n, const std::string& u, const std::string& pre) {
+      const std::string unit = u.empty() ? "" : unitOf(u);
+      return num(n) + pre + (unit.empty() ? "" : "\\," + unit);
+    };
+    std::string out;
+    if (name == "num") {
+      out = num(readArg(who));
+    } else if (name == "si" || name == "unit") {
+      out = unitOf(readArg(who));
+    } else if (name == "SI") {
+      const std::string n = readArg(who);
+      const auto pre = readOptional();
+      out = with(n, readArg(who), pre ? *pre : "");
+    } else if (name == "qty") {
+      const std::string n = readArg(who);
+      out = with(n, readArg(who), "");
+    } else if (name == "ang") {
+      out = siunitx::angle(readArg(who), problem);
+      say();
+    } else if (name == "numrange") {
+      const std::string a = readArg(who);
+      out = siunitx::range(num(a), num(readArg(who)));
+    } else if (name == "SIrange" || name == "qtyrange") {
+      const std::string a = readArg(who), b = readArg(who), u = readArg(who);
+      out = siunitx::range(with(a, u, ""), with(b, u, ""));
+    } else if (name == "numlist") {
+      out = siunitx::numberList(readArg(who), problem);
+      say();
+    } else {  // SIlist, qtylist: each number with the unit, as siunitx repeats it
+      const std::string list = readArg(who), u = readArg(who);
+      std::vector<std::string> items{""};
+      for (const char c : list) {
+        if (c == ';') {
+          items.emplace_back();
+        } else {
+          items.back() += c;
+        }
+      }
+      for (std::size_t k = 0; k < items.size(); k++) {
+        if (k > 0) out += items.size() == 2 ? "\\text{ and }" : k + 1 == items.size() ? "\\text{, and }" : "\\text{, }";
+        out += with(items[k], u, "");
+      }
+    }
+    pushExpansion("\\ensuremath{" + out + "}", at);
   }
 
   void defineDef(const ExpToken& e) {
@@ -1154,6 +1265,10 @@ struct Expander::Impl {
       }
       if (name == "DeclarePairedDelimiter") {
         declarePairedDelimiter(e);
+        return true;
+      }
+      if (isSiunitx(name) && !macros.count(name)) {
+        siunitxCommand(e);
         return true;
       }
       if (name == "newtheorem") {

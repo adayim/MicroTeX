@@ -187,6 +187,14 @@ inline cmdmacro(hline) {
   return sptrOf<HlineAtom>();
 }
 
+// arydshln's \hdashline: a dashed rule across the table.
+inline cmdmacro(hdashline) {
+  if (args.alignmentHere() == nullptr) throw ex_parse("The macro \\hdashline only available in array mode!");
+  auto a = sptrOf<HlineAtom>();
+  a->setDashed(true);
+  return a;
+}
+
 inline cmdmacro(thickhline) {
   if (args.alignmentHere() == nullptr)
     throw ex_parse("The macro \\thickhline only available in array mode!");

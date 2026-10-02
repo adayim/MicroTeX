@@ -144,9 +144,22 @@ void RuleBox::draw(Graphics2D& g2, float x, float y) {
   const color oldColor = g2.getColor();
   if (!isTransparent(_color)) g2.setColor(_color);
   const Stroke oldStroke = g2.getStroke();
-  g2.setStroke(Stroke(_height, CAP_BUTT, JOIN_BEVEL));
   y = y - _height / 2.f - _speShift;
-  g2.drawLine(x, y, x + _width, y);
+  if (_dash > 0.f && _width >= _height) {
+    // A dashed horizontal rule: pieces of the length of a dash, as far apart.
+    g2.setStroke(Stroke(_height, CAP_BUTT, JOIN_BEVEL));
+    for (float s = 0.f; s < _width; s += 2.f * _dash) g2.drawLine(x + s, y, x + std::min(s + _dash, _width), y);
+  } else if (_dash > 0.f) {
+    // A dashed vertical one: the box is tall and thin, and the stroke is as wide as it.
+    g2.setStroke(Stroke(_width, CAP_BUTT, JOIN_BEVEL));
+    const float top = y - _height / 2.f;
+    for (float s = 0.f; s < _height; s += 2.f * _dash) {
+      g2.drawLine(x + _width / 2.f, top + s, x + _width / 2.f, top + std::min(s + _dash, _height));
+    }
+  } else {
+    g2.setStroke(Stroke(_height, CAP_BUTT, JOIN_BEVEL));
+    g2.drawLine(x, y, x + _width, y);
+  }
   g2.setStroke(oldStroke);
   g2.setColor(oldColor);
 }

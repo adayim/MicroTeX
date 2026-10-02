@@ -98,6 +98,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(3, macro_multicolumn, "multicolumn"),
   mac(0, macro_hline, "hline"),
   mac(0, macro_thickhline, "thickhline"),
+  mac(0, macro_hdashline, "hdashline"),
   mac(3, macro_specialrule, "specialrule"),
   mac(1, macro_cline, "cline"),
   mac(3, macro_multirow, "multirow"),

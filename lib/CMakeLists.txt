@@ -117,6 +117,7 @@ set(
     front/parser.cpp
     front/prelude.cpp
     front/tblr.cpp
+    front/siunitx.cpp
     front/lower.cpp
 
     microtex.cpp

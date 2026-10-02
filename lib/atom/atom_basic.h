@@ -141,6 +141,8 @@ private:
   color _color;
   // Draws nothing, and leaves the thickness as space (\addlinespace).
   bool _blank = false;
+  // Dashes, not a line (\hdashline).
+  bool _dashed = false;
 
 public:
   HlineAtom() noexcept
@@ -150,6 +152,8 @@ public:
   }
 
   inline void setWidth(float w) { _width = w; }
+
+  inline void setDashed(bool d) { _dashed = d; }
 
   inline void setShift(float s) { _shift = s; }
 
@@ -213,6 +217,9 @@ public:
    * or a predefined color name. Return black if not found.
    */
   static color getColor(std::string name);
+
+  /** Whether `name` is a colour that is defined: one of the names, not a guess. */
+  static bool hasName(std::string name);
 
   /** Define a color with given name */
   static void defineColor(const std::string& name, color c);

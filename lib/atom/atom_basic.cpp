@@ -72,7 +72,9 @@ sptr<Box> HlineAtom::createBox(Env& env) {
   if (_blank) {
     vb->add(sptrOf<StrutBox>(0.f, drt, 0.f, 0.f));
   } else {
-    vb->add(sptrOf<RuleBox>(drt, _width, _shift, _color, false));
+    auto rule = sptrOf<RuleBox>(drt, _width, _shift, _color, false);
+    if (_dashed) rule->setDash(Units::fsize(UnitType::em, 0.35f, env));
+    vb->add(rule);
   }
   vb->_type = AtomType::hline;
   return sptr<Box>(vb);

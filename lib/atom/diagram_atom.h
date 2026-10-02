@@ -15,6 +15,7 @@
 #include "atom/atom.h"
 #include "box/box.h"
 #include "env/units.h"
+#include "graphic/graphic_basic.h"
 
 namespace microtex {
 
@@ -30,7 +31,9 @@ struct DiagramLabel {
 struct DiagramArrow {
   int row = 0, col = 0;
   int toRow = 0, toCol = 0;
-  enum class Head { none, one, two, implies } head = Head::one;
+  /** At its end: a head, two, the double arrow's, a harpoon's one barb (on
+   *  the left of the way it goes, or the right), or a bar. */
+  enum class Head { none, one, two, implies, harpoonLeft, harpoonRight, bar } head = Head::one;
   /** At its start: a hook (on the left of the way it goes, or the right), a
    *  tail, a bar, or a head, which an arrow that goes both ways has. */
   enum class Tail { none, hook, hookBack, tail, bar, head, implies } tail = Tail::none;
@@ -40,6 +43,13 @@ struct DiagramArrow {
   bool doubled = false;
   /** Draws no shaft, but its labels. */
   bool phantom = false;
+  /** A zigzag shaft. */
+  bool squiggly = false;
+  /** Drawn over the arrows before it, which are cut where it crosses them. */
+  bool crossing = false;
+  /** Its own colour, for the lines and the labels. */
+  bool hasColor = false;
+  color ink = 0;
   enum class Dash { solid, dashed, dotted } dash = Dash::solid;
   /** `bend left` is positive, in degrees. */
   float bend = 0.f;
@@ -67,6 +77,8 @@ public:
   Dimen minRowPitch;
   /** The space inside a cell's box around its content. */
   Dimen innerX, innerY;
+  /** tikz-cd's `cramped`: less room in the cells and none around the diagram. */
+  bool cramped = false;
 
   DiagramAtom();
 

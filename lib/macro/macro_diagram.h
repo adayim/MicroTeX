@@ -8,10 +8,12 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "atom/atom_basic.h"
 #include "atom/diagram_atom.h"
 #include "env/units.h"
 #include "macro/macro_args.h"
@@ -170,10 +172,50 @@ private:
   std::set<std::string> _seen;
 };
 
+/** A cell an arrow starts or ends at, other than the one it is written in:
+ *  `2-1` (row and column, from 1) or a direction such as `rr`. */
+struct Target {
+  bool set = false;
+  bool absolute = false;
+  int row = 0, col = 0;
+};
+
+inline bool targetOf(const std::string& text, Target& t) {
+  const std::string v = trim(text);
+  const std::size_t dash = v.find('-');
+  if (dash != std::string::npos && dash > 0 && dash + 1 < v.size()) {
+    const std::string r = v.substr(0, dash), c = v.substr(dash + 1);
+    const auto digits = [](const std::string& s) {
+      for (const char ch : s) {
+        if (std::isdigit(static_cast<unsigned char>(ch)) == 0) return false;
+      }
+      return !s.empty();
+    };
+    if (!digits(r) || !digits(c)) return false;
+    t = {true, true, std::atoi(r.c_str()) - 1, std::atoi(c.c_str()) - 1};
+    return true;
+  }
+  if (!isDirection(v)) return false;
+  t = {true, false, 0, 0};
+  for (const char ch : v) {
+    t.row += ch == 'd' ? 1 : ch == 'u' ? -1 : 0;
+    t.col += ch == 'r' ? 1 : ch == 'l' ? -1 : 0;
+  }
+  return true;
+}
+
+/** Where an arrow written in a cell goes: `dr`, `dc` rows and columns away,
+ *  unless `to` says; and where it starts, if not in that cell. */
+struct Placement {
+  int dr = 0, dc = 0;
+  Target from, to;
+};
+
 /** An arrow's options, as tikz-cd reads them: where it goes, how it is
- *  drawn, and its labels. */
+ *  drawn, and its labels. `labelDefaults` are the options every label has
+ *  (the diagram's `labels=`). */
 inline void arrowOptions(CommandArgs& args, Warned& warned, const std::string& options,
-                         DiagramArrow& arrow, int& dr, int& dc) {
+                         DiagramArrow& arrow, Placement& place, const std::string& labelDefaults) {
   std::vector<LabelSpec> labels;
   bool swapAll = false, describeAll = false, posAll = false;
   float posDefault = 0.5f;
@@ -186,6 +228,10 @@ inline void arrowOptions(CommandArgs& args, Warned& warned, const std::string& o
       while (end < key.size() && key[end] != '"') end += key[end] == '\\' ? 2 : 1;
       LabelSpec l;
       l.text = key.substr(1, end - 1);
+      for (const std::string& k : splitTop(labelDefaults, ',')) {
+        const std::string opt = trim(k);
+        if (!opt.empty() && !labelKey(opt, l)) warned.once("label option " + opt + " is ignored");
+      }
       std::string rest = trim(end < key.size() ? key.substr(end + 1) : "");
       if (!rest.empty() && rest[0] == '\'') {
         l.swap = true;
@@ -204,9 +250,36 @@ inline void arrowOptions(CommandArgs& args, Warned& warned, const std::string& o
     }
     if (isDirection(key)) {
       for (const char c : key) {
-        dr += c == 'd' ? 1 : c == 'u' ? -1 : 0;
-        dc += c == 'r' ? 1 : c == 'l' ? -1 : 0;
+        place.dr += c == 'd' ? 1 : c == 'u' ? -1 : 0;
+        place.dc += c == 'r' ? 1 : c == 'l' ? -1 : 0;
       }
+      continue;
+    }
+    // `name=value` keys.
+    const std::size_t eq = key.find('=');
+    const std::string name = trim(key.substr(0, eq));
+    const std::string given = eq == std::string::npos ? "" : trim(key.substr(eq + 1));
+    if (name == "from" || name == "to") {
+      Target& t = name == "from" ? place.from : place.to;
+      if (!targetOf(given, t)) {
+        warned.once("\\arrow: " + key + " names a cell by row-column or direction only; it is ignored");
+      }
+      continue;
+    }
+    if (name == "color" || name == "draw") {
+      if (given == "none") {
+        arrow.phantom = true;
+      } else if (ColorAtom::hasName(given) || (!given.empty() && given[0] == '#')) {
+        arrow.hasColor = true;
+        arrow.ink = ColorAtom::getColor(given);
+      } else {
+        warned.once("\\arrow: " + key + " is not a colour that is defined; it is ignored");
+      }
+      continue;
+    }
+    if (ColorAtom::hasName(key)) {
+      arrow.hasColor = true;
+      arrow.ink = ColorAtom::getColor(key);
       continue;
     }
     LabelSpec probe;
@@ -259,12 +332,50 @@ inline void arrowOptions(CommandArgs& args, Warned& warned, const std::string& o
       }
     } else if (key == "no head" || key == "dash") {
       arrow.head = A::Head::none;
+      if (key == "dash") arrow.tail = A::Tail::none;
     } else if (key == "no tail") {
       arrow.tail = A::Tail::none;
-    } else if (key == "rightarrow" || key == "to head") {
+    } else if (key == "rightarrow") {
+      arrow.head = A::Head::one;
+      arrow.tail = A::Tail::none;
+    } else if (key == "to head") {
       arrow.head = A::Head::one;
     } else if (key == "phantom") {
       arrow.phantom = true;
+    } else if (key == "crossing over") {
+      arrow.crossing = true;
+    } else if (key == "harpoon" || key == "harpoon'") {
+      arrow.head = key == "harpoon" ? A::Head::harpoonLeft : A::Head::harpoonRight;
+    } else if (key == "rightharpoonup" || key == "rightharpoondown") {
+      arrow.tail = A::Tail::none;
+      arrow.head = key == "rightharpoonup" ? A::Head::harpoonLeft : A::Head::harpoonRight;
+    } else if (key == "squiggly" || key == "rightsquigarrow" || key == "leftsquigarrow" ||
+               key == "leftrightsquigarrow") {
+      arrow.squiggly = true;
+      if (key == "rightsquigarrow") {
+        arrow.tail = A::Tail::none;
+        arrow.head = A::Head::one;
+      } else if (key != "squiggly") {
+        arrow.tail = A::Tail::head;
+        arrow.head = key == "leftsquigarrow" ? A::Head::none : A::Head::one;
+      }
+    } else if (key == "hookrightarrow") {
+      arrow.tail = A::Tail::hook;
+      arrow.head = A::Head::one;
+    } else if (key == "twoheadrightarrow") {
+      arrow.tail = A::Tail::none;
+      arrow.head = A::Head::two;
+    } else if (key == "rightarrowtail") {
+      arrow.tail = A::Tail::tail;
+      arrow.head = A::Head::one;
+    } else if (key == "dashleftarrow") {
+      arrow.dash = A::Dash::dashed;
+      arrow.tail = A::Tail::head;
+      arrow.head = A::Head::none;
+    } else if (key == "mapsfrom" || key == "Mapsto" || key == "Mapsfrom") {
+      arrow.doubled = key != "mapsfrom";
+      arrow.tail = key == "Mapsto" ? A::Tail::bar : key == "mapsfrom" ? A::Tail::head : A::Tail::implies;
+      arrow.head = key == "Mapsto" ? A::Head::implies : A::Head::bar;
     } else if (key.compare(0, 9, "bend left") == 0 && value("bend left", 30.f) >= 0.f) {
       arrow.bend = value("bend left", 30.f);
     } else if (key.compare(0, 10, "bend right") == 0 && value("bend right", 30.f) >= 0.f) {
@@ -288,6 +399,7 @@ inline void arrowOptions(CommandArgs& args, Warned& warned, const std::string& o
   for (const LabelSpec& l : labels) {
     DiagramLabel out;
     out.body = args.formulaChecked(l.text, true);
+    if (arrow.hasColor && out.body != nullptr) out.body = sptrOf<ColorAtom>(out.body, TRANSPARENT, arrow.ink);
     const bool described = l.described || describeAll;
     out.side = described ? DiagramLabel::Side::center
                : (l.swap != swapAll) ? DiagramLabel::Side::right
@@ -307,28 +419,43 @@ inline cmdmacro(tikzcdATATenv) {
   Warned warned(args);
   auto atom = sptrOf<DiagramAtom>();
   bool ampersand = false;
-  for (const std::string& raw : splitTop(options, ',')) {
-    const std::string key = trim(raw);
-    const std::size_t eq = key.find('=');
-    const std::string name = trim(key.substr(0, eq));
-    const std::string value = eq == std::string::npos ? "" : trim(key.substr(eq + 1));
-    if (key.empty()) continue;
-    if (name == "row sep" || name == "column sep" || name == "sep") {
-      const Dimen row = sepOf(value, true), col = sepOf(value, false);
-      if (!row.isValid()) {
-        warned.once(name + "=" + value + " is not a size: the default is kept");
-        continue;
+  // `arrows=` and `labels=` are options of every arrow and every label.
+  std::string arrowDefaults, labelDefaults;
+  std::function<void(const std::string&)> apply = [&](const std::string& list) {
+    for (const std::string& raw : splitTop(list, ',')) {
+      const std::string key = trim(raw);
+      const std::size_t eq = key.find('=');
+      const std::string name = trim(key.substr(0, eq));
+      std::string value = eq == std::string::npos ? "" : trim(key.substr(eq + 1));
+      if (!value.empty() && value[0] == '{') {
+        std::size_t at = 0;
+        value = groupAt(value, at);
       }
-      if (name != "column sep") atom->rowSep = row;
-      if (name != "row sep") atom->colSep = col;
-    } else if (name == "ampersand replacement") {
-      ampersand = true;
-    } else if (name == "math mode" || name == "cramped") {
-      if (name == "cramped") warned.once("cramped is ignored");
-    } else {
-      warned.once("option " + name + " is not supported and is ignored");
+      if (key.empty()) continue;
+      if (name == "row sep" || name == "column sep" || name == "sep") {
+        const Dimen row = sepOf(value, true), col = sepOf(value, false);
+        if (!row.isValid()) {
+          warned.once(name + "=" + value + " is not a size: the default is kept");
+          continue;
+        }
+        if (name != "column sep") atom->rowSep = row;
+        if (name != "row sep") atom->colSep = col;
+      } else if (name == "ampersand replacement") {
+        ampersand = true;
+      } else if (name == "cramped") {
+        atom->cramped = true;
+      } else if (name == "arrows") {
+        arrowDefaults += "," + value;
+      } else if (name == "labels") {
+        labelDefaults += "," + value;
+      } else if (name == "diagrams") {
+        apply(value);
+      } else if (name != "math mode") {
+        warned.once("option " + name + " is not supported and is ignored");
+      }
     }
-  }
+  };
+  apply(options);
   if (ampersand) {
     for (std::size_t p = body.find("\\&"); p != std::string::npos; p = body.find("\\&", p)) {
       body.replace(p, 2, "&");
@@ -433,17 +560,24 @@ inline cmdmacro(tikzcdATATenv) {
   }
   for (const Pending& p : pending) {
     DiagramArrow arrow;
-    arrow.row = p.row;
-    arrow.col = p.col;
-    int dr = 0, dc = 0;
-    arrowOptions(args, warned, p.options, arrow, dr, dc);
-    arrow.toRow = p.row + dr;
-    arrow.toCol = p.col + dc;
+    Placement place;
+    arrowOptions(args, warned, arrowDefaults + "," + p.options, arrow, place, labelDefaults);
+    // The direction is from the cell the arrow is written in; `from` and
+    // `to` name cells outright, or by a direction from it.
+    arrow.row = place.from.set ? (place.from.absolute ? place.from.row : p.row + place.from.row) : p.row;
+    arrow.col = place.from.set ? (place.from.absolute ? place.from.col : p.col + place.from.col) : p.col;
+    arrow.toRow = place.to.set ? (place.to.absolute ? place.to.row : p.row + place.to.row) : p.row + place.dr;
+    arrow.toCol = place.to.set ? (place.to.absolute ? place.to.col : p.col + place.to.col) : p.col + place.dc;
     const int cols = static_cast<int>(atom->cells.empty() ? 0 : atom->cells[0].size());
     int widest = cols;
     for (const auto& r : atom->cells) widest = std::max(widest, static_cast<int>(r.size()));
-    if (dr == 0 && dc == 0) {
+    if (arrow.row == arrow.toRow && arrow.col == arrow.toCol) {
       warned.once("\\arrow: an arrow with no direction goes nowhere and is not drawn");
+      continue;
+    }
+    if (arrow.row < 0 || arrow.row >= static_cast<int>(atom->cells.size()) || arrow.col < 0 ||
+        arrow.col >= widest) {
+      warned.once("\\arrow: an arrow starts outside the diagram and is not drawn");
       continue;
     }
     if (arrow.toRow < 0 || arrow.toRow >= static_cast<int>(atom->cells.size()) ||

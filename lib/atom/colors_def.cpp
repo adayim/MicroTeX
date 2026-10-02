@@ -86,6 +86,11 @@ void ColorAtom::resetDefinitions() {
   _colors = builtinColors;
 }
 
+bool ColorAtom::hasName(std::string name) {
+  trim(name);
+  return _colors.find(name) != _colors.end() || _colors.find(toLower(name)) != _colors.end();
+}
+
 color ColorAtom::getColor(std::string name) {
   if (name.empty()) return _default;
   trim(name);
