@@ -29,6 +29,13 @@ inline cmdmacro(matrixATATenv) {
   return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::matrix);
 }
 
+// LaTeX's own: three columns, right, centre, left, and numbered rows.
+inline cmdmacro(eqnarrayATATenv) {
+  const auto arr = args.alignment(1);
+  arr->checkDimensions();
+  return sptrOf<MatrixAtom>(args.isPartial(), arr, "rcl", true);
+}
+
 inline cmdmacro(arrayATATenv) {
   const auto arr = args.alignment(2);
   arr->checkDimensions();

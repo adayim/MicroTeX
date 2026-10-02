@@ -108,6 +108,11 @@ int headingLevel(const std::string& name);
  *  starred or not, which a document sets on a line of its own. */
 bool isDisplayEnvironment(const std::string& name);
 
+/** An environment whose rows are numbered, unless it is starred (equation,
+ *  which the prelude writes as an align, is one): by its name without the
+ *  star. */
+bool isNumberedEnvironment(const std::string& name);
+
 /** A float (table, figure), which a document sets where it is written, as
  *  LaTeX's [h] placement does, apart from the paragraphs around it. */
 bool isFloatEnvironment(const std::string& name);

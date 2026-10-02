@@ -290,6 +290,9 @@ vector<float> MatrixAtom::getColumnSep(Env& env, float width) {
   float h, w = env.textWidth();
   int i = 0;
 
+  // The numbers' room, at both sides to keep the display centred; a flalign
+  // is flush left, so only at its right.
+  if (w != POS_INF) w = max(w - (_matType == MatrixType::flAlign ? 1 : 2) * _tagReserve, 0.f);
   if (_matType == MatrixType::aligned || _matType == MatrixType::alignedAt) w = POS_INF;
 
   switch (_matType) {
@@ -722,6 +725,21 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
   for (int j = 0; j < cols; j++) matW += colWidth[j];
 
+  // An equation's number or \tag, at the right of its row. The columns of
+  // an align are spaced across what the numbers leave, at both sides, so
+  // that the display stays centred on the page and clear of them.
+  vector<sptr<Box>> tags(rows);
+  float tagWidth = 0;
+  for (const auto& [row, tag] : _matrix->_rowTags) {
+    if (row < 0 || row >= rows || tag == nullptr) continue;
+    tags[row] = tag->createBox(env);
+    tagWidth = max(tagWidth, tags[row]->_width);
+  }
+  const float tagGap = tagWidth > 0 ? SpaceAtom(UnitType::em, 2.f, 0.f, 0.f).createBox(env)->_width : 0.f;
+  _tagReserve = tagWidth > 0 ? tagWidth + tagGap : 0.f;
+  const bool centred = _matType == MatrixType::align || _matType == MatrixType::alignAt;
+  const float leftShift = centred && env.textWidth() != POS_INF ? _tagReserve : 0.f;
+
   // The horizontal separator's width
   const vector<float> Hsep = getColumnSep(env, matW);
 
@@ -758,6 +776,10 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
   for (int i = 0; i < rows; i++) {
     auto hb = sptrOf<HBox>();
+    const auto first = boxarr[i][0]->_type;
+    if (leftShift > 0 && (first == AtomType::none || first == AtomType::multiColumn)) {
+      hb->add(sptrOf<StrutBox>(leftShift, 0.f, 0.f, 0.f));
+    }
     for (int j = 0; j < cols; j++) {
       switch (boxarr[i][j]->_type) {
         case AtomType::none:
@@ -851,6 +873,15 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
         default: {
         }
       }
+    }
+
+    // The number goes flush right at the measure, or after the row, past a
+    // gap, where there is none.
+    if (tags[i] != nullptr && (first == AtomType::none || first == AtomType::multiColumn)) {
+      const float measure = env.textWidth() == POS_INF ? 0.f : env.textWidth();
+      const float right = max(measure, leftShift + matW + tagGap + tagWidth);
+      hb->add(sptrOf<StrutBox>(right - leftShift - matW - tags[i]->_width, 0.f, 0.f, 0.f));
+      hb->add(tags[i]);
     }
 
     if (boxarr[i][0]->_type != AtomType::hline) {
@@ -1020,7 +1051,21 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     }
   };
 
-  vb->add(sptrOf<HBox>(atom->createBox(env), tw, alignment));
+  // A line of the measure's width, with the row's number or \tag flush at
+  // its right end.
+  const auto line = [&](size_t row, const sptr<Atom>& a, Alignment al) -> sptr<Box> {
+    auto box = sptrOf<HBox>(a->createBox(env), tw, al);
+    const auto tag = _column->_rowTags.find(static_cast<int>(row));
+    if (tag == _column->_rowTags.end() || tag->second == nullptr) return box;
+    auto number = tag->second->createBox(env);
+    auto both = sptrOf<HBox>();
+    both->add(box);
+    both->add(sptrOf<StrutBox>(-number->_width, 0.f, 0.f, 0.f));
+    both->add(number);
+    return both;
+  };
+
+  vb->add(line(0, atom, alignment));
   gapAfter(0);
   auto Vsep = _vsep_in.createBox(env);
   for (size_t i = 1; i < _column->rows() - 1; i++) {
@@ -1028,7 +1073,7 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     alignment = Alignment::center;
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
     vb->add(Vsep);
-    vb->add(sptrOf<HBox>(atom->createBox(env), tw, alignment));
+    vb->add(line(i, atom, alignment));
     gapAfter(i);
   }
 
@@ -1037,7 +1082,7 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     alignment = _lineType == MultiLineType::gather ? Alignment::center : Alignment::right;
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
     vb->add(Vsep);
-    vb->add(sptrOf<HBox>(atom->createBox(env), tw, alignment));
+    vb->add(line(_column->rows() - 1, atom, alignment));
   }
 
   float h = vb->_height + vb->_depth;

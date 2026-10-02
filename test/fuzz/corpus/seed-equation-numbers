@@ -1,0 +1,1 @@
+\begin{align} a &= b \tag{1} \label{x}\ c &= \eqref{x} \notag \end{align}\begin{equation*}\ref{y}\tag*{z}\end{equation*}\begin{multline} a \ b \label{m}\end{multline}$$\tag{1}\label{k}$$\setcounter{equation}{3}\begin{eqnarray}a&=&b\end{eqnarray}

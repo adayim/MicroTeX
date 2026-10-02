@@ -26,7 +26,6 @@ std::string_view preludeSource() {
 \newenvironment{Bmatrix}{\left\{\begin{matrix}}{\end{matrix}\right\}}
 \newenvironment{vmatrix}{\left|\begin{matrix}}{\end{matrix}\right|}
 \newenvironment{Vmatrix}{\left\|\begin{matrix}}{\end{matrix}\right\|}
-\newenvironment{eqnarray}{\begin{array}{rcl}}{\end{array}}
 \newenvironment{cases}{\left\{\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
 \newenvironment{rcases}{\left.\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
 \newenvironment{dcases}{\left\{\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
@@ -35,6 +34,7 @@ std::string_view preludeSource() {
 \newenvironment{math}{\(}{\)}
 \newenvironment{displaymath}{\[}{\]}
 \newenvironment{equation}{\begin{align}}{\end{align}}
+\newenvironment{equation*}{\begin{align*}}{\end{align*}}
 \newcommand{\operatorname}[1]{\mathop{\mathrm{#1}}\nolimits }
 \newcommand{\substack}[1]{{\scriptstyle\begin{array}{c}#1\end{array}}}
 \newcommand{\shortintertext}[1]{\intertext{#1}}
@@ -78,7 +78,6 @@ std::string_view preludeSource() {
 \newcommand{\maketitle}{}
 \newcommand{\title}[1]{}
 \newcommand{\author}[1]{}
-\newcommand{\label}[1]{}
 \newcommand{\DeclareGraphicsExtensions}[1]{}
 \newcommand{\flushleft}{}
 \newcommand{\arraybackslash}{}

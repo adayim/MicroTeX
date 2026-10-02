@@ -73,6 +73,9 @@ public:
   std::map<std::string, std::vector<sptr<CellSpecifier>>> _cellSpecifiers;
   /** `\\[len]`: extra space below a row, by row index. */
   std::map<int, Dimen> _rowGaps;
+  /** An equation's number or `\tag`, by row index: drawn at the right of the
+   *  row, at the right margin of the display. */
+  std::map<int, sptr<Atom>> _rowTags;
 
   ArrayFormula();
 

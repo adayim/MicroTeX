@@ -687,11 +687,11 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
         // not have, \citealp drops the brackets.
         const std::string drawn = name == "citet" ? "(author?) [?]" : name == "citealp" ? "?" : "[?]";
         _diags.warn(at, "citation `" + key + "' is undefined: drawn as " + drawn);
-      } else {
-        // `?\?)` so that `??)` is not read as a trigraph.
-        _diags.warn(at, "reference `" + key + "' is undefined: drawn as " +
-                          (name == "eqref" ? "(?\?)" : "??"));
+      } else if (name == "pageref") {
+        _diags.warn(at, "reference `" + key + "' is undefined: drawn as ??");
       }
+      // \ref and \eqref name a label, which may come after them: the
+      // lowering, which sees them all, says which are undefined.
       return _ast.add(std::move(n), args);
     }
     if (name == "par") {
@@ -1176,10 +1176,13 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
   n.span = at;
   n.text = name;
   if (spec == nullptr && name.size() > 1 && name.back() == '*') {
-    // A starred environment is its plain form: amsmath's star turns off
-    // numbering, and nothing is numbered here.
+    // A starred environment is its plain form; amsmath's star turns off
+    // its numbering, which the lowering reads from the node.
     spec = findEnvironment(name.substr(0, name.size() - 1));
-    if (spec != nullptr) n.text = name.substr(0, name.size() - 1);
+    if (spec != nullptr) {
+      n.text = name.substr(0, name.size() - 1);
+      n.star = true;
+    }
   }
   if (spec == nullptr && mode == Mode::text) {
     // LaTeX's own recovery: after "Environment ... undefined" the body is

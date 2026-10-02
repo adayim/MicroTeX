@@ -87,6 +87,10 @@ private:
   MatrixType _matType;
   bool _isPartial;
   bool _spaceAround;
+  // The room an equation's numbers take at each side of an align, so that
+  // the display stays centred on the page and clear of them. Set by
+  // createBoxInner() before the columns are spaced.
+  float _tagReserve = 0;
 
   void parsePositions(std::string opt, std::vector<Alignment>& lpos);
 

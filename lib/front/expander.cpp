@@ -98,6 +98,8 @@ const std::unordered_map<std::string, MacroDef>& starredBuiltins() {
     add("operatorname*", 1, {{"\\mathop{\\mathrm{", 0}, {"", 1}, {"}}\\limits", 0}});
     add("hspace*", 1, {{"\\hspace{", 0}, {"", 1}, {"}", 0}});
     add("vspace*", 1, {{"\\vspace{", 0}, {"", 1}, {"}", 0}});
+    // amsmath's \tag*{x}: the tag without its parentheses.
+    add("tag*", 1, {{"\\gmtagstar{", 0}, {"", 1}, {"}", 0}});
     add("\\*", 0, {{"\\\\", 0}});
     // It clips to the bounding box, and there is nothing outside it here.
     add("includegraphics*", 0, {{"\\includegraphics", 0}});

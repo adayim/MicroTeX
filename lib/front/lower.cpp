@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -108,9 +109,107 @@ private:
   std::vector<std::string> _dirs;
 };
 
+/** `s` without the space at either end. */
+std::string trimmed(std::string s) {
+  return trim(s);
+}
+
+/** The equation numbers and labels of the input being lowered. As with the
+ *  image directories, one input's are shared by every Lowerer it takes, so
+ *  a display in a list's item is counted with the rest. */
+struct Numbering {
+  /** The equation counter. */
+  int equation = 0;
+  /** What a \label names now, as \@currentlabel: the number of the last
+   *  equation or heading. */
+  std::string current;
+  /** label -> the text a reference to it draws, as LaTeX source. Shared
+   *  with the references, which draw only when the whole input has been
+   *  read: one may come before its label. */
+  std::shared_ptr<std::map<std::string, std::string>> labels =
+    std::make_shared<std::map<std::string, std::string>>();
+};
+
+Numbering* numbering = nullptr;
+
+/** Where the next input starts counting (setStartNumbering()), and where the
+ *  last one ended (lastNumbering()). */
+NumberingState& pendingNumbering() {
+  static NumberingState state;
+  return state;
+}
+
+NumberingState& finalNumbering() {
+  static NumberingState state;
+  return state;
+}
+
+class NumberingScope {
+public:
+  NumberingScope() : _outer(numbering) {
+    if (_outer == nullptr) numbering = &_own;
+  }
+  ~NumberingScope() { numbering = _outer; }
+  NumberingScope(const NumberingScope&) = delete;
+  NumberingScope& operator=(const NumberingScope&) = delete;
+
+  /** Whether this is the Lowerer that takes the whole input. */
+  bool outermost() const { return _outer == nullptr; }
+
+private:
+  Numbering* _outer;
+  Numbering _own;
+};
+
+/** \ref and \eqref: the text of the label they name, looked up when the
+ *  atom is built into a box -- the whole input has been read by then -- and
+ *  a bold ?? where there is none. */
+class RefAtom : public Atom {
+public:
+  RefAtom(std::shared_ptr<std::map<std::string, std::string>> labels, std::string key,
+          bool parentheses)
+      : _labels(std::move(labels)), _key(std::move(key)), _parentheses(parentheses) {}
+
+  sptr<Box> createBox(Env& env) override {
+    const auto it = _labels->find(_key);
+    sptr<Atom> text;
+    if (it != _labels->end()) text = buildFragment(it->second, false);
+    if (text == nullptr) {
+      text = sptrOf<FontStyleAtom>(FontStyle::bf, false, sptrOf<TextAtom>(std::string("??"), false));
+    }
+    if (!_parentheses) return text->createBox(env);
+    auto row = sptrOf<RowAtom>();
+    row->add(sptrOf<TextAtom>(std::string("("), false));
+    row->add(text);
+    row->add(sptrOf<TextAtom>(std::string(")"), false));
+    return row->createBox(env);
+  }
+
+private:
+  std::shared_ptr<std::map<std::string, std::string>> _labels;
+  std::string _key;
+  bool _parentheses;
+};
+
 class Lowerer {
 public:
   Lowerer(const Ast& ast, Diagnostics& diags) : _ast(ast), _diags(diags) {}
+
+  /** The outermost Lowerer of an input starts from the state a host set
+   *  (setStartNumbering()), once, and leaves its own end state. */
+  void startNumbering() {
+    if (!_numbering.outermost()) return;
+    NumberingState start = std::move(pendingNumbering());
+    pendingNumbering() = NumberingState();
+    nums().equation = start.equation;
+    *nums().labels = std::move(start.labels);
+  }
+
+  void endNumbering() {
+    if (!_numbering.outermost()) return;
+    finalNumbering().equation = nums().equation;
+    finalNumbering().labels = *nums().labels;
+  }
 
   void run(Formula& f, bool lines, bool paragraphs) {
     if (_ast.root == kNoNode) return;
@@ -119,6 +218,7 @@ public:
     } else {
       lowerList(_ast.root, f, 0);
     }
+    if (_numbering.outermost()) reportReferences();
   }
 
 private:
@@ -130,6 +230,31 @@ private:
   std::vector<std::int8_t> _blocks;
   /** Where images are looked for (graphicsDirs). */
   GraphicsDirs _graphicsDirs;
+  /** Equation numbers and labels (Numbering). */
+  NumberingScope _numbering;
+  Numbering& nums() { return *numbering; }
+
+  /** What an alignment's row, or a display, says about its own number:
+   *  \notag, \tag, and the labels written in it. */
+  struct RowNote {
+    bool notag = false;
+    sptr<Atom> tag;
+    /** What a reference to the tagged row draws. */
+    std::string tagSource;
+    bool star = false;
+    std::vector<std::string> labels;
+  };
+  RowNote _note;
+  /** How many alignment rows or displays are being lowered: a \label in
+   *  one names its number, which is known when it ends. */
+  int _inRow = 0;
+  struct Reference {
+    std::string key;
+    SourceSpan at;
+    bool parentheses;
+  };
+  /** The references this Lowerer made, which the outermost one checks. */
+  std::vector<Reference> _refs;
   /** A text argument that stands for one line's part of it while its
    *  command is built once per line (piecesOf()), and that part. */
   NodeId _linePartOf = kNoNode;
@@ -248,7 +373,8 @@ private:
         return;
       }
       case NodeKind::math:
-        f.add(sptrOf<MathAtom>(build(child(id, 0)), x.flag ? TexStyle::display : TexStyle::text));
+        f.add(sptrOf<MathAtom>(x.flag ? displayBody(child(id, 0)) : build(child(id, 0)),
+                               x.flag ? TexStyle::display : TexStyle::text));
         return;
       case NodeKind::list:
         lowerList(id, f, 0);
@@ -389,18 +515,32 @@ private:
     // Only the lines of a label have indents to suppress; elsewhere it is
     // what it was when the prelude dropped it.
     if (name == "noindent" || isLineAlignment(name)) return nullptr;
-    // What LaTeX draws for a reference it cannot resolve: a bold ??.
+    // Equation numbers, labels and what names them (see Numbering).
+    if (name == "tag" || name == "gmtagstar") {
+      noteTag(id, name == "gmtagstar");
+      return nullptr;
+    }
+    if (name == "notag" || name == "nonumber") {
+      _note.notag = true;
+      return nullptr;
+    }
+    if (name == "label") {
+      label(trimmed(rawOf(child(id, 0))));
+      return nullptr;
+    }
+    if (name == "setcounter") {
+      if (trimmed(rawOf(child(id, 0))) == "equation") {
+        nums().equation = std::atoi(trimmed(rawOf(child(id, 1))).c_str());
+      }
+      return nullptr;
+    }
+    if (name == "ref" || name == "eqref") return reference(id, name == "eqref");
+    // What LaTeX draws for a reference it cannot resolve: a bold ??. A grob
+    // has no pages, nor a bibliography.
     const auto bold = [](const std::string& s) {
       return sptrOf<FontStyleAtom>(FontStyle::bf, false, literalText(s));
     };
-    if (name == "ref" || name == "pageref") return bold("??");
-    if (name == "eqref") {
-      auto row = sptrOf<RowAtom>();
-      row->add(literalText("("));
-      row->add(bold("??"));
-      row->add(literalText(")"));
-      return row;
-    }
+    if (name == "pageref") return bold("??");
     if (isCitation(name)) {
       // What LaTeX draws for citations it cannot resolve: a bold ? for each
       // key, then the note, in brackets -- `\cite[p.~3]{a,b}` is [?, ?, p. 3].
@@ -1217,6 +1357,7 @@ private:
     const Node& x = node(id);
     const int level = headingLevel(x.text);
     const std::string number = headingNumber(level, x.star);
+    if (!number.empty()) nums().current = number;
     // The number and the quad after it, and the title: the last argument
     // (the first is the short one). Each is made once -- the title's
     // warnings are said once -- and shared by both settings below.
@@ -1427,7 +1568,7 @@ private:
     beforeLine(l);
     Formula g;
     if (node(id).kind == NodeKind::math) {
-      auto m = build(child(id, 0));
+      auto m = displayBody(child(id, 0));
       g.add(sptrOf<StyleAtom>(TexStyle::display, m == nullptr ? sptrOf<EmptyAtom>() : m));
     } else {
       lowerItem(id, g);
@@ -1623,7 +1764,7 @@ private:
         if (x.flag) {
           // Display style for the display math alone.
           beforeLine(l);
-          auto g = build(list);
+          auto g = displayBody(list);
           l.line->add(sptrOf<StyleAtom>(TexStyle::display, g == nullptr ? sptrOf<EmptyAtom>() : g));
           return;
         }
@@ -1748,6 +1889,17 @@ private:
     auto arr = sptrOf<ArrayFormula>();
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
     const bool text = node(env).flag;
+    // The rows of align, gather, ... are numbered, unless the environment is
+    // starred; a multline has one number, on its last line.
+    const bool family = isNumberedEnvironment(node(env).text);
+    const bool automatic = family && !node(env).star;
+    const bool once = family && node(env).text == "multline";
+    // What the row of an enclosing display was told is set aside: this
+    // alignment's rows are told their own.
+    RowNote outer = std::move(_note);
+    _note = RowNote();
+    _inRow++;
+    int lastRow = -1;
     for (std::uint32_t r = 0; r < count(env); r++) {
       const NodeId row = child(env, r);
       if (node(row).kind != NodeKind::row) continue;
@@ -1760,10 +1912,133 @@ private:
         }
       }
       const std::string& end = node(row).text;
+      // A rule or \intertext ends its row too, and is not an equation.
+      const bool equation = end.empty() || end == "\\" || end == "cr";
+      const bool blank = isBlankRow(row);
+      if (equation && !blank) lastRow = arr->rows();
+      if (family && equation && !once) finishRow(*arr, arr->rows(), automatic && !blank);
       if (!node(row).raw.empty()) arr->addRowGap(Units::getDimen(node(row).raw));
       if (end == "\\" || end == "cr") arr->addRow();
     }
+    if (family && once && lastRow >= 0) finishRow(*arr, lastRow, automatic);
+    _inRow--;
+    RowNote inner = std::move(_note);
+    _note = std::move(outer);
+    if (!family) {
+      // A split or aligned in an equation: its \label, \tag and \notag are
+      // the equation's.
+      if (inner.tag != nullptr && _note.tag == nullptr) {
+        _note.tag = inner.tag;
+        _note.tagSource = inner.tagSource;
+        _note.star = inner.star;
+      }
+      _note.notag = _note.notag || inner.notag;
+      _note.labels.insert(_note.labels.end(), inner.labels.begin(), inner.labels.end());
+    }
     return arr;
+  }
+
+  /** A row with nothing in it: the one a final \\ starts. */
+  bool isBlankRow(NodeId row) const {
+    for (std::uint32_t c = 0; c < count(row); c++) {
+      const NodeId list = child(child(row, c), 0);
+      for (std::uint32_t i = 0; i < count(list); i++) {
+        if (!isSpace(node(child(list, i)))) return false;
+      }
+    }
+    return true;
+  }
+
+  // --- equation numbers, \tag, \label and \ref ------------------------------
+
+  /** `(text)` in the upright font, as LaTeX sets an equation's number. */
+  static sptr<Atom> numberOf(const std::string& text, bool parentheses) {
+    return sptrOf<FontStyleAtom>(FontStyle::rm, false,
+                                 literalText(parentheses ? "(" + text + ")" : text));
+  }
+
+  /** \tag{text} and \tag*{text}, of the row or display being lowered. */
+  void noteTag(NodeId id, bool star) {
+    const NodeId text = child(id, 0);
+    const auto body = argumentFormula(text, rawOf(text), false);
+    if (body == nullptr) return;
+    _note.tag = sptrOf<FontStyleAtom>(FontStyle::rm, false, body);
+    _note.tagSource = trimmed(rawOf(text));
+    _note.star = star;
+  }
+
+  /** A row, or a display, is done: its number or tag, and its labels. */
+  void finishRow(ArrayFormula& arr, int row, bool numbered) {
+    const RowNote n = std::move(_note);
+    _note = RowNote();
+    sptr<Atom> tag;
+    std::string text;
+    if (n.tag != nullptr) {
+      // \tag takes the parentheses itself, which \tag* leaves out.
+      tag = n.star ? n.tag : sptrOf<RowAtom>();
+      if (!n.star) {
+        auto* parts = static_cast<RowAtom*>(tag.get());
+        parts->add(numberOf("(", false));
+        parts->add(n.tag);
+        parts->add(numberOf(")", false));
+      }
+      text = n.tagSource;
+    } else if (numbered && !n.notag) {
+      text = std::to_string(++nums().equation);
+      tag = numberOf(text, true);
+    }
+    if (tag != nullptr) {
+      arr._rowTags[row] = tag;
+      nums().current = text;
+    }
+    for (const auto& key : n.labels) (*nums().labels)[key] = nums().current;
+  }
+
+  /** The content of a display, `$$...$$` or `\[...\]`: its list, with a
+   *  \tag it holds set at the right of it. */
+  sptr<Atom> displayBody(NodeId list) {
+    RowNote outer = std::move(_note);
+    _note = RowNote();
+    _inRow++;
+    const sptr<Atom> body = build(list);
+    _inRow--;
+    const bool tagged = _note.tag != nullptr;
+    auto arr = sptrOf<ArrayFormula>();
+    if (body != nullptr) arr->add(body);
+    finishRow(*arr, 0, false);
+    _note = std::move(outer);
+    if (!tagged) return body;
+    // One centred line, which already knows where its tag goes.
+    arr->checkDimensions();
+    return sptrOf<MultlineAtom>(false, arr, MultiLineType::gather);
+  }
+
+  /** \label: what it names is the number of the row or display it is in,
+   *  known when that ends; elsewhere, the last number set. */
+  void label(const std::string& key) {
+    if (_inRow > 0) {
+      _note.labels.push_back(key);
+    } else {
+      (*nums().labels)[key] = nums().current;
+    }
+  }
+
+  /** \ref and \eqref, drawn when the whole input has been read. */
+  sptr<Atom> reference(NodeId id, bool parentheses) {
+    const std::string key = trimmed(rawOf(child(id, 0)));
+    if (_numbering.outermost()) _refs.push_back({key, node(id).span, parentheses});
+    return sptrOf<RefAtom>(nums().labels, key, parentheses);
+  }
+
+  /** What the input leaves undefined, said once all of it is read: a
+   *  reference may come before its label. */
+  void reportReferences() {
+    for (const auto& ref : _refs) {
+      if (nums().labels->count(ref.key) > 0) continue;
+      // `?\?)` so that `??)` is not read as a trigraph.
+      _diags.warn(ref.at, "reference `" + ref.key + "' is undefined: drawn as " +
+                            (ref.parentheses ? "(?\?)" : "??"));
+    }
   }
 
   /** A command that works on the alignment it is in, not on the cell's
@@ -1807,7 +2082,18 @@ private:
 
 void lowerInto(const Ast& ast, Formula& formula, Diagnostics& diagnostics, bool lines,
                bool paragraphs) {
-  Lowerer(ast, diagnostics).run(formula, lines, paragraphs);
+  Lowerer lowerer(ast, diagnostics);
+  lowerer.startNumbering();
+  lowerer.run(formula, lines, paragraphs);
+  lowerer.endNumbering();
+}
+
+void setStartNumbering(NumberingState start) {
+  pendingNumbering() = std::move(start);
+}
+
+const NumberingState& lastNumbering() {
+  return finalNumbering();
 }
 
 sptr<Atom> buildFragment(const std::string& latex, bool math) {

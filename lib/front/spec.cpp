@@ -216,6 +216,13 @@ struct Table {
     // natbib's: \citep[post]{keys} or \citep[pre][post]{keys}.
     add({"citep", "citet", "citealp"}, "RRr", Shape::prefix, Bare::none, true);
     add({"footnote"}, "Rt", Shape::prefix, Bare::none, true);
+    // Equation numbers: the lowering numbers the displays of an input and
+    // keeps the labels, which a reference then names. The starred form of tag is
+    // the expander's gmtagstar.
+    add({"tag", "gmtagstar"}, "t");
+    add({"notag", "nonumber"}, "");
+    add({"label"}, "r");
+    add({"setcounter"}, "rr");
     add({"hspace", "vspace"}, "d");
     // --- our own (lib/atom/) ----------------------------------------------
     add({"gmfontfamily"}, "rt");
@@ -225,7 +232,7 @@ struct Table {
     add({"begin", "end"}, "r", Shape::prefix, Bare::none, true);
 
     // --- environments the engine builds (the @@env ones in macro_def.cpp) --
-    env({"matrix", "smallmatrix", "align", "flalign", "multline", "gather"}, "",
+    env({"matrix", "smallmatrix", "align", "flalign", "multline", "gather", "eqnarray"}, "",
         EnvBody::alignment);
     // [t|b|c]: LaTeX's vertical position, read and not used (a grob has no
     // baseline of lines around it to align to).
@@ -292,6 +299,12 @@ bool isDisplayEnvironment(const std::string& name) {
     "displaymath", "equation", "eqnarray"};
   const bool starred = name.size() > 1 && name.back() == '*';
   return display.count(starred ? name.substr(0, name.size() - 1) : name) > 0;
+}
+
+bool isNumberedEnvironment(const std::string& name) {
+  static const std::set<std::string> numbered = {"align",  "alignat",  "flalign",
+                                                  "gather", "multline", "eqnarray"};
+  return numbered.count(name) > 0;
 }
 
 const CommandSpec* findCommand(const std::string& name) {

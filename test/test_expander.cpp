@@ -108,6 +108,11 @@ TEST(expander_paired_delimiters_have_a_plain_a_sized_and_a_starred_form) {
   CHECK_THROWS(ex("\\DeclarePairedDelimiter{\\frac}{(}{)}"), "already exists");
 }
 
+TEST(expander_tag_star_is_the_tag_without_parentheses) {
+  CHECK_EQ(ex("\\tag*{x}"), std::string("\\gmtagstar{x}"));
+  CHECK_EQ(ex("\\tag{x}"), std::string("\\tag{x}"));
+}
+
 TEST(expander_starred_builtins_become_forms_the_parser_reads) {
   CHECK_EQ(ex("\\operatorname*{x}"), std::string("\\mathop{\\mathrm{x}}\\limits"));
   CHECK_EQ(ex("\\hspace*{1em}"), std::string("\\hspace{1em}"));
