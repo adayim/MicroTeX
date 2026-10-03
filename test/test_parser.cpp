@@ -202,11 +202,12 @@ TEST(parser_font_commands_take_fontspecs_optional_arguments_either_side_of_the_n
   // An optional argument that is not there reads as empty.
   CHECK_EQ(raws("\\fontspec{LM Mono} x", "argument"), (Strings{"", "LM Mono", ""}));
   CHECK_EQ(raws("\\fontfamily{ptm}\\selectfont x", "argument"), (Strings{"ptm"}));
-  // \setmainfont lasts to the end of its group, across a line break; \fontspec
-  // is a declaration, which a line break ends.
+  // A font lasts to the end of its group, across a line break, as in LaTeX.
   CHECK_EQ(tree("\\setmainfont{A} a \\\\ b"),
            std::string("[\\setmainfont{- 'A' -|[a \\\\(-) b]}]"));
-  CHECK_EQ(tree("\\fontspec{A} a \\\\ b"), std::string("[\\fontspec{- 'A' -|[a]} \\\\(-) b]"));
+  CHECK_EQ(tree("\\fontspec{A} a \\\\ b"), std::string("[\\fontspec{- 'A' -|[a \\\\(-) b]}]"));
+  CHECK_EQ(tree("\\fontfamily{A}\\selectfont a \\\\ b"),
+           std::string("[\\fontfamily{'A'|[a \\\\(-) b]}]"));
 }
 
 TEST(parser_argument_without_braces_is_one_character_or_one_command_with_its_arguments) {

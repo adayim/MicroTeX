@@ -117,11 +117,12 @@ struct Table {
     // fontspec's and unicode-math's: a font for a role -- body, \textsf,
     // \texttt, math -- from here to the end of the group; \fontspec and
     // NFSS's \fontfamily (with its \selectfont, which does nothing) set the
-    // font of the rest of the list. The options are fontspec's, either side.
-    add({"setmainfont", "setsansfont", "setmonofont", "setmathfont"}, "RrR",
+    // font of the rest of the group likewise. As in LaTeX, a font lasts across
+    // a `\\`, which a markdown span with a <br> in it needs. The options are
+    // fontspec's, either side.
+    add({"setmainfont", "setsansfont", "setmonofont", "setmathfont", "fontspec"}, "RrR",
         Shape::groupDeclaration);
-    add({"fontspec"}, "RrR", Shape::declaration);
-    add({"fontfamily"}, "r", Shape::declaration);
+    add({"fontfamily"}, "r", Shape::groupDeclaration);
     add({"shoveright", "shoveleft"}, "m");
     add({"DeclareMathSizes"}, "rrrr");
     add({"magnification"}, "r");
