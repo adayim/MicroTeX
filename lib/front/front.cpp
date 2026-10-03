@@ -156,4 +156,21 @@ const ImageResolver& imageResolver() {
   return resolverStore();
 }
 
+namespace {
+
+FontResolver& fontResolverStore() {
+  static FontResolver resolver;
+  return resolver;
+}
+
+}  // namespace
+
+void setFontResolver(FontResolver resolver) {
+  fontResolverStore() = std::move(resolver);
+}
+
+const FontResolver& fontResolver() {
+  return fontResolverStore();
+}
+
 }  // namespace microtex::front

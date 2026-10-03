@@ -18,6 +18,7 @@ RenderBuilder& RenderBuilder::setLineSpace(const Dimen& dimen) {
 }
 
 Render* RenderBuilder::build(Formula& f) {
+  setFontRoles(f._fontRoles);
   return build(f._root);
 }
 
@@ -37,6 +38,7 @@ Render* RenderBuilder::build(const sptr<Atom>& fc) {
 
   const auto style = _style;
   Env env(style, fctx, _textSize);
+  for (int role = 0; role < 3; role++) env.setFontRole(role, _fontRoles[role]);
   const auto isLimitedWidth = !_textWidth.isEmpty();
   if (isLimitedWidth) {
     env.setTextWidth(_textWidth);

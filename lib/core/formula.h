@@ -34,6 +34,13 @@ public:
   // the root atom of the "atom tree" that represents the formula
   sptr<Atom> _root;
 
+  /** What the input says of its fonts as a whole: the math font a
+   *  \setmathfont named ("" for none), and the family indices (see
+   *  font_family_atom.h) of the body, sans and typewriter fonts its preamble
+   *  set. The render starts from them. */
+  std::string _mathFontName;
+  int _fontRoles[3] = {0, 0, 0};
+
   /** An empty Formula, for the front end (front/lower.h) to build into.
    *  Nothing here parses LaTeX any more: the front end does. */
   Formula() = default;

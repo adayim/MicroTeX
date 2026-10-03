@@ -71,6 +71,22 @@ const std::string& font_family_of_style(int font_style);
 
 void clear_font_families();
 
+// --- Roles -----------------------------------------------------------
+//
+// A document can name the fonts of its body, 	extsf and 	exttt text
+// (\setmainfont, \setsansfont, \setmonofont). Each is a family index held
+// by the Env, set for the rest of a group by a FontRoleAtom. A text box takes
+// the one its style asks for -- typewriter bit, sans bit, else the body --
+// unless the style already names a family of its own (\gmfontfamily,
+// ontspec), so those win. 	extrm, which resets to the caller's font,
+// goes back to the document's body font when it has set one.
+enum FontRole { roleMain = 0, roleSans = 1, roleMono = 2 };
+
+class Env;
+
+/** `style` with the family of its role in `env` put in, when it has none. */
+FontStyle withRoleFamily(FontStyle style, const Env& env);
+
 // --- Atom ------------------------------------------------------------
 
 class FontFamilyAtom : public Atom {
@@ -92,6 +108,31 @@ public:
     }
 
 private:
+    int _index;
+    sptr<Atom> _atom;
+};
+
+/** `content` with the font of one role set to `index` for its length. */
+class FontRoleAtom : public Atom {
+public:
+    FontRoleAtom(int role, int index, sptr<Atom> atom)
+        : _role(role), _index(index), _atom(std::move(atom)) {}
+
+    sptr<Box> createBox(Env& env) override;
+
+    void collectBidiText(std::vector<c32>& out) const override {
+        if (_atom != nullptr) _atom->collectBidiText(out);
+    }
+
+    void assignBidiLevels(const std::vector<std::uint8_t>& lv,
+                          std::size_t& cursor) override {
+        const std::size_t start = cursor;
+        if (_atom != nullptr) _atom->assignBidiLevels(lv, cursor);
+        _bidiLevel = subtreeLevel(lv, start, cursor);
+    }
+
+private:
+    int _role;
     int _index;
     sptr<Atom> _atom;
 };

@@ -27,6 +27,10 @@ private:
   FontStyle _textFontStyle = FontStyle::none;
   FontStyle _mathFontStyle = FontStyle::none;
 
+  /** The family index (font_family_atom.h) of the body, sans and typewriter
+   *  fonts a document names; 0 for none. */
+  int _fontRoles[3] = {0, 0, 0};
+
   void addFontStyle(FontStyle style, FontStyle& target);
 
   void removeFontStyle(FontStyle style, FontStyle& target);
@@ -91,6 +95,12 @@ public:
 
   /** The font style to display text */
   inline FontStyle textFontStyle() const { return _textFontStyle; }
+
+  /** The family index text of a role takes when it names none of its own:
+   *  0 the body, 1 sans, 2 typewriter. */
+  inline int fontRole(int role) const { return _fontRoles[role]; }
+
+  inline void setFontRole(int role, int index) { _fontRoles[role] = index; }
 
   /** The last used font's id, or the math font's id if no font was used */
   inline i32 lastFontId() const {

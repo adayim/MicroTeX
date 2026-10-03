@@ -1,5 +1,6 @@
 #include "atom/atom_char.h"
 
+#include "atom/font_family_atom.h"
 #include "box/box_single.h"
 #include "core/split.h"
 #include "env/env.h"
@@ -95,6 +96,7 @@ sptr<Box> CharAtom::createBox(Env& env) {
   } else {
     fontStyle = _mathMode ? env.mathFontStyle() : env.textFontStyle();
   }
+  if (!_mathMode) fontStyle = withRoleFamily(fontStyle, env);
   return sptrOf<TextBox>(name(), fontStyle, Env::fixedTextSize() * env.scale());
 }
 
@@ -105,5 +107,6 @@ sptr<Box> BreakMarkAtom::createBox(Env& env) {
 sptr<Box> HyphenMarkAtom::hyphen(Env& env) const {
   // A TextBox, not a CharBox, so the hyphen comes from the same font as
   // the word it ends -- these marks only ever sit inside text.
-  return sptrOf<TextBox>("-", env.textFontStyle(), Env::fixedTextSize() * env.scale());
+  return sptrOf<TextBox>("-", withRoleFamily(env.textFontStyle(), env),
+                         Env::fixedTextSize() * env.scale());
 }

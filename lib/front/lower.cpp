@@ -27,6 +27,7 @@
 #include "atom/atom_space.h"
 #include "atom/atom_text.h"
 #include "atom/atom_vrow.h"
+#include "atom/font_family_atom.h"
 #include "box/box_factory.h"
 #include "core/localized_num.h"
 #include "env/units.h"
@@ -171,6 +172,34 @@ private:
   Numbering _own;
 };
 
+/** What the input says of its fonts as a whole: the math font a \setmathfont
+ *  named, and the fonts of the roles its preamble set (see
+ *  atom/font_family_atom.h). As with the numbering, one input's are shared by
+ *  every Lowerer it takes, and the outermost one copies them to the Formula. */
+struct FontDefaults {
+  std::string math;
+  int roles[3] = {0, 0, 0};
+};
+
+FontDefaults* fontDefaults = nullptr;
+
+class FontDefaultsScope {
+public:
+  FontDefaultsScope() : _outer(fontDefaults) {
+    if (_outer == nullptr) fontDefaults = &_own;
+  }
+  ~FontDefaultsScope() { fontDefaults = _outer; }
+  FontDefaultsScope(const FontDefaultsScope&) = delete;
+  FontDefaultsScope& operator=(const FontDefaultsScope&) = delete;
+
+  bool outermost() const { return _outer == nullptr; }
+  const FontDefaults& own() const { return _own; }
+
+private:
+  FontDefaults* _outer;
+  FontDefaults _own;
+};
+
 /** \ref and \eqref: the text of the label they name, looked up when the
  *  atom is built into a box -- the whole input has been read by then -- and
  *  a bold ?? where there is none. */
@@ -229,6 +258,10 @@ public:
       lowerList(_ast.root, f, 0);
     }
     if (_numbering.outermost()) reportReferences();
+    if (_fontDefaults.outermost()) {
+      f._mathFontName = _fontDefaults.own().math;
+      for (int i = 0; i < 3; i++) f._fontRoles[i] = _fontDefaults.own().roles[i];
+    }
   }
 
 private:
@@ -243,6 +276,11 @@ private:
   /** Equation numbers and labels (Numbering). */
   NumberingScope _numbering;
   Numbering& nums() { return *numbering; }
+  /** The math font and the preamble's fonts (FontDefaults). */
+  FontDefaultsScope _fontDefaults;
+  /** Whether the preamble of a document is being lowered, where a font
+   *  role is set for the whole body. */
+  bool _inPreamble = false;
 
   /** What an alignment's row, or a display, says about its own number:
    *  \notag, \tag, and the labels written in it. */
@@ -1173,12 +1211,118 @@ private:
         // As \scalebox's: at most TeX's largest dimension, as a factor.
         return sized(a, std::min(factor, 16384.f));
       }
+      if (name == "setmainfont" || name == "setsansfont" || name == "setmonofont") {
+        auto a = body();
+        if (a == nullptr) a = sptrOf<EmptyAtom>();
+        const int role =
+          name == "setmainfont" ? roleMain : name == "setsansfont" ? roleSans : roleMono;
+        const int index = fontIndex(id, 1);
+        if (index == 0) return a;
+        // In a preamble, for the whole body: the atom here is thrown away.
+        if (_inPreamble) fontDefaults->roles[role] = index;
+        return sptrOf<FontRoleAtom>(role, index, a);
+      }
+      if (name == "setmathfont") {
+        setMathFont(id);
+        auto a = body();
+        return a == nullptr ? sptrOf<EmptyAtom>() : a;
+      }
+      if (name == "fontspec" || name == "fontfamily") {
+        auto a = body();
+        if (a == nullptr) a = sptrOf<EmptyAtom>();
+        const int index = fontIndex(id, name == "fontspec" ? 1 : 0);
+        return index == 0 ? a : sptr<Atom>(new FontFamilyAtom(index, a));
+      }
       // \displaystyle and kin
       auto g = body();
       return sptrOf<StyleAtom>(texStyleOf(name), g == nullptr ? sptrOf<EmptyAtom>() : g);
     } catch (const std::exception& e) {
       _diags.warn(x.span, "\\" + name + ": " + clean(e.what()));
       return nullptr;
+    }
+  }
+
+  // --- fonts: \setmainfont, \fontspec, \fontfamily, \setmathfont --------------
+
+  /** fontspec's options, `key=value,key,...`, from the optional arguments
+   *  either side of the font's name. The engine reads Path, Extension and
+   *  the four faces; any other is warned and left out. */
+  std::vector<std::pair<std::string, std::string>> fontOptions(NodeId id, const std::string& who) {
+    std::vector<std::pair<std::string, std::string>> out;
+    if (node(id).text == "fontfamily") return out;
+    static const std::set<std::string> known = {"Path",       "Extension",  "UprightFont",
+                                                "BoldFont",   "ItalicFont", "BoldItalicFont"};
+    for (const std::uint32_t at : {0u, 2u}) {
+      const std::string raw = stripComments(rawOf(child(id, at)));
+      int depth = 0;
+      std::size_t start = 0;
+      for (std::size_t i = 0; i <= raw.size(); i++) {
+        const char c = i < raw.size() ? raw[i] : ',';
+        if (c == '{') depth++;
+        if (c == '}') depth--;
+        if (c != ',' || depth > 0) continue;
+        const std::string item = raw.substr(start, i - start);
+        start = i + 1;
+        const auto eq = item.find('=');
+        const std::string key = trimmed(item.substr(0, eq));
+        std::string value = eq == std::string::npos ? "" : trimmed(item.substr(eq + 1));
+        if (value.size() >= 2 && value.front() == '{' && value.back() == '}') {
+          value = trimmed(value.substr(1, value.size() - 2));
+        }
+        if (key.empty()) continue;
+        if (known.count(key) != 0) {
+          out.emplace_back(key, value);
+        } else {
+          _diags.warn(node(id).span,
+                      who + ": the option `" + key + "' is not supported and is ignored");
+        }
+      }
+    }
+    return out;
+  }
+
+  /** What the host makes of the font a font command names (front/hooks.h):
+   *  its own name for it, or "" with a warning when there is none. */
+  std::string resolveFont(NodeId id, std::uint32_t nameArg) {
+    const std::string& command = node(id).text;
+    const std::string who = "\\" + command;
+    const std::string name = trimmed(stripComments(rawOf(child(id, nameArg))));
+    if (name.empty()) {
+      _diags.warn(node(id).span, who + ": no font name; the font is kept");
+      return "";
+    }
+    const std::string role = command == "setmainfont"   ? "main"
+                             : command == "setsansfont" ? "sans"
+                             : command == "setmonofont" ? "mono"
+                             : command == "setmathfont" ? "math"
+                             : command == "fontfamily"  ? "nfss"
+                                                        : "font";
+    const auto options = fontOptions(id, who);
+    std::string found = name;
+    if (const FontResolver& resolve = fontResolver()) found = resolve(name, options, role);
+    if (found.empty()) {
+      _diags.warn(node(id).span, who + ": font `" + name + "' not found; the default is used");
+    }
+    return found;
+  }
+
+  /** The family index of a font command's font, 0 when it has none. */
+  int fontIndex(NodeId id, std::uint32_t nameArg) {
+    const std::string family = resolveFont(id, nameArg);
+    return family.empty() ? 0 : register_font_family(family);
+  }
+
+  /** \setmathfont: a formula has one math font, so it is the input's, wherever
+   *  the command stands, and a second, different one is not used. */
+  void setMathFont(NodeId id) {
+    const std::string font = resolveFont(id, 1);
+    if (font.empty()) return;
+    std::string& math = fontDefaults->math;
+    if (math.empty() || math == font) {
+      math = font;
+    } else {
+      _diags.warn(node(id).span, "\\setmathfont: a formula has one math font; `" + font +
+                                   "' is ignored and `" + math + "' is used");
     }
   }
 
@@ -1855,7 +1999,10 @@ private:
       Label preamble(scratch);
       preamble.document = l.document;
       const Diagnostics::Quiet quiet(_diags);
+      const bool was = _inPreamble;
+      _inPreamble = true;
       feedItem(preamble, id);
+      _inPreamble = was;
     }
   }
 

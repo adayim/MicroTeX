@@ -84,6 +84,36 @@ sptr<Box> FontFamilyAtom::createBox(Env& env) {
     return box;
 }
 
+FontStyle withRoleFamily(FontStyle style, const Env& env) {
+    const u16 bits = static_cast<u16>(style);
+    const int own = (bits & kFamilyMask) >> kFamilyShift;
+    int index = 0;
+    if (own == 0) {
+        const int role = (bits & static_cast<u16>(FontStyle::tt)) != 0   ? roleMono
+                         : (bits & static_cast<u16>(FontStyle::sf)) != 0 ? roleSans
+                                                                         : roleMain;
+        index = env.fontRole(role);
+    } else if (own == kDefaultFamilyIndex) {
+        // 	extrm: back to the body font, which a document may have named.
+        index = env.fontRole(roleMain);
+    }
+    if (index == 0) return style;
+    return static_cast<FontStyle>((bits & ~kFamilyMask) | (index << kFamilyShift));
+}
+
+sptr<Box> FontRoleAtom::createBox(Env& env) {
+    if (_atom == nullptr) return StrutBox::empty();
+    // Put back on every way out, as Env::withFontStyle does.
+    struct Restore {
+        Env& env;
+        int role;
+        int old;
+        ~Restore() { env.setFontRole(role, old); }
+    } restore{env, _role, env.fontRole(_role)};
+    env.setFontRole(_role, _index);
+    return _atom->createBox(env);
+}
+
 void register_font_family_macro() {
     if (s_registered) return;
     MacroInfo::add("gmfontfamily", new CommandMacro(2, font_family_macro_delegate));

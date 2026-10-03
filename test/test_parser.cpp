@@ -187,13 +187,26 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "cmidrule", "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
-                   "fontsize", "footnote", "footnotesize", "frak", "gmarraystretch", "gmtagstar", "gmtheorem", "graphicspath", "href", "huge", "Huge",
+                   "fontfamily", "fontspec", "fontsize", "footnote", "footnotesize", "frak", "gmarraystretch", "gmtagstar", "gmtheorem", "graphicspath", "href", "huge", "Huge",
                    "hskip", "it", "kern", "label", "large", "Large", "LARGE", "left", "limits", "makeatletter",
                    "makeatother", "mkern", "mskip", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
                    "overwithdelims", "pageref", "par", "paragraph", "raggedleft",
                    "raggedright", "ref", "relscale", "right", "rm", "scriptscriptstyle",
-                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "sf", "sixptsize", "small", "subsection",
+                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "setmainfont", "setmathfont", "setmonofont", "setsansfont", "sf", "sixptsize", "small", "subsection",
                    "subsubsection", "tag", "textsc", "textstyle", "tiny", "tt", "url", "verb"}));
+}
+
+TEST(parser_font_commands_take_fontspecs_optional_arguments_either_side_of_the_name) {
+  CHECK_EQ(raws("\\setmonofont[Path=a/]{LM Mono}[Scale=1] x", "argument"),
+           (Strings{"Path=a/", "LM Mono", "Scale=1"}));
+  // An optional argument that is not there reads as empty.
+  CHECK_EQ(raws("\\fontspec{LM Mono} x", "argument"), (Strings{"", "LM Mono", ""}));
+  CHECK_EQ(raws("\\fontfamily{ptm}\\selectfont x", "argument"), (Strings{"ptm"}));
+  // \setmainfont lasts to the end of its group, across a line break; \fontspec
+  // is a declaration, which a line break ends.
+  CHECK_EQ(tree("\\setmainfont{A} a \\\\ b"),
+           std::string("[\\setmainfont{- 'A' -|[a \\\\(-) b]}]"));
+  CHECK_EQ(tree("\\fontspec{A} a \\\\ b"), std::string("[\\fontspec{- 'A' -|[a]} \\\\(-) b]"));
 }
 
 TEST(parser_argument_without_braces_is_one_character_or_one_command_with_its_arguments) {

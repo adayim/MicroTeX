@@ -1,0 +1,1 @@
+\setmainfont[Path=a/,Extension=.otf,BoldFont=*-B,{x=y,z}]{X}[Scale=1]\fontspec{Y}\texttt{a}{\fontfamily{ptm}\selectfont b}\newfontfamily\z[A]{Q}\z c \setmonofont{M}\verb|d|\setmathfont{S}$x^2$\setmathfont{T}

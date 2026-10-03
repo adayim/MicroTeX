@@ -117,6 +117,15 @@ TEST(expander_paired_delimiters_have_a_plain_a_sized_and_a_starred_form) {
   CHECK_THROWS(ex("\\DeclarePairedDelimiter{\\frac}{(}{)}"), "already exists");
 }
 
+TEST(expander_newfontfamily_defines_a_command_that_is_fontspec_with_the_same_arguments) {
+  CHECK_EQ(ex("\\newfontfamily\\mono{LM Mono}{\\mono a}"), std::string("{\\fontspec{LM Mono} a}"));
+  CHECK_EQ(ex("\\newfontface\\f[Scale=0.9]{Pagella}[Ligatures=TeX]\\f"),
+           std::string("\\fontspec[Scale=0.9]{Pagella}[Ligatures=TeX]"));
+  // Local to the group that defines it, like any definition.
+  CHECK_EQ(ex("{\\newfontfamily\\mono{X}\\mono}\\mono"), std::string("{\\fontspec{X}}\\mono"));
+  CHECK_THROWS(ex("\\newfontfamily\\frac{X}"), "already exists");
+}
+
 TEST(expander_newtheorem_makes_an_environment_with_a_head_the_lowering_numbers) {
   const std::string thm = "\\newtheorem{thm}{Theorem}";
   // The environment is a group, which ends the italics at its end.

@@ -114,6 +114,14 @@ struct Table {
     add({"rowcolor", "columncolor", "arrayrulecolor", "cellcolor"}, "r");
     add({"newcolumntype"}, "rr");
     add({"color"}, "r", Shape::groupDeclaration);
+    // fontspec's and unicode-math's: a font for a role -- body, \textsf,
+    // \texttt, math -- from here to the end of the group; \fontspec and
+    // NFSS's \fontfamily (with its \selectfont, which does nothing) set the
+    // font of the rest of the list. The options are fontspec's, either side.
+    add({"setmainfont", "setsansfont", "setmonofont", "setmathfont"}, "RrR",
+        Shape::groupDeclaration);
+    add({"fontspec"}, "RrR", Shape::declaration);
+    add({"fontfamily"}, "r", Shape::declaration);
     add({"shoveright", "shoveleft"}, "m");
     add({"DeclareMathSizes"}, "rrrr");
     add({"magnification"}, "r");

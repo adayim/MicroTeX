@@ -12,6 +12,7 @@
 #include "atom/atom_row.h"
 #include "utils/bidi.h"
 
+#include <algorithm>
 #include <clocale>
 #include <memory>
 
@@ -164,11 +165,20 @@ Render* MicroTeX::parse(
   } else if (_config->enableOverrideTeXStyle) {
     style = _config->overrideTeXStyle;
   }
+  const auto fonts = FontContext::mathFontNames();
+  const bool documentMathFont =
+    !formula._mathFontName.empty() &&
+    std::find(fonts.begin(), fonts.end(), formula._mathFontName) != fonts.end();
   Render* render = RenderBuilder()
     .setStyle(style)
     .setTextSize(textSize)
     .setMathFontName(
-      mathFontName.empty()
+      // A \setmathfont in the input wins over the one the host asked for --
+      // when the engine has it: a host with no font resolver passes a name
+      // on as it was written, and a font that is not there cannot be set.
+      documentMathFont
+      ? formula._mathFontName
+      : mathFontName.empty()
       ? _config->defaultMathFontName
       : mathFontName
     )

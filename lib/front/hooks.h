@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace microtex::front {
@@ -26,6 +27,31 @@ using ImageResolver = std::function<std::string(
 void setImageResolver(ImageResolver resolver);
 
 const ImageResolver& imageResolver();
+
+/**
+ * What the host makes of a font a document names -- `\setmainfont[options]{Name}`,
+ * `ontspec{Name}`, `ontfamily{code}` -- as the host's own name for it: the
+ * family text is drawn in (the host measures and draws with it), or, for the
+ * `math` role, the name of a loaded math font. The engine reads no font file.
+ *
+ * `role` is `main`, `sans`, `mono`, `math`, `font` (a declaration for the rest
+ * of its group) or `nfss` (`ontfamily`, whose argument may be one of LaTeX's
+ * family codes). `options` are the `key=value` pairs of fontspec's options
+ * that the engine knows (Path, Extension, UprightFont, BoldFont, ItalicFont,
+ * BoldItalicFont); a flag has an empty value. An empty result means the font
+ * was not found, and the default is used. With no resolver the name stands for
+ * itself. Whatever the host throws is not caught on the way out.
+ *
+ * It is called while the tree is lowered.
+ */
+using FontResolver = std::function<std::string(
+  const std::string& name, const std::vector<std::pair<std::string, std::string>>& options,
+  const std::string& role)>;
+
+/** The resolver for the parses that follow; an empty one lets names stand. */
+void setFontResolver(FontResolver resolver);
+
+const FontResolver& fontResolver();
 
 }  // namespace microtex::front
 

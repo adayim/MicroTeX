@@ -1061,6 +1061,24 @@ struct Expander::Impl {
     macros[name + "*"] = std::move(starred);
   }
 
+  /** fontspec's \newfontfamily\cmd[options]{Name}[options] and \newfontface:
+   *  `\cmd` is `\fontspec[options]{Name}[options]`, the font for the rest of
+   *  the group it is used in (`{\cmd text}`). */
+  void declareFontFamily() {
+    const std::string name = readCsName("newcommand");
+    const auto before = readOptional();
+    const std::string font = readArg("\\newfontfamily");
+    const auto after = readOptional();
+    if (isDefined(name)) {
+      fail("newcommand", "Command " + name + " already exists! Use renewcommand instead!");
+    }
+    MacroDef def;
+    def.body = literal("\\fontspec" + (before ? "[" + *before + "]" : std::string()) + "{" + font +
+                       "}" + (after ? "[" + *after + "]" : std::string()));
+    defineLocally(name);
+    macros[name] = std::move(def);
+  }
+
   /** amsthm's \newtheorem{name}[shared]{Title}[within], and the starred one
    *  with no number: the environment `name`, whose head (the title, its
    *  number and the optional note) is the lowering's \gmtheorem, which
@@ -1398,6 +1416,10 @@ struct Expander::Impl {
       }
       if (name == "newtheorem") {
         declareTheorem(e);
+        return true;
+      }
+      if ((name == "newfontfamily" || name == "newfontface") && !macros.count(name)) {
+        declareFontFamily();
         return true;
       }
       if (name == "theoremstyle") {

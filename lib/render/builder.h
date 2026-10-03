@@ -21,6 +21,7 @@ private:
   Alignment _align = Alignment::none;
   std::string _mathFontName;
   std::string _mainFontName;
+  int _fontRoles[3] = {0, 0, 0};
 
 public:
   RenderBuilder() = default;
@@ -53,6 +54,13 @@ public:
 
   inline RenderBuilder& setMainFontName(const std::string& name) {
     _mainFontName = name;
+    return *this;
+  }
+
+  /** The family indices (atom/font_family_atom.h) the body, sans and
+   *  typewriter text start in: what a document's preamble set. */
+  inline RenderBuilder& setFontRoles(const int (&roles)[3]) {
+    for (int i = 0; i < 3; i++) _fontRoles[i] = roles[i];
     return *this;
   }
 
