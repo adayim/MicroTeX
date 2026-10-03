@@ -1301,7 +1301,11 @@ private:
     std::string found = name;
     if (const FontResolver& resolve = fontResolver()) found = resolve(name, options, role);
     if (found.empty()) {
-      _diags.warn(node(id).span, who + ": font `" + name + "' not found; the default is used");
+      _diags.warn(node(id).span,
+                  role == "math"
+                    ? who + ": `" + name + "' is not a loaded math font (load it with load_font()); "
+                          "the default is used"
+                    : who + ": font `" + name + "' not found; the default is used");
     }
     return found;
   }
