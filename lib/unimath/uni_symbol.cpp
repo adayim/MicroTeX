@@ -2446,7 +2446,7 @@ const Symbol _symbols[]{
   {0x0223F, ord,     "sinewave"},
   {0x0266C, ord,     "sixteenthnote"},
   {0x02620, ord,     "skull"},
-  {0x0002F, bin,     "slash"},
+  {0x0002F, ord,     "slash"},
   {0x025C2, bin,     "smallblacktriangleleft"},
   {0x025B8, bin,     "smallblacktriangleright"},
   {0x0220A, rel,     "smallin"},

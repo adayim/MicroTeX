@@ -1157,9 +1157,18 @@ NodeId Parser::parseBare(Bare bare, const std::string& who) {
     return _ast.add(std::move(arg), {});
   }
   // As the old parser read it: characters up to a space or a command.
+  bool inUnit = false;
   while (t.tok.kind == TokKind::character && !t.tok.isChar(Cat::beginGroup) &&
          !t.tok.isChar(Cat::endGroup) && !t.tok.isChar(Cat::mathShift) &&
          !t.tok.isChar(Cat::alignTab)) {
+    if (bare == Bare::dimen) {
+      // A sign, digits, a point, then the unit's letters: `\mkern8mu(a)` is 8mu and then (a).
+      const c32 c = t.tok.cp;
+      const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+      const bool numeric = (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '+' || c == '-';
+      if (inUnit ? !letter : !(letter || numeric)) break;
+      if (letter) inUnit = true;
+    }
     if (bare == Bare::number) {
       const c32 c = t.tok.cp;
       const bool ok = c == '\'' || c == '"' || (c >= '0' && c <= '9') ||

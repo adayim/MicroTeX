@@ -246,6 +246,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(2, macro_underset, "underset"),
   mac(2, macro_underaccent, "underaccent"),
   mac(1, macro_undertilde, "undertilde"),
+  mac(1, macro_undertilde, "utilde"),
   // endregion
   // region microtex styles
   mac(1, macro_everymath, "everymath"),

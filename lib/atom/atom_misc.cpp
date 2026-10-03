@@ -11,7 +11,11 @@ using namespace std;
 using namespace microtex;
 
 sptr<Box> BigSymbolAtom::createBox(Env& env) {
-  auto b = microtex::createVDelim(_delim, env, _size);
+  // \big, \Big, \bigg and \Bigg are 1.2, 1.8, 2.4 and 3 times the size, as TeX sets
+  // them: the first variant of the delimiter that is so tall, else its assembly.
+  static const float kTimes[] = {1.f, 1.2f, 1.8f, 2.4f, 3.f};
+  const float times = kTimes[std::min(std::max(_size, 0), 4)];
+  auto b = microtex::createVDelim(_delim->name(), env, times * Units::fsize(UnitType::em, 1.f, env), false);
   const auto axis = env.mathConsts().axisHeight() * env.scale();
   b->_shift = -(b->vlen() / 2 - b->_height) - axis;
   return sptrOf<HBox>(b);

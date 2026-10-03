@@ -98,7 +98,7 @@ map<string, string> Formula::_predefFormulaStrs{
   {"doublecap",        "\\Cap"},
   {"llless",           "\\lll"},
   {"gggtr",            "\\ggg"},
-  {"copyright",        "\\circledR"},
+  {"copyright",        "\\mathord{©}"},
   {"hbar",             "\\hslash"},
   {"mathstrut",        "\\vphantom{(}"},
   {"micro",            "\\mu"},

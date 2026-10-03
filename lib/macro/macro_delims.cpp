@@ -10,10 +10,11 @@ using namespace std;
 
 cmdmacro(xarrow) {
   std::string name = args.text(0).substr(1);
+  // Their text is set in script style, as amsmath's \xrightarrow sets it.
   const auto& over =
-    StackArgs::autoSpace(args.formula(1, args.isMathMode()), false);
+    StackArgs::autoSpace(args.formula(1, args.isMathMode()), true);
   const auto& under =
-    StackArgs::autoSpace(args.formula(2, args.isMathMode()), false);
+    StackArgs::autoSpace(args.formula(2, args.isMathMode()), true);
   const auto stack = new StackAtom(nullptr, over, under);
   // The ones the font has no stretching glyph for are drawn.
   using Kind = StretchArrowAtom::Kind;

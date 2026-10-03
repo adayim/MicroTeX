@@ -180,7 +180,7 @@ struct Table {
     add({"intertext"}, "t", Shape::prefix, Bare::none, true);
     add({"^", "'", "\"", "`", "=", ".", "~", "t", "u", "v", "r", "H"}, "m");
     add({"not", "hat", "widehat", "widecheck", "check", "tilde", "widetilde", "acute", "grave", "dot",
-         "ddot", "dddot", "ddddot", "breve", "bar", "vec", "mathring", "undertilde"},
+         "ddot", "dddot", "ddddot", "breve", "bar", "vec", "mathring", "undertilde", "utilde"},
         "m");
     // The first argument names an accent (`\underaccent{\dot}{x}`): a
     // command used without its argument, so it is kept as text.

@@ -29,14 +29,14 @@ std::string_view preludeSource() {
 \newenvironment{cases}{\left\{\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
 \newenvironment{rcases}{\left.\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
 \newenvironment{dcases}{\left\{\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
-\newenvironment{subarray}[1]{\scriptstyle\begin{array}{#1}}{\end{array}}
+\newenvironment{subarray}[1]{\scriptstyle\begin{array}{@{}#1@{}}}{\end{array}}
 \newenvironment{split}{\begin{array}{r@{\;}l}}{\end{array}}
 \newenvironment{math}{\(}{\)}
 \newenvironment{displaymath}{\[}{\]}
 \newenvironment{equation}{\begin{align}}{\end{align}}
 \newenvironment{equation*}{\begin{align*}}{\end{align*}}
 \newcommand{\operatorname}[1]{\mathop{\mathrm{#1}}\nolimits }
-\newcommand{\substack}[1]{{\scriptstyle\begin{array}{c}#1\end{array}}}
+\newcommand{\substack}[1]{{\scriptstyle\begin{array}{@{}c@{}}#1\end{array}}}
 \newcommand{\shortintertext}[1]{\intertext{#1}}
 \newcommand{\mspace}[1]{\hspace{#1}}
 \newcommand{\leftroot}[1]{}
@@ -45,9 +45,10 @@ std::string_view preludeSource() {
 \newcommand{\tfrac}[2]{\genfrac{}{}{1}{1}{#1}{#2}}
 \newcommand{\dbinom}[2]{\genfrac{(}{)}{0pt}{}{#1}{#2}}
 \newcommand{\tbinom}[2]{\genfrac{(}{)}{0pt}{1}{#1}{#2}}
-\newcommand{\pmod}[1]{\qquad\mathbin{(\mathrm{mod}\ #1)}}
-\newcommand{\mod}[1]{\qquad\mathbin{\mathrm{mod}\ #1}}
-\newcommand{\pod}[1]{\qquad\mathbin{(#1)}}
+\newcommand{\pmod}[1]{\pod{\mathrm{mod}\mkern6mu #1}}
+\newcommand{\mod}[1]{\mathchoice{\mkern18mu}{\mkern12mu}{\mkern12mu}{\mkern12mu}\mathrm{mod}\,\,#1}
+\newcommand{\pod}[1]{\mathchoice{\mkern18mu}{\mkern8mu}{\mkern8mu}{\mkern8mu}(#1)}
+\newcommand{\boxed}[1]{\fbox{\displaystyle #1}}
 \newcommand{\spbreve}{^{\makeatletter\sp@breve\makeatother}}
 \newcommand{\spcheck}{^{\vee}}
 \newcommand{\spdot}{^{\displaystyle.}}
@@ -133,6 +134,8 @@ std::string_view preludeSoftSource() {
 \newcommand{\textquotedbl}{"}
 \newcommand{\@firstoftwo}[2]{#1}
 \newcommand{\@secondoftwo}[2]{#2}
+\newcommand{\ldots}{\ensuremath{\mathinner{\mathpunct{.}\mathpunct{.}\mathpunct{.}}}}
+\newcommand{\cdots}{\ensuremath{\mathinner{\mathpunct{\cdot}\mathpunct{\cdot}\mathpunct{\cdot}}}}
 \newcommand{\arraystretch}{1}
 \newcommand{\strut}{\rule[-0.36em]{0pt}{1.2em}}
 \newcommand{\ordinarycolon}{:}
