@@ -599,7 +599,9 @@ private:
     }
     if (name == "url" || name == "href") return link(id, f);
     if (name == "textsc") {
-      return fragment(smallCaps(rawOf(child(id, 0))), node(id).mode == Mode::math);
+      // Text, as in LaTeX, in math too: upright, with its spaces.
+      const sptr<Atom> caps = fragment(smallCaps(rawOf(child(id, 0))), false);
+      return node(id).mode == Mode::math ? sptrOf<FontStyleAtom>(FontStyle::rm, false, caps) : caps;
     }
     if (name == "gmtheorem") return fragment(theoremHead(id), false);
     if (name == "verb") {

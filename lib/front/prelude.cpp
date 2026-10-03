@@ -232,7 +232,8 @@ std::string_view preludeSoftSource() {
 \newcommand{\dotsm}{\cdots}
 \newcommand{\dblcolon}{\mathrel{::}}
 \newcommand{\vcentcolon}{\mathrel{:}}
-\newcommand{\Eqcolon}{\mathrel{-::}}
+\newcommand{\Eqcolon}{\mathrel{=::}}
+\newcommand{\models}{\mathrel{\mathrel{\vert}\joinrel=}}
 \newcommand{\Eqqcolon}{\mathrel{=::}}
 \newcommand{\Colonapprox}{\mathrel{::\approx}}
 \newcommand{\Colonsim}{\mathrel{::\sim}}
