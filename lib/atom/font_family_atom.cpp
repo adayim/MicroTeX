@@ -94,7 +94,7 @@ FontStyle withRoleFamily(FontStyle style, const Env& env) {
                                                                          : roleMain;
         index = env.fontRole(role);
     } else if (own == kDefaultFamilyIndex) {
-        // 	extrm: back to the body font, which a document may have named.
+        // \textrm: back to the body font, which a document may have named.
         index = env.fontRole(roleMain);
     }
     if (index == 0) return style;

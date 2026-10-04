@@ -73,12 +73,12 @@ void clear_font_families();
 
 // --- Roles -----------------------------------------------------------
 //
-// A document can name the fonts of its body, 	extsf and 	exttt text
+// A document can name the fonts of its body, \textsf and \texttt text
 // (\setmainfont, \setsansfont, \setmonofont). Each is a family index held
 // by the Env, set for the rest of a group by a FontRoleAtom. A text box takes
 // the one its style asks for -- typewriter bit, sans bit, else the body --
 // unless the style already names a family of its own (\gmfontfamily,
-// ontspec), so those win. 	extrm, which resets to the caller's font,
+// \fontspec), so those win. \textrm, which resets to the caller's font,
 // goes back to the document's body font when it has set one.
 enum FontRole { roleMain = 0, roleSans = 1, roleMono = 2 };
 

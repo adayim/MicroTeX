@@ -1500,10 +1500,25 @@ struct Expander::Impl {
   /** Leading whitespace of consumed tokens, owed to the next token out. */
   std::string carry;
 
+  /** \global is for the next assignment only: any other token read ends it.
+   *  \expandafter hands it on to what it brings in front. */
+  void endGlobalAt(const ExpToken& e) {
+    if (!globalPrefix) return;
+    if (e.tok.kind == TokKind::controlWord) {
+      const std::string& n = e.tok.text;
+      if (n == "global" || n == "def" || n == "gdef" || n == "edef" || n == "xdef" || n == "let" ||
+          n == "futurelet" || n == "expandafter") {
+        return;
+      }
+    }
+    globalPrefix = false;
+  }
+
   /** The next token after expansion. */
   ExpToken nextExpanded() {
     while (true) {
       ExpToken e = raw();
+      endGlobalAt(e);
       if (e.tok.kind != TokKind::end && e.tok.isControl() && !e.tok.noexpand && consume(e)) {
         carry += e.lead;
         continue;

@@ -695,9 +695,60 @@ private:
     return sptrOf<FontStyleAtom>(FontStyle::tt, false, literalText(shown), true);
   }
 
+  /** The index of the `close` that ends the group `open` at `from` begins,
+   *  or npos. A backslash escapes the next character when `escapes`. */
+  static std::size_t groupEnd(const std::string& s, std::size_t from, char open, char close,
+                              bool escapes) {
+    int depth = 0;
+    for (std::size_t j = from; j < s.size(); j++) {
+      if (escapes && s[j] == '\\') {
+        j++;
+      } else if (s[j] == open) {
+        depth++;
+      } else if (s[j] == close && --depth == 0) {
+        return j;
+      }
+    }
+    return std::string::npos;
+  }
+
+  /** The arguments that follow the control word `name`, which ends at
+   *  `text[at]`, for smallCaps(): the ones the command spec reads as text are
+   *  set in small capitals, the rest (a colour, a label, a file, a font name,
+   *  a dimension, math) as written. Returns the index of the last character
+   *  read. */
+  static std::size_t smallCapsArgs(const std::string& text, std::size_t at, const std::string& name,
+                                   std::string& out) {
+    const CommandSpec* spec = findCommand(name);
+    if (spec == nullptr || spec->shape != Shape::prefix) return at;
+    std::size_t end = at;
+    for (const ArgSpec& a : spec->args) {
+      std::size_t p = end + 1;
+      while (p < text.size() && text[p] == ' ') p++;
+      if (p >= text.size()) break;
+      const char open = a.optional ? '[' : '{';
+      if (text[p] != open) {
+        if (a.optional) continue;
+        break;
+      }
+      const std::size_t last =
+        groupEnd(text, p, open, a.optional ? ']' : '}', a.kind != ArgKind::url);
+      if (last == std::string::npos) break;
+      const bool words = a.kind == ArgKind::text || a.kind == ArgKind::current;
+      const std::string inside = text.substr(p + 1, last - p - 1);
+      out.append(text, end + 1, p - end - 1);
+      out += open;
+      out += words ? smallCaps(inside) : inside;
+      out += text[last];
+      end = last;
+    }
+    return end;
+  }
+
   /** Small capitals, faked as every device has to: the lowercase letters of
    *  `text` as capitals at 0.8 of the size, the rest as it is. A command's
-   *  name and what is in math are left alone. Only ASCII letters change. */
+   *  name and what is in math are left alone, and so are the arguments of a
+   *  command that are not text (smallCapsArgs()). Only ASCII letters change. */
   static std::string smallCaps(const std::string& text) {
     std::string out, run;
     const auto flush = [&] {
@@ -718,9 +769,14 @@ private:
         out += c;
         // A control word whole, else the one character it escapes.
         const bool word = i + 1 < text.size() && std::isalpha(static_cast<unsigned char>(text[i + 1])) != 0;
+        std::string name;
         do {
-          if (++i < text.size()) out += text[i];
+          if (++i < text.size()) {
+            out += text[i];
+            if (word) name += text[i];
+          }
         } while (word && i + 1 < text.size() && std::isalpha(static_cast<unsigned char>(text[i + 1])) != 0);
+        if (word) i = smallCapsArgs(text, i, name, out);
       } else if (c >= 'a' && c <= 'z') {
         run += static_cast<char>(c - 'a' + 'A');
       } else {
@@ -2314,10 +2370,13 @@ private:
         if (braced) i = close(i + 1);
       } else if (c == '*' && depth < 8) {
         const std::size_t first = close(i + 1);
-        const int times = std::atoi(spec.substr(i + 2, first - i - 2).c_str());
         const std::size_t last = close(first + 1);
-        n += std::min(std::max(times, 0), 1000) *
-             columnCount(spec.substr(first + 2, last - first - 2), depth + 1);
+        // *{n}{cols} with a group missing: nothing more to count.
+        if (first >= spec.size() || last >= spec.size()) break;
+        const int times = std::atoi(spec.substr(i + 2, first - i - 2).c_str());
+        const long long more = static_cast<long long>(std::min(std::max(times, 0), 1000)) *
+                               columnCount(spec.substr(first + 2, last - first - 2), depth + 1);
+        n = static_cast<int>(std::min<long long>(n + more, 1 << 14));
         i = last;
       } else if (c == 'l' || c == 'c' || c == 'r' || c == 'S' || c == 'Q') {
         n++;

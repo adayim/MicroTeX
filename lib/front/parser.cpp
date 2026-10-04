@@ -13,6 +13,29 @@ bool isOther(const Token& t, char c) {
   return t.kind == TokKind::character && t.cat == Cat::other && t.cp == static_cast<unsigned char>(c);
 }
 
+/** Makes `chars` plain characters for as long as it lives. The catcodes go
+ *  back however the scope ends, a thrown error (a limit, or R's) included:
+ *  the lexer is shared, and would otherwise read the rest as verbatim. */
+class CatcodesAsOther {
+public:
+  CatcodesAsOther(Expander& in, const std::string& chars) : _in(in) {
+    for (const char c : chars) {
+      const c32 ch = static_cast<c32>(c);
+      _saved.emplace_back(ch, _in.catcode(ch));
+      _in.setCatcode(ch, Cat::other);
+    }
+  }
+  ~CatcodesAsOther() {
+    for (const auto& s : _saved) _in.setCatcode(s.first, s.second);
+  }
+  CatcodesAsOther(const CatcodesAsOther&) = delete;
+  CatcodesAsOther& operator=(const CatcodesAsOther&) = delete;
+
+private:
+  Expander& _in;
+  std::vector<std::pair<c32, Cat>> _saved;
+};
+
 // `b` is a `$` right after the `$` `a`, making `$$`: next to it in the
 // source, or in the same macro's expansion (which is where both are
 // placed). A definition between them -- `$\newcommand{..}{..}$`, which
@@ -965,17 +988,7 @@ NodeId Parser::parseRawArgument(const ArgSpec& spec, const std::string& who) {
   // A URL or file name reads its special characters as characters, a
   // backslash included, so nothing in it is a command to expand. The `{` is
   // read already; nothing after it has been lexed yet.
-  struct Saved {
-    c32 ch;
-    Cat cat;
-  };
-  std::vector<Saved> saved;
-  if (spec.kind == ArgKind::url) {
-    for (const char c : std::string("\\%#_^~&$")) {
-      saved.push_back({static_cast<c32>(c), _in.catcode(static_cast<c32>(c))});
-      _in.setCatcode(static_cast<c32>(c), Cat::other);
-    }
-  }
+  const CatcodesAsOther urlChars(_in, spec.kind == ArgKind::url ? "\\%#_^~&$" : "");
   const std::size_t mark = startRecording();
   int depth = 0;
   bool closed = false;
@@ -1002,7 +1015,6 @@ NodeId Parser::parseRawArgument(const ArgSpec& spec, const std::string& who) {
     escaped = spec.kind == ArgKind::url && isOther(u.tok, '\\') && !escaped;
   }
   arg.raw = stopRecording(mark, closed ? 1 : 0);
-  for (const Saved& s : saved) _in.setCatcode(s.ch, s.cat);
   if (!closed) _diags.warn(k.span, "missing } inserted");
   return _ast.add(std::move(arg), {});
 }
@@ -1022,15 +1034,7 @@ NodeId Parser::parseVerb() {
   arg.mode = Mode::text;
   arg.flag = true;
   arg.text = "v";
-  struct Saved {
-    c32 ch;
-    Cat cat;
-  };
-  std::vector<Saved> saved;
-  for (const char c : kVerbatimChars) {
-    saved.push_back({static_cast<c32>(c), _in.catcode(static_cast<c32>(c))});
-    _in.setCatcode(static_cast<c32>(c), Cat::other);
-  }
+  const CatcodesAsOther verbatim(_in, kVerbatimChars);
   // The spaces after the control word are TeX's to skip, as for any control
   // word; a `*` after them makes the spaces visible.
   ExpandedToken d = next();
@@ -1055,20 +1059,11 @@ NodeId Parser::parseVerb() {
       arg.raw += u.text;
     }
   }
-  for (const Saved& s : saved) _in.setCatcode(s.ch, s.cat);
   return _ast.add(std::move(arg), {});
 }
 
 std::string Parser::readVerbatim(const std::string& name, const SourceSpan& at) {
-  struct Saved {
-    c32 ch;
-    Cat cat;
-  };
-  std::vector<Saved> saved;
-  for (const char c : kVerbatimChars) {
-    saved.push_back({static_cast<c32>(c), _in.catcode(static_cast<c32>(c))});
-    _in.setCatcode(static_cast<c32>(c), Cat::other);
-  }
+  const CatcodesAsOther verbatim(_in, kVerbatimChars);
   const std::string closing = "\\end{" + name + "}";
   std::string body;
   bool closed = false;
@@ -1085,7 +1080,6 @@ std::string Parser::readVerbatim(const std::string& name, const SourceSpan& at) 
       break;
     }
   }
-  for (const Saved& s : saved) _in.setCatcode(s.ch, s.cat);
   if (!closed) _diags.warn(at, "missing \\end{" + name + "} inserted");
   // The line end after \begin{verbatim} and the one before \end are not text.
   if (!body.empty() && body.front() == '\n') body.erase(0, 1);
