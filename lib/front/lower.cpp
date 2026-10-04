@@ -2194,7 +2194,9 @@ private:
     const auto letter = [&](NodeId arg, const char* allowed, char fallback) {
       const std::string s = rawOf(arg);
       const auto at = s.find_first_not_of(" \t\r\n");
-      if (at == std::string::npos || std::strchr(allowed, s[at]) == nullptr) return fallback;
+      if (at == std::string::npos || s[at] == '\0' || std::strchr(allowed, s[at]) == nullptr) {
+        return fallback;
+      }
       return s[at];
     };
     const char p = letter(child(id, 0), "tb", 'c');

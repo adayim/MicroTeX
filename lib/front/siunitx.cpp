@@ -98,7 +98,7 @@ std::string number(const std::string& text, std::string& problem) {
   // An exponent: 1e3, 1.5E-4, and 1d2 as TeX users write it.
   std::string exponent, expSign;
   bool hasExp = false;
-  if (i < s.size() && std::strchr("eEdD", s[i]) != nullptr) {
+  if (i < s.size() && s[i] != '\0' && std::strchr("eEdD", s[i]) != nullptr) {
     std::size_t j = i + 1;
     if (j < s.size() && (s[j] == '+' || s[j] == '-')) expSign = s[j++] == '-' ? "-" : "";
     while (j < s.size() && digit(s[j])) exponent += s[j++];
@@ -254,6 +254,12 @@ std::string unit(const std::string& text, const UserUnits& declared, std::string
   };
   while (i < s.size()) {
     const char c = s[i];
+    // TeX ignores NUL; and strchr() finds it in any set, as the string's own
+    // end, so a run of text would stop on it without moving on.
+    if (c == '\0') {
+      i++;
+      continue;
+    }
     if (c == '\\') {
       std::size_t j = i + 1;
       while (j < s.size() && std::isalpha(static_cast<unsigned char>(s[j])) != 0) j++;
