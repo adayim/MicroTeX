@@ -88,8 +88,8 @@ inline bool anyContains(const Strings& all, const std::string& part) {
 
 #define CHECK_EQ(actual, expected)                                          \
   do {                                                                      \
-    const auto& a_ = (actual);                                              \
-    const auto& e_ = (expected);                                            \
+    const auto a_ = (actual);                                               \
+    const auto e_ = (expected);                                             \
     if (!(a_ == e_)) {                                                      \
       check::fail(__FILE__, __LINE__,                                       \
                   #actual "\n  got:      " + check::show(a_) +              \

@@ -334,6 +334,16 @@ TEST(parser_value_tex_reads_without_braces_is_kept_as_text) {
   CHECK_EQ(tree("\\char\"41"), std::string("[\\char('\"41')]"));
 }
 
+TEST(parser_a_dimension_ends_after_its_two_letter_unit_as_in_tex) {
+  // The letters after a unit are text, not part of it.
+  CHECK_EQ(tree("\\kern1emx"), std::string("[\\kern('1em') x]"));
+  CHECK_EQ(tree("\\mkern3muab"), std::string("[\\mkern('3mu') a b]"));
+  CHECK_EQ(tree("\\kern-7mua"), std::string("[\\kern('-7mu') a]"));
+  // `true` goes before a unit, and still reads whole.
+  CHECK_EQ(tree("\\kern1truept x"), std::string("[\\kern('1truept') x]"));
+  CHECK_EQ(tree("\\kern1.5pt x"), std::string("[\\kern('1.5pt') x]"));
+}
+
 TEST(parser_file_name_keeps_percent_hash_and_underscore_as_characters) {
   // The second option group is the older [llx,lly][urx,ury] spelling.
   CHECK_EQ(raws("\\includegraphics[width=1in]{a%b_c#1.png}", "argument"),

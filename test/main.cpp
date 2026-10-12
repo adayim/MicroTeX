@@ -10,13 +10,15 @@
 #include "utils/types.h"
 
 // The recorder leaves two measurements to the embedder (the end of
-// graphic/graphic_recorder.h). Nothing here draws, so they are never called;
-// they are defined so the library links.
+// graphic/graphic_recorder.h). Only a flipped draw asks for them; estimates,
+// as engine.h's stub measures text, keep a test's layouts well defined.
 namespace microtex {
 
-float measure_cached_text_width(const std::string&, int, float) { return 0; }
+float measure_cached_text_width(const std::string& text, int, float fontSize) {
+  return static_cast<float>(text.size()) * fontSize * 0.55f;
+}
 
-float measure_glyph_advance(const std::string&, u16, float) { return 0; }
+float measure_glyph_advance(const std::string&, u16, float fontSize) { return fontSize * 0.5f; }
 
 }  // namespace microtex
 

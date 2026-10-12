@@ -1152,6 +1152,7 @@ NodeId Parser::parseBare(Bare bare, const std::string& who) {
   }
   // As the old parser read it: characters up to a space or a command.
   bool inUnit = false;
+  std::string unit;
   while (t.tok.kind == TokKind::character && !t.tok.isChar(Cat::beginGroup) &&
          !t.tok.isChar(Cat::endGroup) && !t.tok.isChar(Cat::mathShift) &&
          !t.tok.isChar(Cat::alignTab)) {
@@ -1161,7 +1162,13 @@ NodeId Parser::parseBare(Bare bare, const std::string& who) {
       const bool letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
       const bool numeric = (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '+' || c == '-';
       if (inUnit ? !letter : !(letter || numeric)) break;
-      if (letter) inUnit = true;
+      // A unit is two letters (`true` before it makes six): `\kern1emx` is 1em and then x.
+      const bool truePrefix = unit.size() < 4 && std::string("true").compare(0, unit.size(), unit) == 0;
+      if (inUnit && !truePrefix && unit.size() >= (unit.compare(0, 4, "true") == 0 ? 6u : 2u)) break;
+      if (letter) {
+        inUnit = true;
+        unit += static_cast<char>(c);
+      }
     }
     if (bare == Bare::number) {
       const c32 c = t.tok.cp;

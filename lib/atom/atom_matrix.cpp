@@ -1113,10 +1113,10 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     return MatrixAtom(_isPartial, _column, "").createBox(env);
 
   auto vb = sptrOf<VBox>();
-  // An empty line's cell is null.
+  // An empty line's cell is null, or not there at all.
   const auto cell = [&](size_t row) -> sptr<Atom> {
-    const auto& a = _column->_array[row][0];
-    return a != nullptr ? a : sptrOf<EmptyAtom>();
+    const auto& cells = _column->_array[row];
+    return !cells.empty() && cells[0] != nullptr ? cells[0] : sptrOf<EmptyAtom>();
   };
   auto atom = cell(0);
   Alignment alignment = _lineType == MultiLineType::gather ? Alignment::center : Alignment::left;

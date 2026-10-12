@@ -149,7 +149,7 @@ inline cmdmacro(mathchoice) {
 }
 
 inline cmdmacro(surd) {
-  return sptrOf<VCenterAtom>(SymbolAtom::get("sqrt"));
+  return sptrOf<VCenterAtom>(SymbolAtom::get("sqrt"), false);
 }
 
 inline cmdmacro(lmoustache) {

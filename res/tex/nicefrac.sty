@@ -1,0 +1,4 @@
+\ProvidesPackage{nicefrac}[2026/10/12 nicefrac: slanted fractions]
+% \nicefrac{a}{b} is xfrac's \sfrac: a raised numerator, a slash and a lowered
+% denominator. The optional font argument is read and not used.
+\NewDocumentCommand{\nicefrac}{ o m m }{\sfrac{#2}{#3}}

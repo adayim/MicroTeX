@@ -165,10 +165,19 @@ sptr<Box> RuleDecorAtom::createBox(Env& env) {
 
 sptr<Box> VCenterAtom::createBox(Env& env) {
   auto b = _base->createBox(env);
-  auto a = env.mathConsts().axisHeight() * env.scale();
-  auto hb = sptrOf<HBox>(b);
-  hb->_height = b->vlen() / 2 + a;
-  hb->_depth = b->vlen() - hb->_height;
+  const auto a = env.mathConsts().axisHeight() * env.scale();
+  // The middle of the box on the axis: half of it, and the axis, above the
+  // baseline.
+  if (!_moveInk) {
+    auto hb = sptrOf<HBox>(b);
+    hb->_height = b->vlen() / 2 + a;
+    hb->_depth = b->vlen() - hb->_height;
+    return hb;
+  }
+  // The box is moved down to be there, and the row follows it.
+  b->_shift = b->_height - (b->vlen() / 2 + a);
+  auto hb = sptrOf<HBox>();
+  hb->add(b);
   return hb;
 }
 

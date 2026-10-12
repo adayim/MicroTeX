@@ -1,0 +1,26 @@
+\ProvidesPackage{relsize}[2026/10/12 relsize: sizes relative to the one in use]
+% \relsize{n} sets the rest of its group n steps larger (or smaller, when n is
+% negative), a step being a factor of 1.2; \larger[n] and \smaller[n] are
+% \relsize{n} and \relsize{-n} with n 1 when it is left out. n is from -5 to 5.
+\@namedef{gm@rs@-5}{0.40188}
+\@namedef{gm@rs@-4}{0.48225}
+\@namedef{gm@rs@-3}{0.5787}
+\@namedef{gm@rs@-2}{0.69444}
+\@namedef{gm@rs@-1}{0.83333}
+\@namedef{gm@rs@0}{1}
+\@namedef{gm@rs@+0}{1}
+\@namedef{gm@rs@1}{1.2}
+\@namedef{gm@rs@+1}{1.2}
+\@namedef{gm@rs@2}{1.44}
+\@namedef{gm@rs@+2}{1.44}
+\@namedef{gm@rs@3}{1.728}
+\@namedef{gm@rs@+3}{1.728}
+\@namedef{gm@rs@4}{2.0736}
+\@namedef{gm@rs@+4}{2.0736}
+\@namedef{gm@rs@5}{2.48832}
+\@namedef{gm@rs@+5}{2.48832}
+\newcommand{\relsize}[1]{\relscale{\@nameuse{gm@rs@#1}}}
+\NewDocumentCommand{\larger}{ O{1} }{\relsize{+#1}}
+\NewDocumentCommand{\smaller}{ O{1} }{\relsize{-#1}}
+\NewDocumentCommand{\textlarger}{ O{1} m }{{\larger[#1]#2}}
+\NewDocumentCommand{\textsmaller}{ O{1} m }{{\smaller[#1]#2}}

@@ -74,6 +74,8 @@ strict)
   # shellcheck disable=SC2086
   "$cxx" -std=c++17 -Wextra -Wpedantic -fsyntax-only -Ilib -I"$cfg" -DGLYPH_RENDER_TYPE=0 \
     "-DMICROTEX_TEX_DIR=\"$ROOT/res/tex\"" \
+    "-DMICROTEX_TEST_OTF=\"$ROOT/res/firamath/FiraMath-Regular.otf\"" \
+    "-DMICROTEX_TEST_FIXTURES=\"$ROOT/test/fixtures\"" \
     $flags "${ours[@]}" > "$log" 2>&1 || true
   rm -rf "$cfg"
   # Warnings in our own files (and our headers) only.

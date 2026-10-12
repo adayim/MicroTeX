@@ -176,13 +176,18 @@ public:
 
 /**
  * An atom representing another atom vertically centered with respect to
- * the math axis
+ * the math axis. With `moveInk` false only the box around it is centred and
+ * the ink stays where the atom draws it: \surd, which TeX sets where its
+ * glyph lies.
  */
 class VCenterAtom : public WrapAtom {
+private:
+  bool _moveInk;
+
 public:
   VCenterAtom() = delete;
 
-  explicit VCenterAtom(const sptr<Atom>& a) : WrapAtom(a) {}
+  explicit VCenterAtom(const sptr<Atom>& a, bool moveInk = true) : WrapAtom(a), _moveInk(moveInk) {}
 
   sptr<Box> createBox(Env& env) override;
 };

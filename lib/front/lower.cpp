@@ -2594,7 +2594,8 @@ private:
     _inRow--;
     const bool tagged = _note.tag != nullptr;
     auto arr = sptrOf<ArrayFormula>();
-    if (body != nullptr) arr->add(body);
+    // `\[\tag{1}\]`: a display with nothing in it still has its number.
+    if (body != nullptr || tagged) arr->add(body != nullptr ? body : sptrOf<EmptyAtom>());
     finishRow(*arr, 0, false);
     _note = std::move(outer);
     if (!tagged) return body;

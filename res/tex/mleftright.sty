@@ -1,0 +1,7 @@
+\ProvidesPackage{mleftright}[2026/10/12 mleftright: brackets that size themselves]
+% \mleft and \mright are \left and \right. The package leaves out the space
+% that \left...\right puts around what it holds, which is not done here.
+\let\mleft\left
+\let\mright\right
+\newcommand{\mleftright}{}
+\newcommand{\mleftrightrestore}{}
