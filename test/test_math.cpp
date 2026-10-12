@@ -178,8 +178,12 @@ TEST(math_a_columns_displaystyle_sets_its_cells_in_display_style) {
   };
   CHECK(h(R"(>{\displaystyle}l)") > h("l"));
   CHECK_EQ(h(R"(>{\displaystyle}l)"), rec(R"(\begin{array}{l} \displaystyle\sum_{i=1}^n x_i \end{array})").height);
-  // \scriptscriptstyle holds "scriptstyle": it must not be read as it.
-  CHECK(h(R"(>{\scriptscriptstyle}l)") < h(R"(>{\scriptstyle}l)"));
+  // \scriptscriptstyle holds "scriptstyle": it must not be read as it. (The
+  // widths: an array's rows have a strut, so its heights are alike.)
+  const auto w = [](const std::string& spec) {
+    return rec(R"(\begin{array}{)" + spec + R"(} \sum_{i=1}^n x_i \end{array})").width;
+  };
+  CHECK(w(R"(>{\scriptscriptstyle}l)") < w(R"(>{\scriptstyle}l)"));
 }
 
 TEST(math_katexs_aliases_draw_what_the_commands_they_stand_for_draw) {
@@ -647,4 +651,94 @@ TEST(siunitx_declaresiunit_makes_a_unit_and_a_documents_own_num_or_si_wins) {
   SAME_SET(R"(\renewcommand{\si}[1]{(#1)} \si{x})", "(x)");
   // \sisetup and options are read and leave nothing.
   SAME_SET(R"(\sisetup{per-mode=symbol} \num{12})", "12");
+}
+
+// --- the rows of an alignment, as TeX sets them ---------------------------------
+
+namespace {
+
+// The baselines of the rows of `tex`, top to bottom: the distinct y of its
+// glyphs. The text is 20 px (Options::textSize), so an em is 20.
+std::vector<float> baselines(const std::string& tex, Options opt = typeface()) {
+  auto ys = check::column(check::of(check::render(tex, opt), DrawRecord::GLYPH), &DrawRecord::y);
+  std::sort(ys.begin(), ys.end());
+  std::vector<float> rows;
+  for (const float y : ys) {
+    if (rows.empty() || y - rows.back() > 0.05f) rows.push_back(y);
+  }
+  return rows;
+}
+
+// The pitch of the two rows of `env` set with `rows` (a body that has two).
+float pitch(const std::string& env, const std::string& rows, Options opt = typeface(),
+            const std::string& args = "") {
+  const auto b = baselines("\\begin{" + env + "}" + args + rows + "\\end{" + env + "}", opt);
+  return b.size() == 2 ? b[1] - b[0] : -1.f;
+}
+
+}  // namespace
+
+TEST(math_the_rows_of_an_array_or_matrix_are_a_baselineskip_apart_whatever_they_hold) {
+  // TeX's strut: 0.7 and 0.3 of the 1.2em baselineskip, in every row.
+  for (const char* rows : {R"(x \\ x)", R"(y \\ y)", R"(x \\ y)"}) {
+    CHECK(std::fabs(pitch("matrix", rows) - 24.f) < 0.05);
+    CHECK(std::fabs(pitch("array", rows, typeface(), "{c}") - 24.f) < 0.05);
+  }
+  // cases (\arraystretch 1.2): its brace is a glyph of its own, so the rows
+  // are those of the glyphs right of it.
+  const auto cases = check::of(rec(R"(\begin{cases} x \\ x \end{cases})"), DrawRecord::GLYPH);
+  CHECK_EQ(cases.size(), std::size_t(3));
+  if (cases.size() == 3) CHECK(std::fabs(cases[2].y - cases[1].y - 28.8f) < 0.05);
+  // \arraystretch is a multiplier of the baselineskip.
+  const auto stretched = baselines(R"(\renewcommand{\arraystretch}{1.5}\begin{matrix} x \\ x \end{matrix})");
+  CHECK_EQ(stretched.size(), std::size_t(2));
+  if (stretched.size() == 2) CHECK(std::fabs(stretched[1] - stretched[0] - 36.f) < 0.05);
+  // smallmatrix: a baselineskip of 6pt, which is 0.6em.
+  CHECK(std::fabs(pitch("smallmatrix", R"(x \\ x)") - 12.f) < 0.05);
+  // \substack: the font's stack constants in a script (0.56em in Latin
+  // Modern, 0.67em in Fira Math), well under a matrix's 1.2em.
+  const auto stack = baselines(R"(\substack{x \\ x})");
+  CHECK_EQ(stack.size(), std::size_t(2));
+  if (stack.size() == 2) CHECK(stack[1] - stack[0] > 8.f && stack[1] - stack[0] < 16.f);
+}
+
+TEST(math_the_rows_of_amsmaths_alignments_are_a_baselineskip_and_a_jot_apart) {
+  // 1.2em + 3pt (0.3em) = 1.5em, for rows that fit in it.
+  for (const char* env : {"aligned", "gathered", "align*", "gather*", "flalign*", "split"}) {
+    for (const char* rows : {R"(x \\ x)", R"(y \\ y)"}) {
+      CHECK(std::fabs(pitch(env, rows) - 30.f) < 0.05);
+    }
+  }
+  CHECK(std::fabs(pitch("alignat*", R"(x & x \\ x & x)", typeface(), "{1}") - 30.f) < 0.05);
+  CHECK(std::fabs(pitch("eqnarray*", R"(x&&x \\ x&&x)") - 30.f) < 0.05);
+  // At a width, in a document: the lines of gather and multline.
+  Options doc(InputMode::document, 300);
+  doc.path = false;
+  CHECK(std::fabs(pitch("gather*", R"(x \\ x)", doc) - 30.f) < 0.05);
+  CHECK(std::fabs(pitch("multline*", R"(x \\ x)", doc) - 30.f) < 0.05);
+}
+
+TEST(math_rows_too_tall_for_the_baselineskip_stand_a_lineskip_and_a_jot_apart) {
+  // 1pt + 3pt = 0.4em between the rows (amsmath), and nothing in an array.
+  const auto height = [](const std::string& tex) { return rec(tex).height; };
+  const std::string frac = R"(\displaystyle\frac{x}{x})";
+  const int one = height("\\begin{aligned}" + frac + "\\end{aligned}");
+  const int two = height("\\begin{aligned}" + frac + "\\\\" + frac + "\\end{aligned}");
+  CHECK(std::fabs(two - (2 * one + 8)) <= 1.5);
+  const int onea = height("\\begin{matrix}" + frac + "\\end{matrix}");
+  const int twoa = height("\\begin{matrix}" + frac + "\\\\" + frac + "\\end{matrix}");
+  CHECK(std::fabs(twoa - 2 * onea) <= 1.5);
+}
+
+TEST(math_the_cells_of_an_array_are_in_text_style_and_those_of_an_alignment_in_display_style) {
+  Options display = typeface();
+  display.display = true;
+  const auto height = [&](const std::string& env) {
+    return check::render("\\begin{" + env + "}\\frac{x}{x}\\end{" + env + "}", display).height;
+  };
+  // TeX's `$...$` in a cell begins in text style; aligned's cells are display.
+  CHECK(height("matrix") + 4 <= height("aligned"));
+  CHECK(check::render(R"(\begin{array}{c}\frac{x}{x}\end{array})", display).height + 4 <= height("gathered"));
+  // A column asks for display style as before.
+  CHECK_EQ(check::render(R"(\begin{array}{>{\displaystyle}c}\frac{x}{x}\end{array})", display).height, height("aligned"));
 }

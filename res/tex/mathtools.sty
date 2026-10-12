@@ -1,6 +1,6 @@
 \ProvidesPackage{mathtools}[2026/10/11 mathtools: colon forms, brackets over and under, \shortintertext]
-\newenvironment{rcases}{\left.\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
-\newenvironment{dcases}{\left\{\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
+\newenvironment{rcases}{\left.\def\arraystretch{1.2}\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
+\newenvironment{dcases}{\left\{\def\arraystretch{1.2}\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
 \newcommand{\shortintertext}[1]{\intertext{#1}}
 \newcommand{\overbrack}[1]{\overbracket{#1}}
 \newcommand{\underbrack}[1]{\underbracket{#1}}

@@ -33,7 +33,8 @@ fuzz)
   secs="${2:-60}"
   cxx="${CXX:-clang++}"
   b="$BUILD/fuzz"
-  cmake -S "$ROOT" -B "$b" -DCMAKE_CXX_COMPILER="$cxx" -DMICROTEX_FUZZ=ON \
+  # With FriBidi, as the R package is always built: the reordering is fuzzed too.
+  cmake -S "$ROOT" -B "$b" -DCMAKE_CXX_COMPILER="$cxx" -DMICROTEX_FUZZ=ON -DMICROTEX_BIDI=ON \
     -DCMAKE_CXX_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined"
   cmake --build "$b" -j "$JOBS"
   art="$BUILD/fuzz-artifacts"

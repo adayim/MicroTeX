@@ -4,12 +4,12 @@
 \newenvironment{Bmatrix}{\left\{\begin{matrix}}{\end{matrix}\right\}}
 \newenvironment{vmatrix}{\left|\begin{matrix}}{\end{matrix}\right|}
 \newenvironment{Vmatrix}{\left\|\begin{matrix}}{\end{matrix}\right\|}
-\newenvironment{cases}{\left\{\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
-\newenvironment{subarray}[1]{\scriptstyle\begin{array}{@{}#1@{}}}{\end{array}}
+\newenvironment{cases}{\left\{\def\arraystretch{1.2}\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
+\newenvironment{subarray}[1]{\scriptstyle\gmrows{sub}\begin{array}{@{}#1@{}}}{\end{array}}
 \newenvironment{subequations}{\gmsubeqbegin}{\gmsubeqend}
-\newenvironment{split}{\begin{array}{r@{\;}l}}{\end{array}}
+\newenvironment{split}{\gmrows{jot}\begin{array}{r@{\;}l}}{\end{array}}
 \newcommand{\operatorname}[1]{\mathop{\mathrm{#1}}\nolimits }
-\newcommand{\substack}[1]{{\scriptstyle\begin{array}{@{}c@{}}#1\end{array}}}
+\newcommand{\substack}[1]{{\scriptstyle\gmrows{sub}\begin{array}{@{}c@{}}#1\end{array}}}
 \newcommand{\mspace}[1]{\hspace{#1}}
 \newcommand{\leftroot}[1]{}
 \newcommand{\uproot}[1]{}

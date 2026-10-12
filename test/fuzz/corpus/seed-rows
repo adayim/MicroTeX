@@ -1,0 +1,13 @@
+\begin{matrix} \frac{a}{b} & x^{y^z} \\[3pt] \sum_{i}^{n} i & \sqrt{\frac{1}{2}} \\ \end{matrix}
+\renewcommand{\arraystretch}{0.1}\begin{array}{c|c} a & b \\ \hline \frac12 & c \\[-2pt] \hline \end{array}
+\begin{array}{|l|r|}\hline \multicolumn{2}{c}{a} \\ \multirow{2}{*}{b} & c \\ & d \\ \end{array}
+\begin{aligned} \frac{a}{b} &= \frac{c}{d} \\[1em] x &= y \\ \intertext{text} z &= w \end{aligned}
+\begin{split} a &= b \\ &= \dfrac{1}{2} \\ \end{split}
+\begin{smallmatrix} \frac{a}{b} & \sqrt{x} \\ y & z \end{smallmatrix}
+\sum_{\substack{i<j \\ \frac{a}{b} \\ k}} x_{\begin{subarray}{l} a \\ b \end{subarray}}
+\begin{cases} \frac{1}{x} & \text{if } x \ne 0 \\[5pt] 0 & \text{otherwise} \end{cases}
+\begin{gather*} a \\ \frac{b}{c} \end{gather*}\begin{multline*} a \\ b \\ c \end{multline*}
+\begin{eqnarray*} a &=& b \\ c &=& \frac{d}{e} \end{eqnarray*}
+\begin{matrix}\begin{matrix}\begin{matrix} a & b \\ c & d \end{matrix}\end{matrix}\end{matrix}
+x^{\begin{matrix} a \\ b \end{matrix}}_{\begin{aligned} c \\ d \end{aligned}}
+\gmrows{jot}\begin{array}{c} a \\ b \end{array}\gmrows{sub}\gmrows{}\gmrows{nonsense}\begin{array}{c} a \end{array}

@@ -61,6 +61,27 @@ enum class MatrixType : i8 {
   alignedAt
 };
 
+/** How the rows of an alignment stand apart. The first is the engine's own,
+ *  the others are TeX's, whose rows are set by a baselineskip and not by their
+ *  content: what amsmath and the array package do, in the sizes of the text
+ *  font (not a script's, where an alignment keeps the engine's). */
+enum class RowSpacing : i8 {
+  /** The rows' own height and depth, and 1ex between them: a text table. */
+  content,
+  /** array, matrix, cases: every row has a strut (0.7 and 0.3 of
+   *  \baselineskip times \arraystretch) and nothing is put between rows. */
+  strut,
+  /** amsmath's aligned, align, gather ...: \openup\jot, a baselineskip of
+   *  1.2em + 3pt, or, if the rows are too tall for it, a \lineskip of 1pt + 3pt. */
+  jot,
+  /** smallmatrix: a baselineskip of 6pt and a \lineskip of 1.5pt. */
+  small,
+  /** \substack, subarray: a baselineskip of the font's stack constants (what
+   *  a fraction without a bar puts between its numerator and denominator), in
+   *  a script, which is where they are. */
+  sub
+};
+
 /** Atom represents matrix */
 class MatrixAtom : public Atom {
 private:
@@ -92,6 +113,11 @@ private:
   MatrixType _matType;
   bool _isPartial;
   bool _spaceAround;
+  RowSpacing _spacing = RowSpacing::content;
+  // TeX's row spacing applies (it does not in a script), and the em it counts
+  // in: that of the text around the matrix, not of the style its cells are in.
+  bool _texRows = false;
+  float _baseEm = 0;
   // The room an equation's numbers take at each side of an align, so that
   // the display stays centred on the page and clear of them. Set by
   // createBoxInner() before the columns are spaced.
@@ -160,6 +186,10 @@ public:
   MatrixAtom(bool isPartial, const sptr<ArrayFormula>& arr, MatrixType type);
 
   sptr<Box> createBox(Env& env) override;
+
+  /** How its rows stand apart; the default of each MatrixType is set by its
+   *  constructor, a string of options leaves the engine's own. */
+  void setRowSpacing(RowSpacing spacing) { _spacing = spacing; }
 
   /** The width of `tabular*` (`spread`: its columns take up what the text
    *  leaves of it) or `tabularx` (its X columns do). */

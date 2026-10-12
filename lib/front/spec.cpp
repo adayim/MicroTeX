@@ -71,6 +71,9 @@ struct Table {
     add({"includegraphics"}, "RRu");
     // The directories later images are looked for in; the lowering keeps them.
     add({"graphicspath", "gmarraystretch"}, "r");
+    // The rows of the array that comes next: jot (amsmath's, \openup\jot) or
+    // sub (\substack's), as the prelude's split and substack say.
+    add({"gmrows"}, "r");
     add({"cfrac"}, "Rmm");
     add({"xleftarrow", "xrightarrow", "xleftrightarrow", "xRightarrow", "xLeftarrow",
          "xLeftrightarrow", "xhookleftarrow", "xhookrightarrow", "xmapsto",

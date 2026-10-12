@@ -300,6 +300,8 @@ private:
   RowNote _note;
   /** What `gmarraystretch` said for the array that comes next. */
   float _stretch = 1.f;
+  /** What `gmrows` said for it. */
+  std::string _rows;
   /** How many alignment rows or displays are being lowered: a \label in
    *  one names its number, which is known when it ends. */
   int _inRow = 0;
@@ -663,6 +665,10 @@ private:
     if (name == "gmarraystretch") {
       _stretch = static_cast<float>(std::atof(rawOf(child(id, 0)).c_str()));
       if (!(_stretch > 0.f)) _stretch = 1.f;
+      return nullptr;
+    }
+    if (name == "gmrows") {
+      _rows = trimmed(rawOf(child(id, 0)));
       return nullptr;
     }
     if (name == "graphicspath") {
@@ -2266,6 +2272,8 @@ private:
     auto arr = sptrOf<ArrayFormula>();
     arr->_stretch = _stretch;
     _stretch = 1.f;
+    arr->_rows = std::move(_rows);
+    _rows.clear();
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
     if (isTblrEnvironment(node(env).text)) return tblrAlignmentOf(env);
     const bool text = node(env).flag;

@@ -35,7 +35,9 @@ inline cmdmacro(matrixATATenv) {
 inline cmdmacro(eqnarrayATATenv) {
   const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, "rcl", true);
+  auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, "rcl", true);
+  table->setRowSpacing(RowSpacing::jot);
+  return table;
 }
 
 // tabular*{width}{columns} and tabularx{width}{columns}.
@@ -74,7 +76,16 @@ inline cmdmacro(tblrATATenv) {
 inline cmdmacro(arrayATATenv) {
   const auto arr = args.alignment(2);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
+  auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
+  // tabular is this handler too: a table of text keeps the engine's rows.
+  if (arr->_rows == "jot") {
+    table->setRowSpacing(RowSpacing::jot);
+  } else if (arr->_rows == "sub") {
+    table->setRowSpacing(RowSpacing::sub);
+  } else if (args.isMathMode()) {
+    table->setRowSpacing(RowSpacing::strut);
+  }
+  return table;
 }
 
 inline cmdmacro(alignATATenv) {
@@ -183,14 +194,19 @@ inline cmdmacro(numcasesATATenv) {
   const auto left = args.formulaOf(args.text(1), true);
   auto line = sptrOf<RowAtom>();
   if (left != nullptr) line->add(left);
-  line->add(sptrOf<FencedAtom>(
-    sptrOf<MatrixAtom>(args.isPartial(), arr, "@{\\hspace{3pt}}>{\\displaystyle}l@{\\quad}l@{}", true), "lbrace", "."));
+  // Rows as amsmath sets them, the cases' and their numbers' alike.
+  auto cases = sptrOf<MatrixAtom>(
+    args.isPartial(), arr, "@{\\hspace{3pt}}>{\\displaystyle}l@{\\quad}l@{}", true);
+  cases->setRowSpacing(RowSpacing::jot);
+  line->add(sptrOf<FencedAtom>(cases, "lbrace", "."));
 
   auto display = sptrOf<ArrayFormula>();
   display->add(line);
   if (numbered) {
     numbers->checkDimensions();
-    display->_rowTags[0] =sptrOf<MatrixAtom>(args.isPartial(), numbers, "@{}r@{}", true);
+    auto column = sptrOf<MatrixAtom>(args.isPartial(), numbers, "@{}r@{}", true);
+    column->setRowSpacing(RowSpacing::jot);
+    display->_rowTags[0] = column;
   }
   display->checkDimensions();
   return sptrOf<MultlineAtom>(false, display, MultiLineType::gather);

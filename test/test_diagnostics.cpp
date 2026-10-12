@@ -131,11 +131,20 @@ TEST(diagnostics_a_row_gap_in_an_alignment_adds_that_much_space_below_its_row) {
     const auto body = [&](const std::string& gap) {
       return std::string("\\begin{") + env + "} " + first + " \\\\" + gap + " " + second + " \\end{" + env + "}";
     };
-    const auto plain = check::render(body(""));
-    const auto gapped = check::render(body("[10pt]"));
-    CHECK_EQ(gapped.height - plain.height, 10);
+    check::Options glyphs;
+    glyphs.path = false;
+    const auto plain = check::render(body(""), glyphs);
+    const auto gapped = check::render(body("[10pt]"), glyphs);
+    // The second row moves down by it (10pt is 9.963 of the px a pt of the
+    // drawing is) and the first stays; the sizes are whole numbers, so they
+    // are not compared.
+    CHECK(!plain.records.empty() && plain.records.size() == gapped.records.size());
+    if (!plain.records.empty() && plain.records.size() == gapped.records.size()) {
+      CHECK(std::fabs(gapped.records.front().y - plain.records.front().y) < 0.01);
+      CHECK(std::fabs(gapped.records.back().y - plain.records.back().y - 10 * 72.f / 72.27f) < 0.01);
+    }
     // The [10pt] is not drawn.
-    CHECK(check::pathCharacters(gapped).find(U'[') == std::u32string::npos);
+    CHECK(check::pathCharacters(check::render(body("[10pt]"))).find(U'[') == std::u32string::npos);
   }
 }
 

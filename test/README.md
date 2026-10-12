@@ -7,7 +7,7 @@ does each step locally:
 
 ```sh
 test/run.sh test            # the tests, under AddressSanitizer and UBSan
-test/run.sh test OFF        # ... built without FriBidi
+test/run.sh test OFF        # ... built without FriBidi (not in CI: the R package always has it)
 test/run.sh strict          # our sources under -Wextra -Wpedantic
 test/run.sh fuzz 300        # each fuzzer for 300 s (clang)
 ```

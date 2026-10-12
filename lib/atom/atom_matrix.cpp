@@ -551,6 +551,12 @@ MatrixAtom::MatrixAtom(bool isPartial, const sptr<ArrayFormula>& arr, MatrixType
   _matType = type;
   _isPartial = isPartial;
   _spaceAround = false;
+  switch (type) {
+    case MatrixType::matrix: _spacing = RowSpacing::strut; break;
+    case MatrixType::smallMatrix: _spacing = RowSpacing::small; break;
+    case MatrixType::array: break;
+    default: _spacing = RowSpacing::jot;
+  }
 
   const int cols = arr->cols();
   if (type != MatrixType::matrix && type != MatrixType::smallMatrix) {
@@ -774,6 +780,39 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
     }
   }
 
+  // TeX's rows (see RowSpacing). An array gives every row a strut. The
+  // alignments of amsmath and smallmatrix set a baselineskip between the
+  // baselines; where the rows are too tall for it, a lineskip between them
+  // (TeX's rule: a lineskip when the baselineskip leaves less than
+  // \lineskiplimit). `skipBelow` is what goes under each row, by the rows' own
+  // depth and height, before a `\\[len]` is added to it.
+  vector<float> skipBelow(rows, 0.f);
+  if (_texRows) {
+    const auto isRule = [&](int i) { return boxarr[i][0]->_type == AtomType::hline; };
+    if (_spacing == RowSpacing::strut) {
+      const float strut = 1.2f * _baseEm * _matrix->_stretch;
+      for (int i = 0; i < rows; i++) {
+        if (isRule(i)) continue;
+        lineHeight[i] = max(lineHeight[i], 0.7f * strut);
+        lineDepth[i] = max(lineDepth[i], 0.3f * strut);
+      }
+    } else {
+      const bool jot = _spacing == RowSpacing::jot;
+      float baselineskip = (jot ? 1.5f : 0.6f) * _baseEm;
+      if (_spacing == RowSpacing::sub) {
+        const auto& math = env.mathConsts();
+        baselineskip = (math.stackTopShiftUp() + math.fractionDenominatorShiftDown()) * env.scale();
+      }
+      const float lineskip = (jot ? 0.4f : 0.15f) * _baseEm;
+      const float lineskiplimit = (jot ? 0.3f : 0.15f) * _baseEm;
+      for (int i = 0; i + 1 < rows; i++) {
+        if (isRule(i) || isRule(i + 1)) continue;
+        const float glue = baselineskip - lineDepth[i] - lineHeight[i + 1];
+        skipBelow[i] = glue >= lineskiplimit ? glue : lineskip;
+      }
+    }
+  }
+
   // `\\[len]`: extra space below a row, added to its depth as LaTeX's array
   // adds it, so the rows after it move down and vertical rules run through.
   for (const auto& [row, gap] : _matrix->_rowGaps) {
@@ -842,15 +881,19 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
   auto Vsep = _vsep_in.createBox(env);
   // \arraystretch: each row's pitch grows by that much more of a baselineskip.
-  if (_matrix->_stretch != 1.f) {
+  if (!_texRows && _matrix->_stretch != 1.f) {
     Vsep->_height += (_matrix->_stretch - 1.f) * 1.2f * Units::fsize(UnitType::em, 1.f, env);
   }
+  // The space above and below each row: half the separator at each, or, in
+  // TeX's rows, none above and what goes between the rows below.
+  vector<float> padTop(rows, _texRows ? 0.f : Vsep->_height / 2);
+  vector<float> padBot(rows, _texRows ? 0.f : Vsep->_height / 2);
+  if (_texRows) padBot = skipBelow;
   // Recalculate the height of the row
-  recalculateLine(rows, boxarr, multiRows, lineHeight, lineDepth, drt, Vsep->_height);
+  recalculateLine(rows, boxarr, multiRows, lineHeight, lineDepth, drt, _texRows ? 0.f : Vsep->_height);
 
   auto vb = sptrOf<VBox>();
   float totalHeight = 0;
-  float Vspace = Vsep->_height / 2;
 
   for (int i = 0; i < rows; i++) {
     auto hb = sptrOf<HBox>();
@@ -866,8 +909,8 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
             auto it = _vlines.find(0);
             if (it != _vlines.end()) {
               auto vat = it->second;
-              vat->_height = lineHeight[i] + lineDepth[i] + Vsep->_height;
-              vat->_shift = lineDepth[i] + Vspace;
+              vat->_height = lineHeight[i] + lineDepth[i] + padTop[i] + padBot[i];
+              vat->_shift = lineDepth[i] + padBot[i];
               auto vatBox = vat->createBox(env);
               hb->add(vatBox);
             }
@@ -894,7 +937,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
             isLastVline = matom->hasRightVline();
           }
           float r = j == cols - 1 ? Hsep[j + 1] : Hsep[j + 1] / 2;
-          wb->addInsets(l, Vspace, r, Vspace);
+          wb->addInsets(l, padTop[i], r, padBot[i]);
           applyCell(*wb, i, j);
           boxarr[i][tj] = wb;
           hb->add(wb);
@@ -902,8 +945,8 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           auto it = _vlines.find(j + 1);
           if (isLastVline && it != _vlines.end()) {
             auto vat = it->second;
-            vat->_height = lineHeight[i] + lineDepth[i] + Vsep->_height;
-            vat->_shift = lineDepth[i] + Vspace;
+            vat->_height = lineHeight[i] + lineDepth[i] + padTop[i] + padBot[i];
+            vat->_shift = lineDepth[i] + padBot[i];
             auto vatBox = vat->createBox(env);
             hb->add(vatBox);
           }
@@ -963,8 +1006,8 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
     }
 
     if (boxarr[i][0]->_type != AtomType::hline) {
-      hb->_height = lineHeight[i] + Vspace;
-      hb->_depth = lineDepth[i] + Vspace;
+      hb->_height = lineHeight[i] + padTop[i];
+      hb->_depth = lineDepth[i] + padBot[i];
     }
     vb->add(hb);
   }
@@ -979,14 +1022,18 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 }
 
 sptr<Box> MatrixAtom::createBox(Env& env) {
+  _baseEm = env.em();
+  _texRows = _spacing == RowSpacing::sub ||
+             (_spacing != RowSpacing::content && env.style() < TexStyle::script);
   if (_matType == MatrixType::smallMatrix) {
     return env.withStyle(TexStyle::script, [this](auto& script) { return createBoxInner(script); });
-  } /* else if (_matType == MatrixType::matrix) {
-    return env.withStyle(
-      TexStyle::text,
-      [this](auto& text) { return createBoxInner(text); }
-    );
-  }*/
+  }
+  // The cells of an array or matrix are `$...$`, which TeX begins in text
+  // style, whatever the display around the matrix is.
+  if (_spacing == RowSpacing::strut && env.style() < TexStyle::text) {
+    const TexStyle text = env.style() == TexStyle::display ? TexStyle::text : TexStyle::text1;
+    return env.withStyle(text, [this](auto& inner) { return createBoxInner(inner); });
+  }
   return createBoxInner(env);
 }
 
@@ -1109,8 +1156,11 @@ SpaceAtom MultlineAtom::_vsep_in(UnitType::ex, 0.f, 1.f, 0.f);
 
 sptr<Box> MultlineAtom::createBox(Env& env) {
   float tw = env.textWidth();
-  if (tw == POS_INF || _lineType == MultiLineType::gathered)
-    return MatrixAtom(_isPartial, _column, "").createBox(env);
+  if (tw == POS_INF || _lineType == MultiLineType::gathered) {
+    MatrixAtom lines(_isPartial, _column, "");
+    lines.setRowSpacing(RowSpacing::jot);
+    return lines.createBox(env);
+  }
 
   auto vb = sptrOf<VBox>();
   // An empty line's cell is null, or not there at all.
@@ -1144,15 +1194,27 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     return both;
   };
 
-  vb->add(line(0, atom, alignment));
+  auto above = line(0, atom, alignment);
+  vb->add(above);
   gapAfter(0);
   auto Vsep = _vsep_in.createBox(env);
+  // What goes between two lines: amsmath's (RowSpacing::jot), except in a
+  // script, where it is the engine's.
+  const bool texRows = env.style() < TexStyle::script;
+  const auto between = [&](const sptr<Box>& upper, const sptr<Box>& lower) -> sptr<Box> {
+    if (!texRows) return Vsep;
+    const float em = env.em();
+    const float glue = 1.5f * em - upper->_depth - lower->_height;
+    return sptrOf<StrutBox>(0.f, glue >= 0.3f * em ? glue : 0.4f * em, 0.f, 0.f);
+  };
   for (size_t i = 1; i < _column->rows() - 1; i++) {
     atom = cell(i);
     alignment = Alignment::center;
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
-    vb->add(Vsep);
-    vb->add(line(i, atom, alignment));
+    auto below = line(i, atom, alignment);
+    vb->add(between(above, below));
+    vb->add(below);
+    above = below;
     gapAfter(i);
   }
 
@@ -1160,8 +1222,9 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
     atom = cell(_column->rows() - 1);
     alignment = _lineType == MultiLineType::gather ? Alignment::center : Alignment::right;
     if (atom->_alignment != Alignment::none) alignment = atom->_alignment;
-    vb->add(Vsep);
-    vb->add(line(_column->rows() - 1, atom, alignment));
+    auto below = line(_column->rows() - 1, atom, alignment);
+    vb->add(between(above, below));
+    vb->add(below);
   }
 
   float h = vb->_height + vb->_depth;
