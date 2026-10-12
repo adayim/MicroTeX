@@ -128,6 +128,34 @@ TEST(math_shortintertext_is_intertext_in_the_same_slot) {
   IDENTICAL(mk("shortintertext"), mk("intertext"));
 }
 
+TEST(math_bgroup_and_egroup_are_the_braces_of_a_group) {
+  CHECK(quiet(R"(a\bgroup b\egroup c)"));
+  IDENTICAL(R"(a\bgroup b\egroup c)", R"(a{b}c)");
+  IDENTICAL(R"(x^\bgroup ab\egroup)", R"(x^{ab})");
+}
+
+TEST(math_textsl_and_slshape_are_the_italic_the_font_has) {
+  CHECK(quiet(R"(\textsl{ab})"));
+  CHECK(quiet(R"(\text{\slshape ab})"));
+  IDENTICAL(R"(\textsl{ab})", R"(\textit{ab})");
+  IDENTICAL(R"(\text{\slshape ab})", R"(\text{\itshape ab})");
+}
+
+TEST(math_moveeqleft_moves_the_first_line_left_by_the_ems_it_is_given) {
+  // The distance from the first line's start to where the second line's "=" is.
+  const auto gap = [](const char* option) {
+    const std::string tex = std::string(R"(\begin{align}\MoveEqLeft)") + option + R"( a+b \\ &= c \end{align})";
+    CHECK(quiet(tex));
+    const auto x = xs(tex);
+    return x.size() == 5 ? x[3] - x[0] : -1.f;
+  };
+  const float none = gap("[0]"), two = gap(""), four = gap("[4]");
+  CHECK(std::fabs(none) < 1e-3f);
+  CHECK(two > 1.f);
+  // 2em is the default, and the move is in proportion to the number.
+  CHECK(std::fabs((four - two) - (two - none)) < 1e-3f);
+}
+
 TEST(math_cancelto_strikes_its_base_with_an_arrow_and_sets_the_value_at_the_tip) {
   CHECK(quiet(R"(\cancelto{0}{x})"));
   const auto r = rec(R"(\cancelto{0}{x})");

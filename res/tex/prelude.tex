@@ -9,7 +9,8 @@
 % Then the document commands a grob has no use for: the preamble, title and
 % cross-reference metadata, and alignment declarations, dropped with their
 % arguments; skips and \hfill as fixed space (a grob has no glue to fill);
-% \emph, \em, \newline and booktabs' rules as their nearest equivalents.
+% \emph, \em, \newline, \textsl and \slshape (slanted is italic: an OpenType
+% font has no third shape) and booktabs' rules as their nearest equivalents.
 % (\caption is the parser's, which knows whether it is in a document.)
 % document, table, figure and center have no code of their own, so a label
 % lays their content out as if they were not there; a document sets a float,
@@ -46,6 +47,9 @@
 \newcommand{\hfill}{\quad}
 \newcommand{\vfill}{\vspace{1em}}
 \newcommand{\emph}[1]{\textit{#1}}
+\newcommand{\textsl}[1]{\textit{#1}}
+\let\bgroup={
+\let\egroup=}
 \newcommand{\textscale}[2]{{\relscale{#1}#2}}
 \newcommand{\em}{\it}
 \newenvironment{abstract}{\small\begin{center}\textbf{Abstract}\end{center}}{\par}
@@ -60,6 +64,7 @@
 \newcommand{\rmfamily}{\rm}
 \newcommand{\normalfont}{\rm}
 \newcommand{\upshape}{\rm}
+\newcommand{\slshape}{\it}
 \newcommand{\mdseries}{\rm}
 \newcommand{\selectfont}{}
 \newcommand{\textsection}{\S}
