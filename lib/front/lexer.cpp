@@ -190,14 +190,14 @@ Token Lexer::controlSequence() {
   // TeX's control symbol.
   const bool atName = !invalidUtf8 && _src[_pos] == '@' && catcode(cp) != Cat::letter &&
                       _pos + 1 < _src.size() && std::isalpha(static_cast<unsigned char>(_src[_pos + 1]));
-  if (atName || (!invalidUtf8 && catcode(cp) == Cat::letter)) {
+  // Under `atLetter` the table has `@` as `other` and the name still takes it.
+  const auto inName = [&](unsigned char b) {
+    return b < 0x80 && (_cat.get(b) == Cat::letter || (_opts.atLetter && b == '@') || (atName && b == '@'));
+  };
+  if (atName || (!invalidUtf8 && (catcode(cp) == Cat::letter || (_opts.atLetter && _src[_pos] == '@')))) {
     const std::size_t nameStart = _pos;
     if (atName) advance(1, 1);
-    while (_pos < _src.size()) {
-      const auto b = static_cast<unsigned char>(_src[_pos]);
-      if (b >= 0x80 || (_cat.get(b) != Cat::letter && !(atName && b == '@'))) break;
-      advance(1, 1);
-    }
+    while (_pos < _src.size() && inName(static_cast<unsigned char>(_src[_pos]))) advance(1, 1);
     _state = State::skipBlanks;
     Token t = make(TokKind::controlWord, start, line, col);
     t.text = std::string(_src.substr(nameStart, _pos - nameStart));

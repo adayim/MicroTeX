@@ -19,6 +19,7 @@
 #include "front/parser.h"
 #include "front/spec.h"
 #include "utils/exceptions.h"
+#include "../tex_files.h"
 
 using namespace microtex::front;
 
@@ -104,6 +105,12 @@ void parse_all(const std::string& src, Mode mode, bool lineBreaks, std::uint32_t
 }
 
 }  // namespace
+
+// The prelude's packages, registered as a host does before its first parse.
+extern "C" int LLVMFuzzerInitialize(int*, char***) {
+  check::registerTexFiles();
+  return 0;
+}
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   const std::string src(reinterpret_cast<const char*>(data), size);

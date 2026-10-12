@@ -1,0 +1,5 @@
+\usepackage[a,b,,c]{amsmath} \usepackage{amsmath,amsmath,nosuch,,} \RequirePackage[x]{braket}[2020/01/01]
+\ProcessOptions\relax \DeclareOption*{\endinput} \DeclareOption{a}{b} \ExecuteOptions{a,b} \endinput x
+\AtBeginDocument{\AtBeginDocument{\AtBeginDocument{x}}} \@ifpackageloaded{amsmath}{Y}{N} \@ifpackageloaded
+\DeclareRobustCommand{\foo}{\foo}\foo \DeclareRobustCommand*{\frac}[2]{#2} \NeedsTeXFormat{LaTeX2e}[x] \ProvidesPackage{
+\usepackage{katex}\R \usepackage{mathtools}\newcommand{\dfrac}{x}

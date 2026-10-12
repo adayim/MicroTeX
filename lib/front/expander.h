@@ -22,6 +22,17 @@ struct BodyPiece {
   int param = 0;
 };
 
+/** One argument of a \NewDocumentCommand, and how it is read. */
+struct XArg {
+  /** xparse's letters: m o O s t r R d D g G. */
+  char type = 'm';
+  /** t's token; the opening and closing delimiters of r, R, d and D. */
+  Token open;
+  Token close;
+  /** What O, R, D and G give when the argument is not there. */
+  std::string deflt;
+};
+
 /**
  * A user macro or environment. The replacement text is split into pieces
  * when it is defined, so an expansion substitutes every `#n` in one pass
@@ -35,6 +46,9 @@ struct MacroDef {
   /** \def's parameter text: delimiters[0] must follow the name, and
    *  delimiters[i] ends parameter i. Empty means undelimited. */
   std::vector<std::vector<Token>> delimiters;
+  /** \NewDocumentCommand's arguments, one for each parameter; empty for a
+   *  macro made any other way. */
+  std::vector<XArg> xargs;
   std::vector<BodyPiece> body;
   /** For an environment, the code at \end. */
   std::vector<BodyPiece> endBody;
@@ -43,6 +57,14 @@ struct MacroDef {
    *  keeps `\let\oldfrac\frac \renewcommand{\frac}...{\oldfrac...}` from
    *  looping. */
   bool alias = false;
+  /** `@` was a letter when this was defined (\makeatletter): its body names
+   *  `\my@a` as one name, and is read so again wherever it is used, after
+   *  \makeatother too. */
+  bool atLetter = false;
+  /** The package whose file defined it: `LaTeX` for the format itself, empty
+   *  for what the input defines (and define_macro()). A name from a package
+   *  the input did not ask for is free for the input to define. */
+  std::string package;
 };
 
 struct ExpanderOptions {
@@ -51,6 +73,9 @@ struct ExpanderOptions {
   std::function<bool(const std::string&)> isBuiltinCommand;
   /** The same for environments. */
   std::function<bool(const std::string&)> isBuiltinEnvironment;
+  /** Is `name` a symbol or a predefined formula, which the parser knows
+   *  without its being a command? \ifdefined and \ifx ask. */
+  std::function<bool(const std::string&)> isKnownName;
   LexOptions lex;
   /** TeX stops runaway recursion with its capacity limits; these are ours.
    *  The bytes are all the expansions of one parse together, and reading
@@ -69,10 +94,15 @@ struct ExpanderOptions {
    *  stop. */
   std::size_t maxExpansions = 100000;
   std::size_t maxExpandedBytes = std::size_t{1} << 20;
-  /** Expand the prelude: the commands and environments the engine defines
-   *  in LaTeX (\dfrac, pmatrix, ...; front/prelude.cpp). The old parser
-   *  expands those itself, so only the new one wants this. */
+  /** Start from the format and the packages every input starts with: the
+   *  commands and environments the engine defines in LaTeX (\dfrac,
+   *  pmatrix, ...), which the host registered (front/packages.h). */
   bool prelude = false;
+  /** With `prelude`: packages to start from, after the format, as
+   *  latex_options(packages = ) names them. They are read once for all the
+   *  parses with the same list, and an input need not ask for them; what
+   *  they do besides define is read before the input. */
+  std::vector<std::string> packages;
   /** See the define_macro() macros (setPersistentMacro). */
   bool persistent = true;
   /** Report a bad definition or runaway recursion as a diagnostic and go
@@ -143,12 +173,22 @@ private:
 
   friend std::vector<std::string> preludeCommandNames();
   friend std::vector<std::string> preludeEnvironmentNames();
+  friend std::vector<std::string> preludeProblems();
   friend std::vector<std::string> preludeTransparentEnvironmentNames();
 };
 
-/** The names the prelude defines, for checking it against the engine. */
+/** The names the format and the packages every input starts with define
+ *  (packages.h), for checking them against the engine. */
 std::vector<std::string> preludeCommandNames();
 std::vector<std::string> preludeEnvironmentNames();
+/** What went wrong reading them, one line each: a name defined twice, a
+ *  command the expander could not read. Empty when all is well. */
+std::vector<std::string> preludeProblems();
+
+/** Read the registered package `name` on top of the format, as an input that
+ *  asks for it would, and report what went wrong, one line each, as the
+ *  package's own: "package NAME line L:C: message". Empty when all is well. */
+std::vector<std::string> checkPackage(const std::string& name);
 /** Those of them that expand to nothing at either end (`document`, `table`,
  *  `figure`): they wrap content rather than make any of it math. */
 std::vector<std::string> preludeTransparentEnvironmentNames();

@@ -1,0 +1,295 @@
+\ProvidesPackage{physics}[2026/10/11 physics: handy commands for physicists]
+% The commands of the physics package, written from its documentation, for
+% what a plot label uses: automatic brackets, vectors, derivatives, Dirac
+% notation, matrices and the quick text. The sin, cos, ... redefinitions of
+% its `trig` option, \Re and \Im with braces, and the matrix generators
+% (\imat, \xmat, \zmat, \dmat, \admat) are not included.
+%
+% Loading it replaces \qty (siunitx's), \bra, \ket and \braket (braket's)
+% and \div (the division sign) with its own, as the package does.
+\RequirePackage{amsmath}
+
+\DeclareOption{uprightdiff}{\def\diffd{\mathrm{d}}}
+\DeclareOption{italicdiff}{\def\diffd{d}}
+\DeclareOption{bolddel}{\DeclareDocumentCommand{\vnabla}{}{\boldsymbol\nabla}}
+\DeclareOption{arrowdel}{\DeclareDocumentCommand{\vnabla}{}{\vec{\boldsymbol\nabla}}}
+\DeclareOption{trig}{}
+\DeclareOption{notrig}{}
+\ExecuteOptions{uprightdiff,bolddel}
+\ProcessOptions\relax
+
+\ProvideDocumentCommand{\varE}{}{\mathcal{E}}
+\ProvideDocumentCommand{\ordersymbol}{}{\mathcal{O}}
+\ProvideDocumentCommand{\lparen}{}{(}
+\ProvideDocumentCommand{\rparen}{}{)}
+
+% --- brackets that size themselves -----------------------------------------
+
+% #1 to #4 say whether \big, \Big, \bigg or \Bigg came first; #5 and #6 are
+% the delimiters and #7 what is between them.
+\newcommand{\gm@fence}[7]{%
+  \IfBooleanTF{#1}{\bigl#5#7\bigr#6}{%
+  \IfBooleanTF{#2}{\Bigl#5#7\Bigr#6}{%
+  \IfBooleanTF{#3}{\biggl#5#7\biggr#6}{%
+  \IfBooleanTF{#4}{\Biggl#5#7\Biggr#6}{\left#5#7\right#6}}}}}
+
+% A name and then its argument in brackets, with no space between.
+\newcommand{\gm@fn}[4]{#3\mathclose{\left#1#4\right#2}}
+
+\DeclareDocumentCommand{\quantity}{ t\big t\Big t\bigg t\Bigg g o d() d|| }{%
+  \IfNoValueTF{#5}{%
+    \IfNoValueTF{#6}{%
+      \IfNoValueTF{#7}{%
+        \IfNoValueTF{#8}{()}{\gm@fence{#1}{#2}{#3}{#4}\lvert\rvert{#8}}}%
+        {\gm@fence{#1}{#2}{#3}{#4}(){#7}\IfNoValueF{#8}{|#8|}}}%
+      {\gm@fence{#1}{#2}{#3}{#4}[]{#6}\IfNoValueF{#7}{(#7)}\IfNoValueF{#8}{|#8|}}}%
+    {\gm@fence{#1}{#2}{#3}{#4}\lbrace\rbrace{#5}\IfNoValueF{#6}{[#6]}\IfNoValueF{#7}{(#7)}\IfNoValueF{#8}{|#8|}}}
+\let\qty\quantity
+
+\DeclareDocumentCommand{\pqty}{ t\big t\Big t\bigg t\Bigg m }{\gm@fence{#1}{#2}{#3}{#4}(){#5}}
+\DeclareDocumentCommand{\bqty}{ t\big t\Big t\bigg t\Bigg m }{\gm@fence{#1}{#2}{#3}{#4}[]{#5}}
+\DeclareDocumentCommand{\Bqty}{ t\big t\Big t\bigg t\Bigg m }{\gm@fence{#1}{#2}{#3}{#4}\lbrace\rbrace{#5}}
+\DeclareDocumentCommand{\vqty}{ t\big t\Big t\bigg t\Bigg m }{\gm@fence{#1}{#2}{#3}{#4}\lvert\rvert{#5}}
+
+\DeclareDocumentCommand{\absolutevalue}{ t\big t\Big t\bigg t\Bigg m }{\gm@fence{#1}{#2}{#3}{#4}\lvert\rvert{#5}}
+\let\abs\absolutevalue
+\DeclareDocumentCommand{\norm}{ t\big t\Big t\bigg t\Bigg m }{\gm@fence{#1}{#2}{#3}{#4}\lVert\rVert{#5}}
+\DeclareDocumentCommand{\order}{ t\big t\Big t\bigg t\Bigg m }{\ordersymbol\mathclose{\gm@fence{#1}{#2}{#3}{#4}(){#5}}}
+
+\DeclareDocumentCommand{\evaluated}{ s g d[| d(| }{%
+  \IfNoValueTF{#2}{%
+    \IfNoValueTF{#3}{%
+      \IfNoValueTF{#4}{\left.\vphantom{\int}\right\rvert}{\left(#4\vphantom{\int}\right\rvert}}%
+      {\left[#3\vphantom{\int}\right\rvert}}%
+    {\IfBooleanTF{#1}{\vphantom{#2}\left.\smash{#2}\vphantom{\int}\right\rvert}{\left.#2\vphantom{\int}\right\rvert}}}
+\let\eval\evaluated
+
+\DeclareDocumentCommand{\commutator}{ t\big t\Big t\bigg t\Bigg m m }{\gm@fence{#1}{#2}{#3}{#4}[]{#5,#6}}
+\let\comm\commutator
+\DeclareDocumentCommand{\anticommutator}{ t\big t\Big t\bigg t\Bigg m m }{\gm@fence{#1}{#2}{#3}{#4}\lbrace\rbrace{#5,#6}}
+\let\acomm\anticommutator
+\let\acommutator\anticommutator
+\let\poissonbracket\anticommutator
+\let\pb\anticommutator
+
+% --- vectors ---------------------------------------------------------------
+
+\DeclareDocumentCommand{\vectorbold}{ s m }{\IfBooleanTF{#1}{\boldsymbol{#2}}{\mathbf{#2}}}
+\let\vb\vectorbold
+\DeclareDocumentCommand{\vectorarrow}{ s m }{\IfBooleanTF{#1}{\vec{\boldsymbol{#2}}}{\vec{\mathbf{#2}}}}
+\let\va\vectorarrow
+\DeclareDocumentCommand{\vectorunit}{ s m }{\IfBooleanTF{#1}{\boldsymbol{\hat{#2}}}{\mathbf{\hat{#2}}}}
+\let\vu\vectorunit
+\DeclareDocumentCommand{\dotproduct}{}{\boldsymbol\cdot}
+\let\vdot\dotproduct
+\DeclareDocumentCommand{\crossproduct}{}{\boldsymbol\times}
+\let\cross\crossproduct
+\let\cp\crossproduct
+
+% \grad, \div, \curl and \laplacian: alone, or on {an argument}, or on [a
+% sized one], or on (a long-form one in brackets).
+\DeclareDocumentCommand{\gradient}{ g o d() }{%
+  \IfNoValueTF{#1}{%
+    \IfNoValueTF{#2}{%
+      \IfNoValueTF{#3}{\vnabla}{\gm@fn(){\vnabla}{#3}}}%
+      {\gm@fn[]{\vnabla}{#2}\IfNoValueF{#3}{(#3)}}}%
+    {\vnabla #1\IfNoValueF{#2}{[#2]}\IfNoValueF{#3}{(#3)}}}
+\let\grad\gradient
+
+\DeclareDocumentCommand{\divergence}{ g o d() }{%
+  \IfNoValueTF{#1}{%
+    \IfNoValueTF{#2}{%
+      \IfNoValueTF{#3}{\vnabla\vdot}{\vnabla\vdot\qty(#3)}}%
+      {\vnabla\vdot\qty[#2]\IfNoValueF{#3}{(#3)}}}%
+    {\vnabla\vdot #1\IfNoValueF{#2}{[#2]}\IfNoValueF{#3}{(#3)}}}
+\let\divisionsymbol\div
+\let\div\divergence
+
+\DeclareDocumentCommand{\curl}{ g o d() }{%
+  \IfNoValueTF{#1}{%
+    \IfNoValueTF{#2}{%
+      \IfNoValueTF{#3}{\vnabla\cross}{\vnabla\cross\qty(#3)}}%
+      {\vnabla\cross\qty[#2]\IfNoValueF{#3}{(#3)}}}%
+    {\vnabla\cross #1\IfNoValueF{#2}{[#2]}\IfNoValueF{#3}{(#3)}}}
+
+\DeclareDocumentCommand{\laplacian}{ g o d() }{%
+  \IfNoValueTF{#1}{%
+    \IfNoValueTF{#2}{%
+      \IfNoValueTF{#3}{\nabla^2}{\gm@fn(){\nabla^2}{#3}}}%
+      {\gm@fn[]{\nabla^2}{#2}\IfNoValueF{#3}{(#3)}}}%
+    {\nabla^2 #1\IfNoValueF{#2}{[#2]}\IfNoValueF{#3}{(#3)}}}
+
+% --- operators -------------------------------------------------------------
+
+\DeclareMathOperator{\trace}{tr}
+\DeclareMathOperator{\Trace}{Tr}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\erf}{erf}
+\DeclareMathOperator{\Residue}{Res}
+\DeclareDocumentCommand{\gm@op}{ m g o d() }{%
+  \IfNoValueTF{#2}{%
+    \IfNoValueTF{#3}{%
+      \IfNoValueTF{#4}{#1}{\gm@fn(){#1}{#4}}}%
+      {\gm@fn[]{#1}{#3}\IfNoValueF{#4}{(#4)}}}%
+    {\gm@fn\lbrace\rbrace{#1}{#2}\IfNoValueF{#3}{[#3]}\IfNoValueF{#4}{(#4)}}}
+\DeclareDocumentCommand{\tr}{}{\gm@op{\trace}}
+\DeclareDocumentCommand{\Tr}{}{\gm@op{\Trace}}
+\DeclareDocumentCommand{\Res}{}{\gm@op{\Residue}}
+\DeclareDocumentCommand{\principalvalue}{g}{\IfNoValueTF{#1}{\mathcal{P}}{\mathcal{P}\mathord{#1}}}
+\let\pv\principalvalue
+\DeclareDocumentCommand{\PV}{g}{\IfNoValueTF{#1}{\mathrm{P.V.}}{\mathrm{P.V.}\mathord{#1}}}
+
+% --- quick text ------------------------------------------------------------
+
+\DeclareDocumentCommand{\qqtext}{ s m }{\IfBooleanTF{#1}{}{\quad}\text{#2}\quad}
+\let\qq\qqtext
+\DeclareDocumentCommand{\qcomma}{}{,\quad}
+\let\qc\qcomma
+\newcommand{\gm@qword}[2]{\DeclareDocumentCommand{#1}{s}{\IfBooleanTF{##1}{}{\quad}\text{#2}\quad}}
+\gm@qword{\qif}{if}
+\gm@qword{\qthen}{then}
+\gm@qword{\qelse}{else}
+\gm@qword{\qotherwise}{otherwise}
+\gm@qword{\qunless}{unless}
+\gm@qword{\qgiven}{given}
+\gm@qword{\qusing}{using}
+\gm@qword{\qassume}{assume}
+\gm@qword{\qsince}{since}
+\gm@qword{\qlet}{let}
+\gm@qword{\qfor}{for}
+\gm@qword{\qall}{all}
+\gm@qword{\qeven}{even}
+\gm@qword{\qodd}{odd}
+\gm@qword{\qinteger}{integer}
+\gm@qword{\qand}{and}
+\gm@qword{\qor}{or}
+\gm@qword{\qas}{as}
+\gm@qword{\qin}{in}
+\gm@qword{\qcc}{c.c.}
+
+% --- derivatives -----------------------------------------------------------
+
+\newcommand{\gm@frac}[3]{\IfBooleanTF{#1}{{#2}/{#3}}{\frac{#2}{#3}}}
+
+\DeclareDocumentCommand{\differential}{ o g d() }{%
+  \IfNoValueTF{#2}{%
+    \IfNoValueTF{#3}{\diffd\IfNoValueF{#1}{^{#1}}}%
+      {\mathinner{\diffd\IfNoValueF{#1}{^{#1}}\mathclose{\left(#3\right)}}}}%
+    {\mathinner{\diffd\IfNoValueF{#1}{^{#1}}#2}\IfNoValueF{#3}{(#3)}}}
+\let\dd\differential
+
+\DeclareDocumentCommand{\derivative}{ s o m g d() }{%
+  \IfNoValueTF{#4}{%
+    \gm@frac{#1}{\diffd\IfNoValueF{#2}{^{#2}}}{\diffd #3\IfNoValueF{#2}{^{#2}}}%
+    \IfNoValueF{#5}{\mathclose{\left(#5\right)}}}%
+    {\gm@frac{#1}{\diffd\IfNoValueF{#2}{^{#2}} #3}{\diffd #4\IfNoValueF{#2}{^{#2}}}}}
+\let\dv\derivative
+
+\DeclareDocumentCommand{\partialderivative}{ s o m g g d() }{%
+  \IfNoValueTF{#4}{%
+    \gm@frac{#1}{\partial\IfNoValueF{#2}{^{#2}}}{\partial #3\IfNoValueF{#2}{^{#2}}}%
+    \IfNoValueF{#6}{\mathclose{\left(#6\right)}}}%
+    {\IfNoValueTF{#5}{%
+      \gm@frac{#1}{\partial\IfNoValueF{#2}{^{#2}} #3}{\partial #4\IfNoValueF{#2}{^{#2}}}}%
+      {\gm@frac{#1}{\partial^2 #3}{\partial #4\partial #5}}}}
+\let\pderivative\partialderivative
+\let\pdv\partialderivative
+
+\DeclareDocumentCommand{\variation}{ o g d() }{%
+  \IfNoValueTF{#2}{%
+    \IfNoValueTF{#3}{\delta\IfNoValueF{#1}{^{#1}}}%
+      {\mathinner{\delta\IfNoValueF{#1}{^{#1}}\mathclose{\left(#3\right)}}}}%
+    {\mathinner{\delta\IfNoValueF{#1}{^{#1}}#2}\IfNoValueF{#3}{(#3)}}}
+\let\var\variation
+
+\DeclareDocumentCommand{\functionalderivative}{ s o m g d() }{%
+  \IfNoValueTF{#4}{%
+    \gm@frac{#1}{\delta\IfNoValueF{#2}{^{#2}}}{\delta #3\IfNoValueF{#2}{^{#2}}}%
+    \IfNoValueF{#5}{\mathclose{\left(#5\right)}}}%
+    {\gm@frac{#1}{\delta\IfNoValueF{#2}{^{#2}} #3}{\delta #4\IfNoValueF{#2}{^{#2}}}}}
+\let\fderivative\functionalderivative
+\let\fdv\functionalderivative
+
+% --- bra-ket notation ------------------------------------------------------
+% A star sets the delimiters at their own size: the contents are smashed, so
+% they do not make the brackets grow.
+
+\DeclareDocumentCommand{\ket}{ s m }{%
+  \IfBooleanTF{#1}{\vphantom{#2}\left\lvert\smash{#2}\right\rangle}{\left\lvert#2\right\rangle}}
+
+% A bra followed at once by a ket is one inner product: \bra{a}\ket{b}.
+\DeclareDocumentCommand{\bra}{ s m t\ket s g }{%
+  \IfBooleanTF{#3}{%
+    \IfBooleanTF{#1}{\braket*{#2}{\IfNoValueF{#5}{#5}}}{%
+    \IfBooleanTF{#4}{\braket*{#2}{\IfNoValueF{#5}{#5}}}{\braket{#2}{\IfNoValueF{#5}{#5}}}}}%
+    {\IfBooleanTF{#1}{\vphantom{#2}\left\langle\smash{#2}\right\rvert}{\left\langle#2\right\rvert}}}
+
+\DeclareDocumentCommand{\innerproduct}{ s m g }{%
+  \IfBooleanTF{#1}{%
+    \IfNoValueTF{#3}{\vphantom{#2}\left\langle\smash{#2}\middle\vert\smash{#2}\right\rangle}%
+      {\vphantom{#2#3}\left\langle\smash{#2}\middle\vert\smash{#3}\right\rangle}}%
+    {\IfNoValueTF{#3}{\left\langle#2\middle\vert#2\right\rangle}{\left\langle#2\middle\vert#3\right\rangle}}}
+\let\braket\innerproduct
+\let\ip\innerproduct
+
+\DeclareDocumentCommand{\outerproduct}{ s m g }{%
+  \IfBooleanTF{#1}{%
+    \IfNoValueTF{#3}{\vphantom{#2}\left\lvert\smash{#2}\middle\rangle\!\middle\langle\smash{#2}\right\rvert}%
+      {\vphantom{#2#3}\left\lvert\smash{#2}\middle\rangle\!\middle\langle\smash{#3}\right\rvert}}%
+    {\IfNoValueTF{#3}{\left\lvert#2\middle\rangle\!\middle\langle#2\right\rvert}%
+      {\left\lvert#2\middle\rangle\!\middle\langle#3\right\rvert}}}
+\let\dyad\outerproduct
+\let\op\outerproduct
+\let\ketbra\outerproduct
+
+% \expval{A} is <A>; \expval{A}{\psi} is <psi|A|psi>, sized by the state.
+% One star sets it at its own size, two let the operator size it too.
+\DeclareDocumentCommand{\expectationvalue}{ s s m g }{%
+  \IfNoValueTF{#4}{%
+    \IfBooleanTF{#1}{\vphantom{#3}\left\langle\smash{#3}\right\rangle}{\left\langle#3\right\rangle}}%
+    {\IfBooleanTF{#1}{%
+      \IfBooleanTF{#2}{\left\langle#4\middle\vert#3\middle\vert#4\right\rangle}%
+        {\vphantom{#3#4}\left\langle\smash{#4}\middle\vert\smash{#3}\middle\vert\smash{#4}\right\rangle}}%
+      {\vphantom{#3}\left\langle#4\middle\vert\smash{#3}\middle\vert#4\right\rangle}}}
+\let\expval\expectationvalue
+\let\ev\expectationvalue
+\DeclareDocumentCommand{\vev}{ m }{\expectationvalue{#1}{0}}
+
+\DeclareDocumentCommand{\matrixelement}{ s s m m m }{%
+  \IfBooleanTF{#1}{%
+    \IfBooleanTF{#2}{\left\langle#3\middle\vert#4\middle\vert#5\right\rangle}%
+      {\vphantom{#3#4#5}\left\langle\smash{#3}\middle\vert\smash{#4}\middle\vert\smash{#5}\right\rangle}}%
+    {\vphantom{#4}\left\langle#3\middle\vert\smash{#4}\middle\vert#5\right\rangle}}
+\let\matrixel\matrixelement
+\let\mel\matrixelement
+
+% --- matrices --------------------------------------------------------------
+
+\DeclareDocumentCommand{\pmqty}{m}{\begin{pmatrix}#1\end{pmatrix}}
+\DeclareDocumentCommand{\bmqty}{m}{\begin{bmatrix}#1\end{bmatrix}}
+\DeclareDocumentCommand{\vmqty}{m}{\begin{vmatrix}#1\end{vmatrix}}
+\DeclareDocumentCommand{\matrixquantity}{ g o d() d|| }{%
+  \mathord{\IfNoValueTF{#1}{%
+    \IfNoValueTF{#2}{%
+      \IfNoValueTF{#3}{%
+        \IfNoValueTF{#4}{()}{\vmqty{#4}}}%
+        {\pmqty{#3}\IfNoValueF{#4}{|#4|}}}%
+      {\bmqty{#2}\IfNoValueF{#3}{(#3)}\IfNoValueF{#4}{|#4|}}}%
+    {\begin{matrix}#1\end{matrix}\IfNoValueF{#2}{[#2]}\IfNoValueF{#3}{(#3)}\IfNoValueF{#4}{|#4|}}}}
+\let\mqty\matrixquantity
+\DeclareDocumentCommand{\matrixdeterminant}{m}{\vmqty{#1}}
+\let\mdet\matrixdeterminant
+\DeclareDocumentCommand{\spmqty}{m}{\left(\begin{smallmatrix}#1\end{smallmatrix}\right)}
+\DeclareDocumentCommand{\sbmqty}{m}{\left[\begin{smallmatrix}#1\end{smallmatrix}\right]}
+\DeclareDocumentCommand{\svmqty}{m}{\left\vert\begin{smallmatrix}#1\end{smallmatrix}\right\vert}
+\DeclareDocumentCommand{\smallmatrixquantity}{ g o d() d|| }{%
+  \mathord{\IfNoValueTF{#1}{%
+    \IfNoValueTF{#2}{%
+      \IfNoValueTF{#3}{%
+        \IfNoValueTF{#4}{()}{\svmqty{#4}}}%
+        {\spmqty{#3}\IfNoValueF{#4}{|#4|}}}%
+      {\sbmqty{#2}\IfNoValueF{#3}{(#3)}\IfNoValueF{#4}{|#4|}}}%
+    {\begin{smallmatrix}#1\end{smallmatrix}\IfNoValueF{#2}{[#2]}\IfNoValueF{#3}{(#3)}\IfNoValueF{#4}{|#4|}}}}
+\let\smqty\smallmatrixquantity
+\DeclareDocumentCommand{\smallmatrixdeterminant}{m}{\svmqty{#1}}
+\let\smdet\smallmatrixdeterminant

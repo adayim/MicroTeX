@@ -40,6 +40,10 @@ struct LexOptions {
   /** Start as if in the middle of a line. A macro's expansion is not the
    *  start of a line, so its leading spaces are text, not indentation. */
   bool startMidLine = false;
+  /** `@` is a letter in a control word's name, whatever the catcode table
+   *  says: for text written while \makeatletter was in effect and read again
+   *  where it is used (MacroDef::atLetter). */
+  bool atLetter = false;
 };
 
 /**

@@ -5,7 +5,7 @@ front_src = [
     'front/lexer.cpp',
     'front/lower.cpp',
     'front/parser.cpp',
-    'front/prelude.cpp',
+    'front/packages.cpp',
     'front/tblr.cpp',
     'front/siunitx.cpp',
     'front/mhchem.cpp',
@@ -23,7 +23,7 @@ if install_headerfiles
         'lexer.h',
         'lower.h',
         'parser.h',
-        'prelude.h',
+        'packages.h',
         'spec.h',
         'token.h'
     ], subdir: 'microtex/front')

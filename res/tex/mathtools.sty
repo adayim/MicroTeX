@@ -1,0 +1,13 @@
+\ProvidesPackage{mathtools}[2026/10/11 mathtools: colon forms, brackets over and under, \shortintertext]
+\newenvironment{rcases}{\left.\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
+\newenvironment{dcases}{\left\{\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
+\newcommand{\shortintertext}[1]{\intertext{#1}}
+\newcommand{\overbrack}[1]{\overbracket{#1}}
+\newcommand{\underbrack}[1]{\underbracket{#1}}
+\newcommand{\ordinarycolon}{:}
+\newcommand{\dblcolon}{\mathrel{::}}
+\newcommand{\vcentcolon}{\mathrel{:}}
+\newcommand{\Eqcolon}{\mathrel{=::}}
+\newcommand{\Eqqcolon}{\mathrel{=::}}
+\newcommand{\Colonapprox}{\mathrel{::\approx}}
+\newcommand{\Colonsim}{\mathrel{::\sim}}

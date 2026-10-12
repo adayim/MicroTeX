@@ -1,0 +1,7 @@
+\iffalse\iftrue\else\fi\else x\fi \iftrue a\else b\else c\fi \unless\unless\iftrue y\fi
+\newif\iffoo \footrue \iffoo \iffalse \iffoo \fi \else \foofalse \fi \fi \newif\iffoo
+\ifnum 99999999999999999999=1 \fi \ifnum--+-1<\ifnum 1=1 2\fi\fi \ifx\ifx\ifx a\fi\fi
+\def\a{\csname a\endcsname}\a \def\b{\iffalse\b}\b \def\c{\ifx\c\c\c\fi}\c
+\expandafter\expandafter\expandafter\csname\csname a\endcsname\endcsname \csname\csname\endcsname
+\expandafter\ifx\csname x\endcsname\relax\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi{Y}{N}
+\ifcsname\iffalse\fi\endcsname \ifdefined\ifdefined\ifdefined \unless\fi \unless

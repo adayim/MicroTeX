@@ -73,6 +73,7 @@ strict)
     > "$cfg/microtexconfig.h"
   # shellcheck disable=SC2086
   "$cxx" -std=c++17 -Wextra -Wpedantic -fsyntax-only -Ilib -I"$cfg" -DGLYPH_RENDER_TYPE=0 \
+    "-DMICROTEX_TEX_DIR=\"$ROOT/res/tex\"" \
     $flags "${ours[@]}" > "$log" 2>&1 || true
   rm -rf "$cfg"
   # Warnings in our own files (and our headers) only.

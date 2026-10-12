@@ -1,0 +1,177 @@
+% The format: LaTeX's own definitions and the commands the engine writes in
+% LaTeX, which every input starts with; then the packages every input starts
+% with. A name defined here is LaTeX's, and an input may not \newcommand it.
+%
+% Environments built in C++ (matrix, array, align, ...) are not here: the
+% parser reads them. `\|` is LaTeX's \Vert; the engine's symbol table has it
+% as a single bar.
+%
+% Then the document commands a grob has no use for: the preamble, title and
+% cross-reference metadata, and alignment declarations, dropped with their
+% arguments; skips and \hfill as fixed space (a grob has no glue to fill);
+% \emph, \em, \newline and booktabs' rules as their nearest equivalents.
+% (\caption is the parser's, which knows whether it is in a document.)
+% document, table, figure and center have no code of their own, so a label
+% lays their content out as if they were not there; a document sets a float,
+% or center's lines, apart.
+\newenvironment{math}{\(}{\)}
+\newenvironment{displaymath}{\[}{\]}
+\newenvironment{equation}{\begin{align}}{\end{align}}
+\newenvironment{equation*}{\begin{align*}}{\end{align*}}
+\newcommand{\d}[1]{\underaccent{\dot}{#1}}
+\newcommand{\b}[1]{\underaccent{\bar}{#1}}
+\newcommand{\|}{\Vert}
+\newcommand{\textsuperscript}[1]{\ensuremath{{}^{\text{#1}}}}
+\newcommand{\textsubscript}[1]{\ensuremath{{}_{\text{#1}}}}
+\newcommand{\documentclass}[2][]{}
+\newcommand{\bibliographystyle}[1]{}
+\newenvironment{document}{}{}
+\newenvironment{table}[1][]{}{}
+\newenvironment{table*}[1][]{}{}
+\newenvironment{figure}[1][]{}{}
+\newenvironment{figure*}[1][]{}{}
+\newenvironment{center}{}{}
+\newenvironment{flushleft}{}{}
+\newenvironment{flushright}{}{}
+\newcommand{\maketitle}{}
+\newcommand{\title}[1]{}
+\newcommand{\author}[1]{}
+\newcommand{\flushleft}{}
+\newcommand{\arraybackslash}{}
+\newcommand{\extracolsep}[1]{}
+\newcommand{\flushright}{}
+\newcommand{\smallskip}{\vspace{0.25em}}
+\newcommand{\medskip}{\vspace{0.5em}}
+\newcommand{\bigskip}{\vspace{1em}}
+\newcommand{\hfill}{\quad}
+\newcommand{\vfill}{\vspace{1em}}
+\newcommand{\emph}[1]{\textit{#1}}
+\newcommand{\textscale}[2]{{\relscale{#1}#2}}
+\newcommand{\em}{\it}
+\newenvironment{abstract}{\small\begin{center}\textbf{Abstract}\end{center}}{\par}
+\newenvironment{thebibliography}[1]{\section*{References}\begin{enumerate}[{[}\arabic*{]}]}{\end{enumerate}}
+\newcommand{\bibitem}[2][]{\item}
+\newcommand{\newblock}{}
+\newcommand{\newline}{\\}
+\newcommand{\bfseries}{\bf}
+\newcommand{\itshape}{\it}
+\newcommand{\ttfamily}{\tt}
+\newcommand{\sffamily}{\sf}
+\newcommand{\rmfamily}{\rm}
+\newcommand{\normalfont}{\rm}
+\newcommand{\upshape}{\rm}
+\newcommand{\mdseries}{\rm}
+\newcommand{\selectfont}{}
+\newcommand{\textsection}{\S}
+\newcommand{\textparagraph}{\P}
+\newcommand{\textcopyright}{\copyright}
+\newcommand{\texttrademark}{\ensuremath{{}^{\mathrm{TM}}}}
+\newcommand{\textquotedbl}{"}
+\newcommand{\@firstoftwo}[2]{#1}
+\newcommand{\@secondoftwo}[2]{#2}
+\newcommand{\ldots}{\ensuremath{\mathinner{\mathpunct{.}\mathpunct{.}\mathpunct{.}}}}
+\newcommand{\cdots}{\ensuremath{\mathinner{\mathpunct{\cdot}\mathpunct{\cdot}\mathpunct{\cdot}}}}
+\newcommand{\arraystretch}{1}
+\newcommand{\strut}{\rule[-0.36em]{0pt}{1.2em}}
+\newcommand{\enspace}{\hspace{0.5em}}
+\newcommand{\nobreakspace}{~}
+\newcommand{\space}{\ }
+\newcommand{\allowbreak}{}
+\newcommand{\nobreak}{}
+\newcommand{\long}{}
+\newcommand{\hbox}[1]{\mbox{#1}}
+\newcommand{\bigm}[1]{\mathrel{\big#1}}
+\newcommand{\Bigm}[1]{\mathrel{\Big#1}}
+\newcommand{\biggm}[1]{\mathrel{\bigg#1}}
+\newcommand{\Biggm}[1]{\mathrel{\Bigg#1}}
+\newcommand{\intop}{\mathop{\int}\nolimits}
+\newcommand{\smallint}{\mathop{\textstyle\int}\nolimits}
+\newcommand{\bigcirc}{\mathord{\lgwhtcircle}}
+\newcommand{\ldotp}{\mathpunct{.}}
+\newcommand{\mathellipsis}{\ldots}
+\newcommand{\models}{\mathrel{\mathrel{\vert}\joinrel=}}
+\newcommand{\textmd}[1]{\textnormal{#1}}
+\newcommand{\textup}[1]{\textnormal{#1}}
+\newcommand{\textasciitilde}{\char126{}}
+\newcommand{\textasciicircum}{\char94{}}
+\newcommand{\textbackslash}{\char92{}}
+\newcommand{\textbar}{\char124{}}
+\newcommand{\textbraceleft}{\char123{}}
+\newcommand{\textbraceright}{\char125{}}
+\newcommand{\textdollar}{\char36{}}
+\newcommand{\textless}{\char60{}}
+\newcommand{\textgreater}{\char62{}}
+\newcommand{\textunderscore}{\char95{}}
+\newcommand{\textbardbl}{‖}
+\newcommand{\textdagger}{†}
+\newcommand{\textdaggerdbl}{‡}
+\newcommand{\textdegree}{°}
+\newcommand{\textellipsis}{…}
+\newcommand{\textemdash}{—}
+\newcommand{\textendash}{–}
+\newcommand{\textquotedblleft}{“}
+\newcommand{\textquotedblright}{”}
+\newcommand{\textquoteleft}{‘}
+\newcommand{\textquoteright}{’}
+\newcommand{\textregistered}{®}
+\newcommand{\textsterling}{£}
+\newcommand{\lq}{‘}
+\newcommand{\rq}{’}
+\newcommand{\AE}{Æ}
+\newcommand{\ae}{æ}
+\newcommand{\OE}{Œ}
+\newcommand{\oe}{œ}
+\newcommand{\O}{Ø}
+\newcommand{\o}{ø}
+\newcommand{\ss}{ß}
+\newcommand{\i}{ı}
+\newcommand{\j}{ȷ}
+\newcommand{\S}{§}
+\newcommand{\P}{¶}
+
+% What package code is written with: LaTeX's kernel helpers, over the
+% expander's own \csname, \ifx, \expandafter and \relax.
+\newcommand{\@gobble}[1]{}
+\newcommand{\@gobbletwo}[2]{}
+\newcommand{\@firstofone}[1]{#1}
+\newcommand{\@empty}{}
+\newcommand{\protect}{}
+\newcommand{\@namedef}[1]{\expandafter\def\csname #1\endcsname}
+\newcommand{\@nameuse}[1]{\csname #1\endcsname}
+\newcommand{\@ifundefined}[1]{\expandafter\ifx\csname #1\endcsname\relax\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi}
+
+% xparse's: what \NewDocumentCommand gives for an argument that is not there
+% (\NoValue) or a star or token that is or is not (\BooleanTrue, \BooleanFalse),
+% and the tests for them.
+\newcommand{\NoValue}{-NoValue-}
+\let\BooleanTrue\iftrue
+\let\BooleanFalse\iffalse
+\newcommand{\IfNoValueTF}[1]{\ifx\NoValue#1\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi}
+\newcommand{\IfNoValueT}[1]{\ifx\NoValue#1\expandafter\@firstofone\else\expandafter\@gobble\fi}
+\newcommand{\IfNoValueF}[1]{\ifx\NoValue#1\expandafter\@gobble\else\expandafter\@firstofone\fi}
+\newcommand{\IfValueTF}[1]{\ifx\NoValue#1\expandafter\@secondoftwo\else\expandafter\@firstoftwo\fi}
+\newcommand{\IfValueT}[1]{\ifx\NoValue#1\expandafter\@gobble\else\expandafter\@firstofone\fi}
+\newcommand{\IfValueF}[1]{\ifx\NoValue#1\expandafter\@firstofone\else\expandafter\@gobble\fi}
+\newcommand{\IfBooleanTF}[1]{\ifx\BooleanTrue#1\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi}
+\newcommand{\IfBooleanT}[1]{\ifx\BooleanTrue#1\expandafter\@firstofone\else\expandafter\@gobble\fi}
+\newcommand{\IfBooleanF}[1]{\ifx\BooleanTrue#1\expandafter\@gobble\else\expandafter\@firstofone\fi}
+
+% The packages every input starts with. A name one of them defines is free for
+% an input to define, unless the input asks for the package.
+\RequirePackage{amsmath}
+\RequirePackage{amsxtra}
+\RequirePackage{amssymb}
+\RequirePackage{amsthm}
+\RequirePackage{mathtools}
+\RequirePackage{braket}
+\RequirePackage{booktabs}
+\RequirePackage{makecell}
+\RequirePackage{hhline}
+\RequirePackage{threeparttable}
+\RequirePackage{xfrac}
+\RequirePackage{gensymb}
+\RequirePackage{cmll}
+\RequirePackage{stmaryrd}
+\RequirePackage{graphicx}
+\RequirePackage{tinytable}
+\RequirePackage{katex}

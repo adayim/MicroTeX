@@ -115,7 +115,7 @@ set(
     front/spec.cpp
     front/ast.cpp
     front/parser.cpp
-    front/prelude.cpp
+    front/packages.cpp
     front/tblr.cpp
     front/siunitx.cpp
     front/mhchem.cpp

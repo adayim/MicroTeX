@@ -64,7 +64,37 @@ public:
     bool _was;
   };
 
-  void add(Severity severity, const SourceSpan& span, std::string message) {
+  /** While one lives, what is reported is reported at `anchor`, with the
+   *  package's name and the line and column it really was at in front of the
+   *  message: a package's file has positions of its own, which mean nothing
+   *  in the input that loaded it. Inside a package, the anchor stays the
+   *  outermost one. */
+  class Package {
+  public:
+    Package(Diagnostics& d, std::string name, const SourceSpan& anchor)
+        : _d(d), _was(d._package), _wasAnchor(d._anchor) {
+      d._package = std::move(name);
+      if (_was.empty()) d._anchor = anchor;
+    }
+    ~Package() {
+      _d._package = _was;
+      _d._anchor = _wasAnchor;
+    }
+    Package(const Package&) = delete;
+    Package& operator=(const Package&) = delete;
+
+  private:
+    Diagnostics& _d;
+    std::string _was;
+    SourceSpan _wasAnchor;
+  };
+
+  void add(Severity severity, SourceSpan span, std::string message) {
+    if (!_package.empty()) {
+      message = "package " + _package + " line " + std::to_string(span.line) + ":" +
+                std::to_string(span.col) + ": " + message;
+      span = _anchor;
+    }
     if (severity == Severity::error && !_hasError) {
       _hasError = true;
       _firstError = {severity, span, message};
@@ -98,6 +128,8 @@ public:
 private:
   std::vector<Diagnostic> _items;
   bool _quiet = false;
+  std::string _package;
+  SourceSpan _anchor;
   bool _hasError = false;
   Diagnostic _firstError{Severity::error, {}, {}};
   std::size_t _dropped = 0;

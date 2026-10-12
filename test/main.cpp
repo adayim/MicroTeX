@@ -6,6 +6,7 @@
 #include <string>
 
 #include "check.h"
+#include "tex_files.h"
 #include "utils/types.h"
 
 // The recorder leaves two measurements to the embedder (the end of
@@ -25,6 +26,7 @@ void check::fail(const char* file, int line, const std::string& what) {
 }
 
 int main(int argc, char** argv) {
+  check::registerTexFiles();
   int run = 0;
   for (const auto& c : check::cases()) {
     bool wanted = argc < 2;

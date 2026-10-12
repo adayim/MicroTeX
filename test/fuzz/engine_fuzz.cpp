@@ -24,6 +24,7 @@
 #include "macro/macro.h"
 #include "unimath/font_src.h"
 #include "graphic/graphic_recorder.h"
+#include "../tex_files.h"
 
 using namespace microtex;
 
@@ -93,6 +94,7 @@ void ensure_init() {
   // The font is read from the file itself (otf/otf_math_reader.cpp).
   FontSrcOtf src(otf);
   MicroTeX::init(src);
+  check::registerTexFiles();
   MicroTeX::setRenderGlyphUsePath(true);
   register_mark_macro();
   register_font_family_macro();

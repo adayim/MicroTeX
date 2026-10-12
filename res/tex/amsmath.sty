@@ -1,0 +1,25 @@
+\ProvidesPackage{amsmath}[2026/10/11 AMS math: matrices, cases, \operatorname, \dfrac and kin]
+\newenvironment{pmatrix}{\left(\begin{matrix}}{\end{matrix}\right)}
+\newenvironment{bmatrix}{\left[\begin{matrix}}{\end{matrix}\right]}
+\newenvironment{Bmatrix}{\left\{\begin{matrix}}{\end{matrix}\right\}}
+\newenvironment{vmatrix}{\left|\begin{matrix}}{\end{matrix}\right|}
+\newenvironment{Vmatrix}{\left\|\begin{matrix}}{\end{matrix}\right\|}
+\newenvironment{cases}{\left\{\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
+\newenvironment{subarray}[1]{\scriptstyle\begin{array}{@{}#1@{}}}{\end{array}}
+\newenvironment{split}{\begin{array}{r@{\;}l}}{\end{array}}
+\newcommand{\operatorname}[1]{\mathop{\mathrm{#1}}\nolimits }
+\newcommand{\substack}[1]{{\scriptstyle\begin{array}{@{}c@{}}#1\end{array}}}
+\newcommand{\mspace}[1]{\hspace{#1}}
+\newcommand{\leftroot}[1]{}
+\newcommand{\uproot}[1]{}
+\newcommand{\dfrac}[2]{\genfrac{}{}{1}{}{#1}{#2}}
+\newcommand{\tfrac}[2]{\genfrac{}{}{1}{1}{#1}{#2}}
+\newcommand{\dbinom}[2]{\genfrac{(}{)}{0pt}{}{#1}{#2}}
+\newcommand{\tbinom}[2]{\genfrac{(}{)}{0pt}{1}{#1}{#2}}
+\newcommand{\pmod}[1]{\pod{\mathrm{mod}\mkern6mu #1}}
+\newcommand{\mod}[1]{\mathchoice{\mkern18mu}{\mkern12mu}{\mkern12mu}{\mkern12mu}\mathrm{mod}\,\,#1}
+\newcommand{\pod}[1]{\mathchoice{\mkern18mu}{\mkern8mu}{\mkern8mu}{\mkern8mu}(#1)}
+\newcommand{\boxed}[1]{\fbox{\displaystyle #1}}
+\newcommand{\>}{\:}
+\newcommand{\operatornamewithlimits}[1]{\operatorname*{#1}}
+\newcommand{\dotsm}{\cdots}
