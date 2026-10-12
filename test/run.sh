@@ -61,10 +61,11 @@ strict)
   ours=(
     lib/graphic/graphic_recorder.cpp lib/otf/otf_math_reader.cpp lib/utils/bidi.cpp
     lib/atom/font_family_atom.cpp lib/atom/mark_atom.cpp lib/atom/image_atom.cpp
-    lib/front/*.cpp test/*.cpp test/fuzz/*.cpp
+    lib/front/*.cpp lib/wrapper/*.cpp example/svg/svg_main.cpp test/*.cpp test/fuzz/*.cpp
   )
   cxx="${CXX:-c++}"
-  flags="$(pkg-config --cflags freetype2)"
+  # The C API (lib/wrapper, test_c_api.cpp) is compiled in too.
+  flags="$(pkg-config --cflags freetype2) -DHAVE_CWRAPPER"
   # The FriBidi branch of bidi.cpp, not only the #else without it.
   if pkg-config --exists fribidi; then flags="$flags $(pkg-config --cflags fribidi) -DHAVE_FRIBIDI"; fi
   log="$(mktemp)"
@@ -81,7 +82,7 @@ strict)
     $flags "${ours[@]}" > "$log" 2>&1 || true
   rm -rf "$cfg"
   # Warnings in our own files (and our headers) only.
-  if grep -E "^(lib/(graphic/graphic_recorder|otf/otf_math_reader|utils/bidi|atom/(font_family|mark|image)_atom)\.(cpp|h)|lib/front/[^:]*|lib/macro/macro_args\.h|test/[^:]*):[0-9]+:[0-9]+: (warning|error)" "$log"; then
+  if grep -E "^(lib/(graphic/graphic_recorder|otf/otf_math_reader|utils/bidi|atom/(font_family|mark|image)_atom)\.(cpp|h)|lib/front/[^:]*|lib/wrapper/[^:]*|example/svg/[^:]*|lib/macro/macro_args\.h|test/[^:]*):[0-9]+:[0-9]+: (warning|error)" "$log"; then
     echo "strict: warnings in our own code (above)" >&2
     exit 1
   fi

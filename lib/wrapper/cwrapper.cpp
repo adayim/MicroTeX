@@ -14,8 +14,9 @@ extern "C" {
 #endif
 
 MICROTEX_CAPI const char* microtex_version() {
-  // No need to copy, [MicroTeX::version] returns a static string
-  return MicroTeX::version().c_str();
+  // [MicroTeX::version] returns a string by value: keep one for the pointer to point into
+  static const std::string version = MicroTeX::version();
+  return version.c_str();
 }
 
 MICROTEX_CAPI void microtex_registerCallbacks(

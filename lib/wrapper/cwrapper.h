@@ -70,7 +70,7 @@ MICROTEX_CAPI FontMetaPtr microtex_init(const char* otfFile);
  * Hand the engine the LaTeX format: the text of `res/tex/prelude.tex`. The engine's commands
  * that are not written in C++ (`pmatrix`, `\dfrac`, `cases`...) are LaTeX files, and the engine
  * reads no file: the host reads them and passes their text. Call it, and
- * [microtex_registerPackage] for each `res/tex/*.sty`, before parsing.
+ * [microtex_registerPackage] for each `.sty` file of `res/tex`, before parsing.
  */
 MICROTEX_CAPI void microtex_setPrelude(const char* source);
 

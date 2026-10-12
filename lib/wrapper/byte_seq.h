@@ -20,7 +20,7 @@ private:
   static inline len_t sizeOf(const char* str) { return strlen(str) + 1; }
 
   template <typename T, typename... Ts>
-  static len_t sizeOf(const T& t, const Ts&... ts) {
+  static len_t sizeOf(const T&, const Ts&... ts) {
     return sizeof(T) + sizeOf(ts...);
   }
 
