@@ -1,8 +1,30 @@
+// Parses every sample and draws it on a Graphics2D that does nothing: the
+// engine's layout under valgrind or a sanitizer, without a graphics library.
+//
+//   microtex-memcheck <res dir> <samples file>
+//
+// The samples file holds several formulas split by a line of a single '%'
+// (res/SAMPLES.tex is one).
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+#include "front/packages.h"
 #include "graphic/graphic.h"
 #include "microtex.h"
+#include "unimath/font_src.h"
 #include "utils/utils.h"
 
 namespace microtex {
+
+// The engine asks the host for two measurements, and only a flipped draw
+// needs them (graphic/graphic_recorder.h): an estimate will do.
+float measure_cached_text_width(const std::string& text, int, float fontSize) {
+  return static_cast<float>(text.size()) * fontSize * 0.55f;
+}
+
+float measure_glyph_advance(const std::string&, u16, float fontSize) { return fontSize * 0.5f; }
 
 class Font_none : public Font {
 public:
@@ -116,17 +138,36 @@ auto countDuration(const F& f) {
 }
 
 int main(int argc, char* argv[]) {
-  if (argc < 4) {
+  if (argc < 3) {
     fprintf(
       stderr,
       "Required options:\n"
-      "  <clm data file>\n"
-      "  <math font file>\n"
+      "  <res dir>\n"
       "  <samples file>\n"
     );
     return 1;
   }
-  const microtex::FontSrcFile math{argv[1], argv[2]};
+  namespace fs = std::filesystem;
+  const fs::path res = argv[1];
+  // The engine's own commands are LaTeX files, and it reads no file: hand it
+  // the text of the format and of each package.
+  const auto read = [](const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    std::stringstream text;
+    text << in.rdbuf();
+    return text.str();
+  };
+  if (!fs::exists(res / "tex" / "prelude.tex")) {
+    fprintf(stderr, "no prelude.tex in %s\n", (res / "tex").string().c_str());
+    return 1;
+  }
+  microtex::front::setPrelude(read(res / "tex" / "prelude.tex"));
+  for (const auto& entry : fs::directory_iterator(res / "tex")) {
+    if (entry.path().extension() == ".sty") {
+      microtex::front::registerPackage(entry.path().stem().string(), read(entry.path()));
+    }
+  }
+  const microtex::FontSrcOtf math{(res / "lm-math" / "latinmodern-math.otf").string()};
   microtex::MicroTeX::init(math);
 
   microtex::PlatformFactory::registerFactory(
@@ -136,7 +177,7 @@ int main(int argc, char* argv[]) {
   microtex::PlatformFactory::activate("none");
 
   long total = 0;
-  microtex::Samples samples(argv[3]);
+  microtex::Samples samples(argv[2]);
   for (int i = 0; i < samples.count(); i++) {
     auto [d, r] = countDuration([&]() {
       return microtex::MicroTeX::parse(samples.next(), 720, 20, 20 / 3.f, microtex::black);

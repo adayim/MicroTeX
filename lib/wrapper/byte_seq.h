@@ -34,10 +34,10 @@ private:
 
   template <typename T>
   void _put(T t) {
-    auto l = sizeof(T);
-    T* ptr = (T*)((char*)_data + _index);
-    *ptr = t;
-    _index += l;
+    // The values are packed, so a float is rarely at an address that suits it:
+    // copy the bytes, a store through a T* there is undefined behaviour.
+    std::memcpy((char*)_data + _index, &t, sizeof(T));
+    _index += sizeof(T);
   }
 
   template <typename T, typename... Ts>

@@ -6,7 +6,9 @@ CI runs all of it on every push (`.github/workflows/test.yml`); `test/run.sh`
 does each step locally:
 
 ```sh
-test/run.sh test            # the tests, under AddressSanitizer and UBSan
+test/run.sh test            # the tests, under AddressSanitizer and UBSan; also builds the
+                            # C API and the two examples, and runs them (test_c_api.cpp,
+                            # example/svg, example/memcheck over res/SAMPLES.tex)
 test/run.sh test OFF        # ... built without FriBidi (not in CI: the R package always has it)
 test/run.sh strict          # our sources under -Wextra -Wpedantic
 test/run.sh fuzz 300        # each fuzzer for 300 s (clang)

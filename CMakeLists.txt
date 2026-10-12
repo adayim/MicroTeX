@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 project(
     microtex
     VERSION 1.0.0
-    DESCRIPTION "A micro, fast, cross-platform, and embeddable LaTeX rendering library"
+    DESCRIPTION "A dynamic, cross-platform, and embeddable LaTeX rendering library"
 )
 
 # the API (and ABI) is compatible when MICROTEX_API_VERSION is the same
@@ -23,25 +23,32 @@ endif ()
 ####################
 #  compile option  #
 ####################
-option(CAIRO "Build with CAIRO" OFF)
-option(BUILD_EXAMPLE_GTKMM "Build GTKMM example, only work with -DCAIRO=ON flag" OFF)
-option(GTK "Build with GTK" OFF)
-option(BUILD_EXAMPLE_GTKMM "Build GTK example, only work with -DCAIRO=ON and -DGTK=ON flag" OFF)
-option(QT "Build with Qt" OFF)
-option(BUILD_EXAMPLE_QT "Build Qt example, only work with -DQT=ON flag" OFF)
-option(BUILD_EXAMPLE_QTPNG "Build Qt png example, only work with -DQT=ON flag" OFF)
-option(GDI "Build with GDI" OFF)
-option(BUILD_EXAMPLE_WIN32 "Build Win32 GDI example, only work with -DGDI=ON flag" OFF)
-option(BUILD_EXAMPLE_MEMCHECK "Build memory check example" OFF)
+# The engine needs FreeType; FriBidi is optional (-DMICROTEX_BIDI=ON, lib/).
 option(HAVE_LOG "If enable log" ON)
 if (HAVE_LOG)
     add_definitions(-DHAVE_LOG)
 endif ()
 option(BUILD_STATIC "If build for static library" OFF)
+option(HAVE_CWRAPPER "Build the C API (lib/wrapper)" OFF)
+
+# Examples
+option(BUILD_EXAMPLE_SVG "Build microtex-svg, LaTeX to SVG (needs nothing but the engine)" OFF)
+option(BUILD_EXAMPLE_MEMCHECK "Build the memory check example" OFF)
+option(BUILD_EXAMPLE_WIN32 "Build the Win32 GDI+ example, only work with -DGDI=ON flag" OFF)
+
+# Graphics backends, inherited from upstream MicroTeX; the engine does not need one
+option(CAIRO "Build with CAIRO" OFF)
+option(QT "Build with Qt" OFF)
+option(SKIA "Build with Skia" OFF)
+option(GDI "Build with GDI+" OFF)
+
+# Tests
 option(MICROTEX_TESTS "Build the tests in test/ (run them with ctest)" OFF)
 option(MICROTEX_FUZZ "Build the libFuzzer targets in test/fuzz/ (clang only)" OFF)
-# The tests reach the engine's internals, which a shared library hides.
-if (BUILD_STATIC OR MICROTEX_TESTS OR MICROTEX_FUZZ)
+
+# The tests and the examples reach the engine's internals, which a shared
+# library hides.
+if (BUILD_STATIC OR MICROTEX_TESTS OR MICROTEX_FUZZ OR BUILD_EXAMPLE_SVG OR BUILD_EXAMPLE_MEMCHECK)
     set(_BUILD_STATIC ON)
 endif ()
 
@@ -59,32 +66,16 @@ file(COPY res DESTINATION .)
 #####################
 # optional features #
 #####################
-if (CAIRO)
-    add_subdirectory(platform/cairo)
-    if (BUILD_EXAMPLE_GTKMM)
-        add_subdirectory(example/gtkmm)
-    endif ()
+if (BUILD_EXAMPLE_SVG)
+    add_subdirectory(example/svg)
 endif ()
 
-if (GTK)
-    if (CAIRO)
-        add_subdirectory(platform/gtk)
-        if (BUILD_EXAMPLE_GTK)
-            add_subdirectory(example/gtk)
-        endif ()
-    else ()
-        message(FATAL_ERROR "The GTK Widget requires CAIRO to be enabled")
-    endif ()
+if (CAIRO)
+    add_subdirectory(platform/cairo)
 endif ()
 
 if (QT)
     add_subdirectory(platform/qt)
-    if (BUILD_EXAMPLE_QT)
-        add_subdirectory(example/qt)
-    endif ()
-    if (BUILD_EXAMPLE_QTPNG)
-        add_subdirectory(example/qtpng)
-    endif ()
 endif ()
 
 if (SKIA)
@@ -98,10 +89,6 @@ if (GDI)
     endif ()
 endif ()
 
-if (WASM)
-    add_subdirectory(platform/wasm)
-endif ()
-
 if (BUILD_EXAMPLE_MEMCHECK)
     add_subdirectory(example/memcheck)
 endif ()
@@ -110,9 +97,6 @@ endif ()
 # installation #
 ################
 
-# install resources
+# install resources: the fonts, and the LaTeX files the engine's commands are
+# written in (res/tex), which the host hands to the engine
 install(DIRECTORY res/ DESTINATION share/microtex)
-
-# install prebuilt scripts
-install(FILES prebuilt/otf2clm.py DESTINATION bin)
-install(PROGRAMS prebuilt/otf2clm.sh DESTINATION bin RENAME otf2clm)

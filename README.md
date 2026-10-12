@@ -1,600 +1,125 @@
 # ![logo](readme/tex_logo.svg)
 
-It is a dynamic, cross-platform, and embeddable LaTeX rendering library. Its main purpose is to display mathematical formulas written in LaTeX. It can be embedded in applications on various platforms (Android, iOS, Windows, Linux GTK, Qt...). The following pictures demonstrate the application run in Ubuntu (using GTK) and Windows.
+It is a dynamic, cross-platform, and embeddable LaTeX rendering library. Its main purpose is to display mathematical formulas written in LaTeX, and it sets the text, tables, lists and displays around them too. The engine needs no graphics library, it records what it draws, and graphics backends for Cairo, Qt, Skia and Windows GDI+ are included for applications that want to draw directly.
 
-![demo ubuntu](readme/example_ubuntu.png)
+This is a fork of [NanoMichael/MicroTeX](https://github.com/NanoMichael/MicroTeX) by Nano Michael, from its `openmath` branch. The layout engine, the symbol tables and the graphics interface are his work, and the credit for them is his. The fork is the engine of [gridmicrotex](https://github.com/adayim/gridmicrotex), which renders LaTeX in R graphics, and `lib/` is kept in step with the copy that package ships.
 
-![demo windows](readme/example_windows.png)
+![integral](readme/example_integral.svg)
 
-[Here](readme/samples.md) contains more demos you may want to take a look.
+![matrix and cases](readme/example_matrix.svg)
 
-# Build demo
+![aligned](readme/example_aligned.svg)
 
-First make sure you have a C++ compiler that supports `C++ 17` standard. It uses CMake to build the demo, make sure you have it installed. Currently support Windows and Linux on PC, the version on Mac OS is in the plan, and you can find the Android version in [here](https://github.com/NanoMichael/AndroidLaTeXMath).
+![diagram and chemistry](readme/example_diagram.svg)
 
-- `CygWin` or `MinGW` is recommended to be installed on Windows, and `Gdiplus` is required.
-- `GTKMM` and `GSVMM` must be installed on Linux for a GTK build.
-- Qt development packages must be installed for a Qt installation.
+These were drawn by [`example/svg`](example/svg/svg_main.cpp), with Latin Modern Math.
 
-After all the dependencies have been satisfied, run the following commands to build:
+# What this fork changes
 
-```sh
-cd your/project/dir
-mkdir build
-cd build
-cmake ..
-make -j32
-```
+- **A new LaTeX front end.** A lexer, macro expander, parser and lowering that read LaTeX as TeX does: catcodes and spaces, groups, `\def`, `\newcommand`, `\let`, `\newif`, conditionals, xparse's `\NewDocumentCommand`, `\usepackage`. Malformed input is drawn with a warning at its line and column instead of failing.
+- **Commands as LaTeX files.** What is not written in C++ is LaTeX, in [`res/tex`](res/tex): `prelude.tex` and packages such as amsmath, amssymb, amsthm, mathtools, braket, physics, commath, tensor, slashed, booktabs, makecell and graphicx, and `katex` for the names only KaTeX has. The engine reads no file, the host hands over their text, so a host can add packages of its own. Built in: subsets of siunitx and mhchem, `tikz-cd` and amscd diagrams, tabularray tables, `bm` and `cancel`.
+- **Three input modes** (`InputMode`): *math*, a formula; *mixed*, a label of text with `$math$` in it; *document*, a document body with paragraphs, headings, lists, tables, theorems, floats and equation numbers (`\label`, `\ref`, `subequations`, `numcases`).
+- **Fonts straight from OpenType files.** A math font is read from its `.otf` with FreeType and its MATH table, outlines included. There are no CLM files and no FontForge. Text fonts can be added and named in the document with `\setmainfont` and friends. Fira Math, Latin Modern Math, TeX Gyre DejaVu Math and XITS are in [`res`](res).
+- **A recording backend.** `Graphics2D_Recorder` ([`lib/graphic/graphic_recorder.h`](lib/graphic/graphic_recorder.h)) keeps every draw operation as data: glyph outlines or glyph ids, lines, rectangles, text runs, named marks and image boxes. Any vector output can be made from it; `example/svg` is one.
+- **Hooks for the host**, for images (`\includegraphics`) and fonts named in a document ([`lib/front/hooks.h`](lib/front/hooks.h)).
+- **Right-to-left text**, reordered with FriBidi when it is built in.
+- **TeX's own layout rules** where TeX has one, checked against pdfLaTeX output: the row spacing of matrices and alignments, text style in arrays, equation numbers.
+- **Safer and more portable.** The engine is tested under AddressSanitizer and UBSan and fuzzed with libFuzzer on every push.
 
-After all the works have done, run the executable file `LaTeX` in the directory `build` to check the demo.
+# Status
 
-If you wish to build in Qt mode on your plaform add `-DQT=ON` to the cmake command above.
+| Part | State |
+|------|-------|
+| `lib/` (the engine) | Built and tested by CI with g++ and clang++: the tests under AddressSanitizer and UBSan, the strict warnings, and both fuzzers. |
+| `example/svg` | Builds and runs; made the pictures above. |
+| `lib/wrapper` (the C API) | Builds with `-DHAVE_CWRAPPER=ON`; a test of it runs in CI. |
+| `example/memcheck` | Builds and runs. |
+| `platform/gdi_win`, `example/win32` | Compile-checked with MinGW, not run. |
+| `platform/cairo`, `platform/qt`, `platform/skia` | Inherited from upstream and written against its interface, which has only grown. Not built here. |
 
-## Headless mode
+Removed, because they no longer built: the Flutter and WebAssembly ports and the GTK, gtkmm and Qt demo programs (they loaded fonts as CLM data, a format the engine no longer reads), the GTK widget (it uses the old `tex` namespace), `build.zig` (its list of sources was out of date), and the CLM tools and data.
 
-It supports to run with headless mode (no GUI) on Linux OS, check the scripts below to learn how to do this.
+# Build
 
-Batch mode:
-
-```sh
-./LaTeX -headless \
-    -samples=res/SAMPLES.tex \
-    -outputdir=samples \
-    -prefix=sample_ \
-    # common options
-    -textsize=14 \
-    -foreground=black \
-    -background=white \
-    -padding=0 \
-    -maxwidth=720
-```
-
-Single mode:
+You need a C++17 compiler, CMake 3.16 and FreeType (found by `pkg-config`). FriBidi is optional.
 
 ```sh
-./LaTeX -headless \
-    "-input=\sqrt[3]{(x-y)^3}=x-y" \
-    -output=an_example.svg
-    # other options...
+cmake -S . -B build -DBUILD_EXAMPLE_SVG=ON
+cmake --build build -j
+./build/example/svg/microtex-svg --display '\int_0^1 \frac{x^2}{2}\,dx' out.svg
 ```
 
-**COMMON OPTIONS**
+`microtex-svg` takes `--res`, `--font`, `--size`, `--width`, `--mode math|mixed|document`, `--display` and `--background`; run it with no arguments for the list. It finds the fonts and the LaTeX files in `./res`, which CMake copies next to it.
 
-- `-h`: show usages and exit
+| Option | Default | |
+|--------|---------|---|
+| `MICROTEX_BIDI` | OFF | Right-to-left reordering with FriBidi. |
+| `BUILD_STATIC` | OFF | A static library. The examples and the tests link it, because the recorder and the package hooks are internal headers that a shared library hides. |
+| `HAVE_CWRAPPER` | OFF | The C API in `lib/wrapper`. |
+| `HAVE_LOG` | ON | Print the parse result and the box tree while running. |
+| `GLYPH_RENDER_TYPE` | 0 | 0 glyph outlines and typefaces, 1 outlines only, 2 typefaces only. |
+| `BUILD_EXAMPLE_SVG`, `BUILD_EXAMPLE_MEMCHECK` | OFF | The examples. `memcheck` parses a samples file such as [`res/SAMPLES.tex`](res/SAMPLES.tex) on a graphics context that draws nothing, for valgrind. |
+| `CAIRO`, `QT`, `SKIA`, `GDI`, `BUILD_EXAMPLE_WIN32` | OFF | The graphics backends and the Windows example. |
+| `MICROTEX_TESTS`, `MICROTEX_FUZZ` | OFF | The tests and the fuzzers ([`test/`](test/README.md)). |
 
-- `-headless`: tells the application to run with the headless mode, that converts the input LaTeX codes into SVG images
+[`lib/`](lib/meson.build) and the Cairo, Qt and GDI+ backends also have Meson manifests; the CMake build is the one that is tested.
 
-- `-textsize`: config the font size (in point) to display formulas, the default is 20
-
-- `-foreground`: config the foreground color to display formulas; the value can be a color name or in the form of #AARRGGBB; default is black
-
-- `-background`: config the background color to display formulas; the value can be a color name or in the form of #AARRGGBB; default is transparent
-
-- `-padding`: config spaces to add to the SVG images, the default is 10
-
-- `-maxwidth`: config the max width of the graphics context, the default is 720 pixels; this option has weak limits on the SVG images, thus the width of the SVG image may be wider than the value defined by this option
-
-**BATCH MODE OPTIONS**
-
-The program will save the SVG images produced by the LaTeX codes that parsed from the given file (specified by the option '-samples') into the directory specified by the option '-outputdir'.
-
-- `-outputdir`: indicates the directory to save the SVG images
-
-- `-samples`: specifies the file that contains several LaTeX codes split by a line that consists of the character '%' only, the default is './res/SAMPLES.tex'; check [this file](res/SAMPLES.tex) to get more details
-
-- `-prefix`: specifies the prefix of the filename of the SVG images, the default is ''; for example if 2 pieces of code have given with the option '-prefix=a_', the filename of the SVG images will be 'a_0.svg' and 'a_1.svg'
-
-**SINGLE MODE OPTIONS**
-
-- `-input`: the source code that is written in LaTeX
-
-- `-output`: indicates where to save the produced SVG image, only works if the option '-input' has given
-
-> **NOTICE**
->
-> If both '-outputdir' and '-input' are specified, the '-input' option wins. Run the command `./LaTeX -h` to get helps.
-
-Please read [this section](#Display-mathmatical-formulas) to learn more.
-
-## Compile-time options
-
-The program can be built just fine using the default compilation options. However, if required, the options documented below can be used to omit some features (that can reduce the library size) and to check memory only.
-
-### HAVE_LOG
-
-If HAVE_LOG is defined, the program will output some logs (e.g.: the symbols parse result, generated box tree and so on) during runtime to help us to find out if there're issues or bugs, the default is **ON**. The option will be disabled when building with release mode, you can set it to **OFF** manually to make double insurance. For example, when parsing the following LaTeX code with the option is defined:
-
-```tex
-\sqrt[3]{(x-y)^3}=x-y
-```
-
-![example have log](readme/example_have_log.svg)
-
-will produce the following box tree:
-
-```
-0    HBox
-1    ├── HBox
-2    │   ├── StrutBox
-2    │   ├── CharBox
-2    │   ├── StrutBox
-2    │   └── HBox
-3    │       ├── CharBox
-3    │       └── OverBar
-4    │           ├── StrutBox
-4    │           ├── RuleBox
-4    │           ├── StrutBox
-4    │           └── HBox
-5    │               ├── HBox
-6    │               │   ├── CharBox
-6    │               │   ├── GlueBox
-6    │               │   ├── CharBox
-6    │               │   ├── GlueBox
-6    │               │   ├── CharBox
-6    │               │   ├── GlueBox
-6    │               │   ├── CharBox
-6    │               │   ├── GlueBox
-6    │               │   └── HBox
-7    │               │       ├── CharBox
-7    │               │       ├── HBox
-8    │               │       │   ├── CharBox
-8    │               │       │   └── StrutBox
-7    │               │       └── StrutBox
-5    │               └── StrutBox
-1    ├── GlueBox
-1    ├── CharBox
-1    ├── GlueBox
-1    ├── CharBox
-1    ├── GlueBox
-1    ├── CharBox
-1    ├── GlueBox
-1    └── CharBox
-```
-
-The number represents the depth of the tree node.
-
-### GRAPHICS_DEBUG
-
-If this macro is defined, then the custom command `\debug` and `\undebug` will be compiled, the default is **ON**. The program will draw some assisted information to help us to check if there're issues when draw formulas after run `\debug`, and `\undebug` will close this feature. For example, parse the LaTeX code below:
-
-```tex
-\debug
-\newcolumntype{s}{>{\color{#1234B6}}c}
-\begin{array}{|c|c|c|s|}
-  \hline
-  \rowcolor{Tan}\multicolumn{4}{|c|}{\textcolor{white}{\bold{\text{Table Head}}}}\\
-  \hline
-  \text{Matrix}&\multicolumn{2}{|c|}{\text{Multicolumns}}&\text{Font size commands}\\
-  \hline
-  \begin{pmatrix}
-      \alpha_{11}&\cdots&\alpha_{1n}\\
-      \hdotsfor{3}\\
-      \alpha_{n1}&\cdots&\alpha_{nn}
-  \end{pmatrix}
-  &\large \text{Left}&\cellcolor{#00bde5}\small \textcolor{white}{\text{\bold{Right}}}
-  &\small \text{small Small}\\
-  \hline
-  \multicolumn{4}{|c|}{\text{Table Foot}}\\
-  \hline
-\end{array}
-```
-
-will produce:
-
-![example debug](readme/example_debug.svg)
-
-The red blocks represent the depth of the boxes, and these rectangles represent the boxes' bounds.
-
-### MEM_CHECK
-
-Basically, the program implemented an empty graphics interface (check [this file](src/samples/mem_check_main.cpp)), all the other implementations will be ignored if the `MEM_CHECK` option is defined, the default is **OFF**. It is useful when using `valgrind` to detect memory leaks and memory misuse, make sure you have compiled it with the option `-DCMAKE_BUILD_TYPE=Debug` before using `valgrind`. The following script shows how to do memory check using `valgrind`.
-
-```sh
-cmake 
-    -DCMAKE_BUILD_TYPE=Debug \
-    -DGRAPHICS_DEBUG=ON \
-    -DMEM_CHECK=ON \
-    -DHAVE_LOG=OFF ..
-make -j32
-valgrind --leak-check=full -v ./LaTeX
-```
-
-will produce:
-
-```
-==26443== HEAP SUMMARY:
-==26443==     in use at exit: 72,704 bytes in 1 blocks
-==26443==   total heap usage: 84,520 allocs, 84,519 frees, 12,515,092 bytes allocated
-==26443== 
-==26443== Searching for pointers to 1 not-freed blocks
-==26443== Checked 111,952 bytes
-==26443== 
-==26443== LEAK SUMMARY:
-==26443==    definitely lost: 0 bytes in 0 blocks
-==26443==    indirectly lost: 0 bytes in 0 blocks
-==26443==      possibly lost: 0 bytes in 0 blocks
-==26443==    still reachable: 72,704 bytes in 1 blocks
-==26443==         suppressed: 0 bytes in 0 blocks
-==26443== Reachable blocks (those to which a pointer was found) are not shown.
-==26443== To see them, rerun with: --leak-check=full --show-leak-kinds=all
-==26443== 
-==26443== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
-```
-
-## Meson build manifest
-
-You can also build the cairo version of cLaTeXMath with Meson:
-```sh
-meson _build -DTARGET_DEMO=NONE # you can specify TARGET_DEMO=GTK if you want a GTK+ GUI to test cLaTeXMath, otherwise only the library (TARGET_DEVEL) will be built.
-ninja -C _build
-_build/clatexmath
-```
-
-<!-- WIP: clatexmath is not yet in home:sp1rit:notekit, its only in testing
-# Prebuilt packages
-
-[@sp1ritCS](https://github.com/sp1ritCS) maintains more or less upto date packages of cLaTeXMath/cairo for Arch, CentOS, Debian, Fedora, Mageia, SLE, openSUSE & Ubuntu on the openSUSE Buildservice: [home:sp1rit:notekit/clatexmath](https://build.opensuse.org/package/show/home:sp1rit:notekit/clatexmath). You can install them from here: [software.opensuse.org//download.html?project=home:sp1rit:notekit&package=clatexmath](https://software.opensuse.org//download.html?project=home%3Asp1rit%3Anotekit&package=clatexmath)
-
-If you just want to use cLaTeXMath for your GTK/Cairo project, this may be best way to get started. 
--->
 # How to use
 
-This section shows how to use this library to display mathematical formulas.
+A host does four things before it can draw:
 
-First, load the required resources at the very beginning:
+1. **Names a platform**, a `PlatformFactory` that creates fonts and text layouts (`example/svg` has a small one).
+2. **Defines two measurements** the recorder asks for, `microtex::measure_cached_text_width()` and `microtex::measure_glyph_advance()` (declared at the end of `graphic_recorder.h`). A flipped draw is all that needs them, so an estimate will do. A shared library leaves them undefined, and the program that links it must define them.
+3. **Hands over the LaTeX files** of `res/tex`.
+4. **Starts the engine** with a math font file.
 
 ```c++
+#include "front/packages.h"
+#include "graphic/graphic_recorder.h"
 #include "microtex.h"
 
-using namespace tex;
+using namespace microtex;
 
-/**
- * Initialize the program with the default parameter (directory
- * path of the resources) value "res" to load required resources,
- * that may take a long time, you may call it from a background
- * thread.
- *
- * Also, you can use the code below to specifies your custom
- * resources directory:
- * 
- *      LaTex::init("your/resources/root/directory");
- */
-LaTeX::init();
+PlatformFactory::registerFactory("mine", std::make_unique<MyPlatform>());
+PlatformFactory::activate("mine");
 
-// After initialization, you could display your formulas now
-```
+front::setPrelude(prelude_tex_text);                 // res/tex/prelude.tex
+front::registerPackage("amsmath", amsmath_sty_text); // each res/tex/*.sty, by name
 
-You could set the point size (pixels per point) use the code below:
+MicroTeX::init(FontSrcOtf("res/lm-math/latinmodern-math.otf"));
 
-```c++
-/** 
- * Set the point size; the default value is 1 that means
- * use 1 pixel to represent 1 point.
- */
-TeXFormula::PIXELS_PER_POINT = 2;
-```
+std::unique_ptr<Render> render(MicroTeX::parse(
+    R"(\int_0^1 \frac{x^2}{2}\,dx)",  // LaTeX, in UTF-8
+    0,                                // wrap lines at this width, 0 for no limit
+    20,                               // text size, in pixels
+    20 / 3.f,                         // space between lines, in pixels
+    0xFF000000u));                    // colour, as ARGB
 
-Also, you could set the DPI (dots per inch) use the code below:
-
-```c++
-/**
- * For example, set the DPI-target to 74, the point size
- * will be 74/72
- */
-TeXFormula::setDPITarget(74);
-```
-
-Write the code below to release resources before application exit, it is not necessary but is a good habit.
-
-```c++
-// ... some other code ...
-// before application exit
-
-LaTeX::release();
-```
-
-## Display mathematical formulas
-
-General mode:
-
-```c++
-// ... initialization ...
-
-/**
- * The LaTeX code to parse.
- * 
- * The program uses wide string to represent UTF characters, you
- * could use the code below to convert a string with UTF-8 encoding
- * to a wide string:
- * 
- *      wstring wstr = utf82wide("A string with UTF-8 encoding.");
- */
-wstring code = L"\\int_{now}^{+\\infty} \\text{Keep trying}";
-// Convert the code to a paintable object (Render)
-auto r = LaTeX::parse(
-    code,   // LaTeX code to parse
-    720,    // logical width of the graphics context (in pixel)
-    20,     // font size (in point)
-    10,     // space between 2 lines (in pixel)
-    BLACK   // foreground color
-);
-```
-
-Builder mode:
-
-```c++
-wstring code = L"\\int_{now}^{+\\infty} \\text{Keep trying}";
-TeXFormula formula;
-RenderBuilder builder;
-formula.setLaTeX(code);
-
-auto r = builder
-    // environment style, see TeXConstants (defined in common.h) to
-    // get more details
-    .setStyle(STYLE_DISPLAY)
-    // text size (in point)
-    .setSize(20)
-    // the logical width and the alignment of the graphics context
-    .setWidth(UnitType::pixel, 720, Alignment::left)
-    // set if the logical width of the graphics context specified
-    // above is the max width to display the formula, the formula
-    // will be centered if set to true; you must call this method
-    // after 'setWidth' has called, otherwise an ex_invalid_state 
-    // exception will be thrown
-    .setIsMaxWidth(false)
-    // space between 2 lines
-    .setLineSpace(UnitType::pixel, 10)
-    .setForground(tex::BLACK)
-    // convert the formula to a paintable object (Render)
-    .build(formula);
-```
-
-> **NOTICE**
->
-> A style and text size are required to build a Render, in another word, you must call method `setStyle` and `setSize` before method `build` has been called, otherwise an `ex_invalid_state` exception will be thrown. If the logical width has not set, the generated Render may be wide enough to overflow into the graphics context.
-
-Now you can draw the generated `Render` (take `Graphics2D_cairo` that uses `cairomm` to implement the graphics (2D) context that run in Linux as an example):
-
-```c++
-// cairomm implementation
-Graphics2D_cairo g2;
-// draw the formula on the coordinate (10, 10) of the graphics context
-r->draw(10, 10);
-// IMPORTANT: remember to delete the generated Render after there
-// is no use on it.
-delete r;
-```
-
-The code above will produce:
-
-![example keep trying](readme/example_keep_trying.svg)
-
-## Implement the graphical interfaces
-
-Basically, you need to implement all the interfaces declared in [this file](src/graphic/graphic.h). There're 4 implementations list below, check it out before the start.
-
-- `graphic_cairo`: that uses `cairomm` and `gtkmm` to implement these interfaces that run in Linux, declared in [here](src/platform/cairo/graphic_cairo.h), and implemented [here](src/platform/cairo/graphic_cairo.cpp).
-
-- `graphic_win32`: is a Windows implementation that uses `gdiplus` to implement these interfaces, please check [here](src/platform/gdi_win/graphic_win32.h) and [here](src/platform/gdi_win/graphic_win32.cpp).
-
-- And implementations on Android OS can be found at [here](https://github.com/NanoMichael/AndroidLaTeXMath).
-
-- And the empty implementations to perform memory check are defined in [here](src/samples/mem_check_main.cpp).
-
-The following sections illustrate these interfaces.
-
-### tex::Font
-
-This interface represents a font (typeface). The program uses it to draw characters and layout boxes. The code below shows how to implement this interface with the name `Font_impl`.
-
-```c++
-#include "graphic/graphic.h"
-
-namespace tex {
-
-class Font_impl : public tex::Font {
-public:
-
-    Font_impl(const string& file, float size) {
-        // load platform-specific font from given file and size
-    }
-
-    Font_impl(const string& name, int style, float size) {
-        // create platform-specific font with given name, style
-        // and size
-    }
-
-    // ... implementations of the other methods ...
-};
-
-/**
- * IMPORTANT: do not forget to implement the 2 static methods below,
- * it is the factory methods to create a new font.
- */
-
-Font* Font::create(const string& file, float size) {
-    return new Font_impl(file, size);
+Graphics2D_Recorder g2;
+render->draw(g2, 0, 0);
+for (const DrawRecord& d : g2.records()) {
+  // d.type is PATH, LINE, RECT, FILL_RECT, TEXT, MARK, IMAGE ...
 }
 
-sptr<Font> Font::_create(const string& name, int style, float size) {
-    return sptrOf<Font_impl>(name, style, size);
-}
-
-} // namespace tex
+MicroTeX::release();
 ```
 
-### tex::TextLayout
+`parse` takes more arguments, among them the `InputMode` and the style (`OverrideTeXStyle`, to set a formula in display style). Problems found while reading the input are in `front::lastDiagnostics()`, each with its line and column.
 
-An alphabet contains several Unicode-blocks on a **Basic Multilingual Plane** (BMP), check [here](https://en.wikipedia.org/wiki/Plane_(Unicode)) for more information.
+To draw without the recorder, implement `Graphics2D`, `Font` and `TextLayout` of [`lib/graphic/graphic.h`](lib/graphic/graphic.h), as the backends in `platform/` do.
 
-For these characters in unregistered alphabets, the library uses `tex::TextLayout` to layout it. For example, parse the following LaTeX code:
+## The C API
 
-```tex
-\int_{now}^{\infty} \text{努力}
-```
+With `-DHAVE_CWRAPPER=ON` the engine has a C interface for other languages ([`lib/wrapper/cwrapper.h`](lib/wrapper/cwrapper.h)): `microtex_init(font file)`, `microtex_setPrelude()` and `microtex_registerPackage()` for the LaTeX files, `microtex_parseRender()` and `microtex_getDrawingData()`, which returns the draw commands as a byte stream. Text layouts are done by callbacks of the host.
 
-The character "努" and "力" are under the Unicode-block [CJK Unified Ideographs](https://en.wikipedia.org/wiki/CJK_Unified_Ideographs_(Unicode_block)) belongs to the alphabet CJK that has not registered with the program, it will use the implementation of the class `tex::TextLayout` to layout the text "努力" and calculate the layout bounds. The `tex::TextLayout_cairo` implementation (declared in [here](src/platform/cairo/graphic_cairo.h)) demonstrates how to do this.
+## Fonts
 
-The LaTeX code above will produce:
+`MicroTeX::init()` takes one math font, a `.otf` with a MATH table; `MicroTeX::addFont()` adds more, math or text. The fonts in `res` keep their own licences, which sit in their folders.
 
-![example cjk trying](readme/example_cjk_trying.svg)
+# Credits
 
-The predefined Unicode-blocks are list below, check [this file](src/fonts/alphabet.cpp) for more details.
-
-```
-name               code range
------------------  ---------------
-BASIC_LATIN        0x0020 ~ 0x007F
-LATIN1_SUPPLEMENT  0x0080 ~ 0x00FF
-CYRILLIC           0x0400 ~ 0x04FF
-GREEK              0x0370 ~ 0x03FF
-GREEK_EXTENDED     0x1f00 ~ 0x1FFF
-UNKNOWN            0xFFFF ~ 0xFFFF
-```
-
-Write the code below to register a new alphabet with the program:
-
-```c++
-class NewAlphabetRegistration : public AlphabetRegistration {
-private:
-    vector<UnicodeBlock> _blocks;
-
-public:
-    NewAlphabetRegistration(const vector<UnicodeBlock>& blocks)
-        :_blocks(blocks) {}
-
-    const vector<UnicodeBlock>& getUnicodeBlock() const override {
-        return _blocks;
-    }
-
-    const string getPackage() const override {
-        // the root directory path of the font-mapping and
-        // symbols-mapping for this alphabet
-    }
-
-    const string getTeXFontFile() const override {
-        // language settings (a xml file) for this alphabet
-    }
-};
-
-// ... some other code ...
-
-// Define a new Unicode-block
-auto newBlock = UnicodeBlock::define(
-    newAlphabetCodePointStart, 
-    newAlphabetCodePointEnd);
-
-// Register the new alphabet
-DefaultTeXFont::registerAlphabet(new NewAlphabetRegistration({newBlock});
-```
-
-### tex::Graphics2D
-
-This interface defines a 2D graphics context, all the TeX drawing operations will on it. It declares various basic 2D graphics operations, including affine transformations and meta graphical operations. The class `Graphics2D_cairo` (defined in [this file](src/platform/cairo/graphic_cairo.cpp)) uses `cariomm` to implement this interface, take it a look to learn how to achieve it. It is the most important part of the graphical environment, and also very simple, all you need to do is wrap these functions on a specific platform into the form of this interface declared. [This file](src/graphic/graphic_basic.h) declares some built-in colors and various entity classes to support the graphical environment.
-
-# Custom commands and symbols
-
-## \debug and \undebug
-
-As mentioned [above](#GRAPHICS_DEBUG), the command `\debug` and `\undebug` is used to switch graphical debug mode on/off, please check it out.
-
-## \fatalIfCmdConflict
-
-This command takes a boolean argument to determine whether to raise an error that when defining a new command but it has defined already or redefining a command but it has not defined. The default value is true. The script below shows how to use it.
-
-```tex
-\fatalIfCmdConflict{true}
-% define a new command with the name R
-\newcommand{\R}{\mathbb{R}}
-\R
-% here will cause the program throws an error
-% use \fatalIfCmdConflict{false} to disable it
-\newcommand{\R}{\mathcal{R}}
-```
-
-## \breakEverywhere
-
-This command takes a boolean argument, the predefined value is false. Its functionality is hard to describe, an example worths thousands of words, the examples below show the difference between when it set to true and false.
-
-```tex
-\text{What is real? How do you define ‘real’? If you're talking about what you can feel, what you can smell, what you can taste and see, then ‘real’ is simply electrical signals interpreted by your brain. \bold{\text{― Morpheus The Matrix}}}
-```
-
-When with `\breakEverywhere{false}`, the result will be:
-
-![bw false](readme/example_bw_false.svg)
-
-And with `\breakEverywhere{true}`, the result will be:
-
-![bw true](readme/example_bw_true.svg)
-
-> **NOTICE**
->
-> The program has a weak ability to handle line feeds when laying out texts, you should try to avoid using it to lay out large amounts of text, delegate these tasks to the text-layout system, and use this program to display formulas is a good choice.
-
-## \TeX and \AndroidTeX
-
-The logo and the logo of the Android version are produced by the command `\TeX` and `\AndroidTeX`, take a quick look:
-
-```tex
-\TeX \\
-\AndroidTeX
-```
-
-![logos](readme/example_logos.svg)
-
-## Custom symbols
-
-There're 4 custom symbols in the script below:
-
-```tex
-AB \varparallel CD
-AB \nvarparallel CD
-AB \varparalleleq CD
-\parallelogram ABCD
-```
-
-that will produce:
-
-![custom symbols](readme/example_custom_symbols.svg)
-
-# TODO
-
-- [ ] port Gtk+ 3 to Windows and macOS
-- [ ] buitin resources
-- [ ] support for webassembly
-- [ ] native support for SVG
-- [ ] make the use of XML configurable
-- [ ] make the built-in resources a loadable/unloadable dynamic plugin
-- [ ] eliminate the use of 'dynamic_cast'
-- [ ] rewrite the parsing algorithm, make it more efficient
-- [ ] support for dynamic parsing
-- [ ] implement the `\def` command
+MicroTeX is by [Nano Michael](https://github.com/NanoMichael) and its contributors. The changes in this fork are by [Alim Dayim](https://github.com/adayim).
 
 # License
 
-Excluding the fonts and xml resources (under the directory `res`) that under different licenses (check out `res/fonts/license`, `res/greek` and `res/cyrillic`), this project is under the [MIT](https://opensource.org/licenses/MIT) license.
-
-```
- The MIT License (MIT)
-
- Copyright (c) 2020 Nano Michael
-
- Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated documentation files (the "Software"), to deal
- in the Software without restriction, including without limitation the rights
- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- copies of the Software, and to permit persons to whom the Software is
- furnished to do so, subject to the following conditions:
-
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
-
- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.
-```
+This project is under the [MIT](https://opensource.org/licenses/MIT) license, Copyright (c) 2020 Nano Michael; see [LICENSE](LICENSE). The fonts under `res` are under their own licenses.

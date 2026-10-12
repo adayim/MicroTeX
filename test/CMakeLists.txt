@@ -11,6 +11,15 @@ if (MICROTEX_TESTS)
     add_test(NAME front COMMAND front_tests)
 endif ()
 
+# The C API, when it is built (-DHAVE_CWRAPPER=ON).
+if (MICROTEX_TESTS AND HAVE_CWRAPPER)
+    add_executable(c_api_tests test_c_api.cpp)
+    target_link_libraries(c_api_tests PRIVATE microtex)
+    target_compile_definitions(c_api_tests PRIVATE MICROTEX_TEX_DIR="${CMAKE_SOURCE_DIR}/res/tex"
+        MICROTEX_TEST_OTF="${CMAKE_SOURCE_DIR}/res/firamath/FiraMath-Regular.otf")
+    add_test(NAME c_api COMMAND c_api_tests)
+endif ()
+
 # libFuzzer targets: clang only, with the library built with
 # -fsanitize=fuzzer-no-link (test/run.sh fuzz does both).
 if (MICROTEX_FUZZ)

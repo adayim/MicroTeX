@@ -22,7 +22,8 @@ test)
   bidi="${2:-ON}"
   cxx="${CXX:-c++}"
   b="$BUILD/test-$(basename "$cxx")-bidi-$bidi"
-  cmake -S "$ROOT" -B "$b" -DCMAKE_CXX_COMPILER="$cxx" -DMICROTEX_TESTS=ON \
+  cmake -S "$ROOT" -B "$b" -DCMAKE_CXX_COMPILER="$cxx" -DMICROTEX_TESTS=ON -DHAVE_CWRAPPER=ON \
+    -DBUILD_EXAMPLE_SVG=ON -DBUILD_EXAMPLE_MEMCHECK=ON \
     -DMICROTEX_BIDI="$bidi" \
     -DCMAKE_CXX_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined"
   cmake --build "$b" -j "$JOBS"

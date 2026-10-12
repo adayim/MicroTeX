@@ -2,6 +2,7 @@
 
 #include "wrapper/cwrapper.h"
 
+#include "front/packages.h"
 #include "microtex.h"
 #include "utils/log.h"
 #include "wrapper/graphic_wrapper.h"
@@ -56,13 +57,21 @@ MICROTEX_CAPI float microtex_fontSize(FontDesc* desc) {
   return desc->fontSize;
 }
 
-MICROTEX_CAPI FontMetaPtr microtex_init(unsigned long len, const unsigned char* data) {
+MICROTEX_CAPI FontMetaPtr microtex_init(const char* otfFile) {
   auto factory = std::make_unique<PlatformFactory_wrapper>();
   PlatformFactory::registerFactory("__wrapper__", std::move(factory));
   PlatformFactory::activate("__wrapper__");
-  FontSrcData src{len, data};
+  FontSrcOtf src{otfFile};
   auto meta = MicroTeX::init(src);
   return new FontMeta(meta);
+}
+
+MICROTEX_CAPI void microtex_setPrelude(const char* source) {
+  front::setPrelude(source);
+}
+
+MICROTEX_CAPI void microtex_registerPackage(const char* name, const char* source) {
+  front::registerPackage(name, source);
 }
 
 MICROTEX_CAPI void microtex_release() {
@@ -73,8 +82,8 @@ MICROTEX_CAPI bool microtex_isInited() {
   return MicroTeX::isInited();
 }
 
-MICROTEX_CAPI FontMetaPtr microtex_addFont(unsigned long len, const unsigned char* data) {
-  FontSrcData src{len, data};
+MICROTEX_CAPI FontMetaPtr microtex_addFont(const char* otfFile) {
+  FontSrcOtf src{otfFile};
   auto meta = MicroTeX::addFont(src);
   // create a new FontMeta from heap
   // [microtex_releaseFontMeta] must be called after this object has no usages.

@@ -1,8 +1,13 @@
 // clang-format off
+#include "front/packages.h"
 #include "graphic_win32.h"
 #include "microtex.h"
 #include "samples.h"
 #include "utils/string_utils.h"
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 #include <comdef.h>
 #include <gdiplus.h>
@@ -126,22 +131,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
   }
 }  // WndProc
 
+// The engine's own commands are LaTeX files, and it reads no file: hand it the
+// text of the format and of each package (the res/tex directory).
+static string readText(const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  std::stringstream text;
+  text << in.rdbuf();
+  return text.str();
+}
+
 void init() {
-  if (__argc < 5) {
+  if (__argc < 3) {
     fprintf(
       stderr,
       "Required options:\n"
-      "  <clm data file>\n"
-      "  <math font file>\n"
+      "  <res dir>\n"
       "  <samples file>\n"
     );
     exit(1);
   }
-  const FontSrcFile math{__argv[2], __argv[3]};
+  const std::filesystem::path res = __argv[1];
+  if (!std::filesystem::exists(res / "tex" / "prelude.tex")) {
+    fprintf(stderr, "no prelude.tex in %s\n", (res / "tex").string().c_str());
+    exit(1);
+  }
+  front::setPrelude(readText(res / "tex" / "prelude.tex"));
+  for (const auto& entry : std::filesystem::directory_iterator(res / "tex")) {
+    if (entry.path().extension() == ".sty") {
+      front::registerPackage(entry.path().stem().string(), readText(entry.path()));
+    }
+  }
+  const FontSrcOtf math{(res / "lm-math" / "latinmodern-math.otf").string()};
   MicroTeX::init(math);
   PlatformFactory::registerFactory("gdi", std::make_unique<PlatformFactory_gdi>());
   PlatformFactory::activate("gdi");
-  _samples = new Samples(__argv[4]);
+  _samples = new Samples(__argv[2]);
   _render = MicroTeX::parse(
     "\\text{Hello from \\MicroTeX, have fun! Press Ctrl + Enter on editor to show "
     "formulas.}",

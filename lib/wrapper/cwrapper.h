@@ -55,16 +55,30 @@ MICROTEX_CAPI bool microtex_isMonospace(FontDesc* desc);
 MICROTEX_CAPI float microtex_fontSize(FontDesc* desc);
 
 /**
- * Initialize the engine by given `clm` data. The data must represents a math font.
+ * Initialize the engine by given OpenType font file. It must be a math font (one with a
+ * MATH table); the engine reads its metrics, glyph outlines and math constants from the file.
  *
- * @param len the number of bytes of the `clm` data
- * @param data the `clm` data
+ * @param otfFile the path of the font file (UTF-8)
  * @return the meta info of the font, you can retrieve the font family via
  * [microtex_getFontFamily], the font name via [microtex_getFontName], and to test if
  * the font is a math font by [microtex_isMathFont]. You must call [microtex_releaseFontMeta]
  * after this object has no usages.
  */
-MICROTEX_CAPI FontMetaPtr microtex_init(unsigned long len, const unsigned char* data);
+MICROTEX_CAPI FontMetaPtr microtex_init(const char* otfFile);
+
+/**
+ * Hand the engine the LaTeX format: the text of `res/tex/prelude.tex`. The engine's commands
+ * that are not written in C++ (`pmatrix`, `\dfrac`, `cases`...) are LaTeX files, and the engine
+ * reads no file: the host reads them and passes their text. Call it, and
+ * [microtex_registerPackage] for each `res/tex/*.sty`, before parsing.
+ */
+MICROTEX_CAPI void microtex_setPrelude(const char* source);
+
+/**
+ * Register a LaTeX package by its name (`amsmath` for `amsmath.sty`) and its text. A document
+ * loads it with `\usepackage`; the ones `prelude.tex` requires are loaded for every input.
+ */
+MICROTEX_CAPI void microtex_registerPackage(const char* name, const char* source);
 
 /** Release the engine. */
 MICROTEX_CAPI void microtex_release();
@@ -75,12 +89,12 @@ MICROTEX_CAPI bool microtex_isInited();
 /**
  * Add a font to the engine context.
  *
- * @param len the number of bytes of the `clm` data
- * @param data the `clm` data
+ * @param otfFile the path of an OpenType font file (UTF-8); a math font if it has a MATH
+ * table, a main (text) font otherwise
  * @return the font meta info. You must call [microtex_releaseFontMeta] after this object has
  * no usages.
  */
-MICROTEX_CAPI FontMetaPtr microtex_addFont(unsigned long len, const unsigned char* data);
+MICROTEX_CAPI FontMetaPtr microtex_addFont(const char* otfFile);
 
 /** Get the font family name from the given FontMetaPtr. */
 MICROTEX_CAPI const char* microtex_getFontFamily(FontMetaPtr ptr);
