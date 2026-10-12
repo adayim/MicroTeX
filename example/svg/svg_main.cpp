@@ -9,6 +9,7 @@
 // engine asks to measure and draw it: FreeType reads the text fonts, and each
 // glyph is drawn as an outline too. There is no shaping, ligatures or
 // kerning, and a character no font has is left out; --fallback adds fonts.
+// A font with colour layers (COLR/CPAL, such as res/twemoji) is drawn in colour.
 //
 //   microtex-svg [options] "LATEX" out.svg
 //   microtex-svg [options] --samples FILE --outdir DIR [--prefix P] [--index FILE.md]
@@ -34,6 +35,7 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_COLOR_H
 #include FT_OUTLINE_H
 
 #include <cmath>
@@ -69,6 +71,9 @@ namespace {
 struct Face {
   FT_Face face = nullptr;
   float unitsPerEm = 1000;
+  // The first palette of a colour font (COLR/CPAL), owned by the face; null otherwise.
+  const FT_Color* palette = nullptr;
+  unsigned paletteSize = 0;
 };
 
 class TextFonts {
@@ -87,6 +92,13 @@ public:
     if (FT_New_Face(_library, file.c_str(), 0, &f.face) != 0) return -1;
     FT_Select_Charmap(f.face, FT_ENCODING_UNICODE);
     f.unitsPerEm = f.face->units_per_EM > 0 ? static_cast<float>(f.face->units_per_EM) : 1000.f;
+    FT_Palette_Data data;
+    FT_Color* palette = nullptr;
+    if (FT_Palette_Data_Get(f.face, &data) == 0 && data.num_palettes > 0 &&
+        FT_Palette_Select(f.face, 0, &palette) == 0) {
+      f.palette = palette;
+      f.paletteSize = data.num_palette_entries;
+    }
     _all.push_back(f);
     return static_cast<int>(_all.size()) - 1;
   }
@@ -97,14 +109,22 @@ public:
   }
   void addFallback(int face) { _fallbacks.push_back(face); }
 
-  const Face* find(FontStyle style, c32 cp, FT_UInt& glyph) const {
+  // `emoji`: the character is followed by U+FE0F, which asks for its colour form.
+  const Face* find(FontStyle style, c32 cp, FT_UInt& glyph, bool emoji = false) const {
     int own = _roman;
     if (isMono(style)) own = _mono;
     else if (isSansSerif(style)) own = _sans;
     else if (isBold(style) && isItalic(style)) own = _boldItalic;
     else if (isBold(style)) own = _bold;
     else if (isItalic(style)) own = _italic;
-    std::vector<int> order{own, _roman};
+    std::vector<int> order;
+    if (emoji) {
+      for (const int i : _fallbacks) {
+        if (_all[static_cast<std::size_t>(i)].palette != nullptr) order.push_back(i);
+      }
+    }
+    order.push_back(own);
+    order.push_back(_roman);
     order.insert(order.end(), _fallbacks.begin(), _fallbacks.end());
     for (const int i : order) {
       if (i < 0) continue;
@@ -155,7 +175,7 @@ public:
     const float ascent = p != nullptr ? static_cast<float>(p->face->ascender) * scale : _size * 0.8f;
     const float descent = p != nullptr ? -static_cast<float>(p->face->descender) * scale : _size * 0.2f;
     float width = 0;
-    for (const c32 cp : _chars) width += advance(cp);
+    for (std::size_t i = 0; i < _chars.size(); i++) width += advance(i);
     bounds.x = 0;
     bounds.y = -ascent;
     bounds.w = width;
@@ -164,19 +184,29 @@ public:
 
   void draw(Graphics2D& g2, float x, float y) override {
     float pen = x;
-    for (const c32 cp : _chars) {
+    for (std::size_t i = 0; i < _chars.size(); i++) {
+      const c32 cp = _chars[i];
       FT_UInt glyph = 0;
-      const Face* f = gFonts->find(_style, cp, glyph);
-      if (f != nullptr && !zeroWidth(cp) &&
-          FT_Load_Glyph(f->face, glyph, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) == 0) {
-        Pen p{&g2, pen, y, _size / f->unitsPerEm};
-        FT_Outline_Funcs funcs{moveTo, lineTo, conicTo, cubicTo, 0, 0};
-        g2.beginPath(-1);
-        FT_Outline_Decompose(&f->face->glyph->outline, &funcs, &p);
-        if (p.open) g2.closePath();
-        g2.fillPath(-1);
+      const Face* f = gFonts->find(_style, cp, glyph, emojiForm(i));
+      if (f != nullptr && !zeroWidth(cp)) {
+        // A colour glyph is a stack of layers, each an outline and a palette
+        // colour (0xFFFF: the text colour); any other is its own outline.
+        bool layered = false;
+        if (f->palette != nullptr) {
+          const color text = g2.getColor();
+          FT_LayerIterator it;
+          it.p = nullptr;
+          FT_UInt layer = 0, index = 0;
+          while (FT_Get_Color_Glyph_Layer(f->face, glyph, &layer, &index, &it)) {
+            layered = true;
+            g2.setColor(index < f->paletteSize ? argb(f->palette[index]) : text);
+            fill(g2, *f, layer, pen, y);
+          }
+          g2.setColor(text);
+        }
+        if (!layered) fill(g2, *f, glyph, pen, y);
       }
-      pen += advance(cp);
+      pen += advance(i);
     }
   }
 
@@ -186,6 +216,22 @@ private:
     float x, y, scale;
     bool open = false;
   };
+
+  static color argb(const FT_Color& c) {
+    return (static_cast<color>(c.alpha) << 24) | (static_cast<color>(c.red) << 16) |
+           (static_cast<color>(c.green) << 8) | c.blue;
+  }
+
+  // One outline of a face, filled in the current colour with its origin at (x, y).
+  void fill(Graphics2D& g2, const Face& f, FT_UInt glyph, float x, float y) const {
+    if (FT_Load_Glyph(f.face, glyph, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0) return;
+    Pen p{&g2, x, y, _size / f.unitsPerEm};
+    FT_Outline_Funcs funcs{moveTo, lineTo, conicTo, cubicTo, 0, 0};
+    g2.beginPath(-1);
+    FT_Outline_Decompose(&f.face->glyph->outline, &funcs, &p);
+    if (p.open) g2.closePath();
+    g2.fillPath(-1);
+  }
 
   static float px(const Pen& p, const FT_Vector* v) { return p.x + static_cast<float>(v->x) * p.scale; }
   static float py(const Pen& p, const FT_Vector* v) { return p.y - static_cast<float>(v->y) * p.scale; }
@@ -213,10 +259,13 @@ private:
     return 0;
   }
 
-  float advance(c32 cp) const {
+  bool emojiForm(std::size_t i) const { return i + 1 < _chars.size() && _chars[i + 1] == 0xFE0F; }
+
+  float advance(std::size_t i) const {
+    const c32 cp = _chars[i];
     if (zeroWidth(cp)) return 0.f;
     FT_UInt glyph = 0;
-    const Face* f = gFonts->find(_style, cp, glyph);
+    const Face* f = gFonts->find(_style, cp, glyph, emojiForm(i));
     // A character no font has takes room, so the gap shows it was there.
     if (f == nullptr) return _size * 0.5f;
     if (FT_Load_Glyph(f->face, glyph, FT_LOAD_NO_SCALE | FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP) != 0) return 0.f;
@@ -444,7 +493,7 @@ std::string titleOf(const std::string& sample, int n) {
 }
 
 int renderSamples(const std::string& file, const fs::path& outdir, const std::string& prefix,
-                  const fs::path& index, const Settings& s) {
+                  const fs::path& index, const Settings& s, const std::vector<std::string>& fallbacks) {
   Samples samples(file);
   if (samples.isEmpty()) {
     std::fprintf(stderr, "microtex-svg: no samples in %s\n", file.c_str());
@@ -455,8 +504,20 @@ int renderSamples(const std::string& file, const fs::path& outdir, const std::st
   md << "# Samples\n\nThe formulas of [`res/SAMPLES.tex`](../../res/SAMPLES.tex), drawn by "
         "[`microtex-svg`](../svg/svg_main.cpp) with `--samples`; the warnings are the engine's, "
         "with their line and column in the formula. Text is drawn as outlines from the fonts "
-        "given, and a character none of them has is left blank (the emoji here, which need a "
-        "font with outlines for them).\n\n";
+        "given, and a character none of them has is left blank.";
+  if (!fallbacks.empty() && !index.empty()) {
+    // The fonts the characters beyond the main ones came from, with their notes (a licence, say).
+    md << " Fallback fonts:";
+    for (const auto& f : fallbacks) {
+      md << " `" << fs::path(f).generic_string() << "`";
+      const fs::path notes = fs::path(f).parent_path() / "README.md";
+      if (fs::exists(notes)) {
+        md << " ([notes](" << fs::relative(fs::absolute(notes), fs::absolute(index).parent_path()).generic_string() << "))";
+      }
+    }
+    md << ".";
+  }
+  md << "\n\n";
   int failed = 0;
   for (int i = 0; i < samples.count(); i++) {
     const std::string& tex = samples.next();
@@ -593,7 +654,7 @@ int main(int argc, char** argv) {
 
   int status = 0;
   if (batch) {
-    status = renderSamples(samplesFile, outdir, prefix, index, settings);
+    status = renderSamples(samplesFile, outdir, prefix, index, settings, fallbacks);
   } else {
     const Drawn d = draw(positional[0], settings);
     for (const auto& w : d.warnings) std::fprintf(stderr, "microtex-svg: %s\n", w.c_str());

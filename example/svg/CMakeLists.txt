@@ -16,10 +16,11 @@ if (MICROTEX_TESTS)
         COMMAND microtex-svg --res ${CMAKE_BINARY_DIR}/res "\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix} \\text{text}"
                 ${CMAKE_BINARY_DIR}/svg_example.svg
     )
-    # Every sample of res/SAMPLES.tex is drawn.
+    # Every sample of res/SAMPLES.tex is drawn, the emoji in colour.
     add_test(
         NAME svg_samples
         COMMAND microtex-svg --res ${CMAKE_BINARY_DIR}/res --width 720
+                --fallback ${CMAKE_BINARY_DIR}/res/twemoji/Twemoji.Mozilla.ttf
                 --samples ${CMAKE_SOURCE_DIR}/res/SAMPLES.tex --outdir ${CMAKE_BINARY_DIR}/samples-svg
     )
 endif ()

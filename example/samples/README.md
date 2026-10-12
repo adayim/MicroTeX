@@ -1,6 +1,6 @@
 # Samples
 
-The formulas of [`res/SAMPLES.tex`](../../res/SAMPLES.tex), drawn by [`microtex-svg`](../svg/svg_main.cpp) with `--samples`; the warnings are the engine's, with their line and column in the formula.
+The formulas of [`res/SAMPLES.tex`](../../res/SAMPLES.tex), drawn by [`microtex-svg`](../svg/svg_main.cpp) with `--samples`; the warnings are the engine's, with their line and column in the formula. Text is drawn as outlines from the fonts given, and a character none of them has is left blank. Fallback fonts: `res/twemoji/Twemoji.Mozilla.ttf` ([notes](../../res/twemoji/README.md)).
 
 ## 1. doge
 
@@ -42,9 +42,9 @@ Unicodes with ZWJ:
 
 ```tex
 %Logo
-\text{\mu\kern-.1em\TeX is a \LaTeX rendering library.}
+\text{\mu\kern-.1em\TeX{} is a \LaTeX{} rendering library.}
 \\
-\text{\MicroTeX is a \LaTeX rendering library.}
+\text{\MicroTeX{} is a \LaTeX{} rendering library.}
 \\
 F(\omega)=\int_{-\infty}^{+\infty}f(t)e^{-i\omega_nt}dt
 ```

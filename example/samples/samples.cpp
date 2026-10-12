@@ -12,6 +12,8 @@ void Samples::readSamples(const string& path) {
   std::ifstream f(path);
   if (f.is_open()) {
     while (getline(f, line)) {
+      // A checkout with CRLF line ends must split on its `%` lines too.
+      if (!line.empty() && line.back() == '\r') line.pop_back();
       // clang-format off
       if (!line.empty() &&
           !isSpace(line) &&

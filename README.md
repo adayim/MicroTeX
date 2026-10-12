@@ -51,11 +51,11 @@ cmake --build build -j
 ./build/example/svg/microtex-svg --display '\int_0^1 \frac{x^2}{2}\,dx' out.svg
 ```
 
-`microtex-svg` takes `--res`, `--font`, `--size`, `--width`, `--mode math|mixed|document`, `--display` and `--background`; run it with no arguments for the list. It finds the fonts and the LaTeX files in `./res`, which CMake copies next to it. Text is laid out with FreeType and drawn as outlines too, in XITS and Fira Math from `res`; `--text-font`, `--sans-font`, `--mono-font` and `--fallback` name others (a CJK font, say), and a character no font has is left blank. `--samples FILE --outdir DIR` draws every formula of a samples file, and `--index FILE.md` writes a page of them; [`example/samples`](example/samples/README.md) was made so, with `-DHAVE_LOG=OFF` to keep the box trees out of the output:
+`microtex-svg` takes `--res`, `--font`, `--size`, `--width`, `--mode math|mixed|document`, `--display` and `--background`; run it with no arguments for the list. It finds the fonts and the LaTeX files in `./res`, which CMake copies next to it. Text is laid out with FreeType and drawn as outlines too, in XITS and Fira Math from `res`; `--text-font`, `--sans-font`, `--mono-font` and `--fallback` name others (a CJK font, say), and a character no font has is left blank. A font with colour layers (COLR/CPAL) is drawn in colour: [`res/twemoji`](res/twemoji/README.md) is one, for emoji. `--samples FILE --outdir DIR` draws every formula of a samples file, and `--index FILE.md` writes a page of them; [`example/samples`](example/samples/README.md) was made so, with `-DHAVE_LOG=OFF` to keep the box trees out of the output:
 
 ```sh
-./build/example/svg/microtex-svg --width 720 --background white --samples res/SAMPLES.tex \
-    --outdir example/samples/svg --index example/samples/README.md
+./build/example/svg/microtex-svg --width 720 --background white --fallback res/twemoji/Twemoji.Mozilla.ttf \
+    --samples res/SAMPLES.tex --outdir example/samples/svg --index example/samples/README.md
 ```
 
 | Option | Default | |
@@ -121,7 +121,7 @@ With `-DHAVE_CWRAPPER=ON` the engine has a C interface for other languages ([`li
 
 ## Fonts
 
-`MicroTeX::init()` takes one math font, a `.otf` with a MATH table; `MicroTeX::addFont()` adds more, math or text. The fonts in `res` keep their own licences, which sit in their folders.
+`MicroTeX::init()` takes one math font, a `.otf` with a MATH table; `MicroTeX::addFont()` adds more, math or text. The fonts in `res` keep their own licences, which sit in their folders. [`res/twemoji`](res/twemoji/README.md) is a colour emoji font (Twemoji, CC-BY 4.0) that only the examples use.
 
 # Credits
 
