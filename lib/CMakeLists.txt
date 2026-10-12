@@ -100,6 +100,7 @@ set(
     render/builder.cpp
 
     # additions carried by this fork
+    host_defaults.cpp
     graphic/graphic_recorder.cpp
     atom/font_family_atom.cpp
     atom/mark_atom.cpp

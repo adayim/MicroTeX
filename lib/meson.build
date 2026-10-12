@@ -3,7 +3,7 @@ inc = []
 
 install_headerfiles = get_option('TARGET_DEVEL')
 
-microtex_src = ['microtex.cpp']
+microtex_src = ['microtex.cpp', 'host_defaults.cpp']
 src += microtex_src
 
 microtex_inc = include_directories('.')

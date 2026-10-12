@@ -18,14 +18,6 @@
 
 namespace microtex {
 
-// The engine asks the host for two measurements, and only a flipped draw
-// needs them (graphic/graphic_recorder.h): an estimate will do.
-float measure_cached_text_width(const std::string& text, int, float fontSize) {
-  return static_cast<float>(text.size()) * fontSize * 0.55f;
-}
-
-float measure_glyph_advance(const std::string&, u16, float fontSize) { return fontSize * 0.5f; }
-
 class Font_none : public Font {
 public:
   Font_none() = default;

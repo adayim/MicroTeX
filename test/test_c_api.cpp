@@ -18,13 +18,8 @@
 #error "MICROTEX_TEST_OTF must name the math font file"
 #endif
 
-// The recorder leaves two measurements to the host (graphic/graphic_recorder.h).
-namespace microtex {
-float measure_cached_text_width(const std::string& text, int, float fontSize) {
-  return static_cast<float>(text.size()) * fontSize * 0.55f;
-}
-float measure_glyph_advance(const std::string&, unsigned short, float fontSize) { return fontSize * 0.5f; }
-}  // namespace microtex
+// The host's two measurements (graphic/graphic_recorder.h) are not defined here:
+// the library's own estimates (lib/host_defaults.cpp) answer.
 
 namespace {
 
