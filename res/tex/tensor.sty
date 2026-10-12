@@ -1,0 +1,51 @@
+\ProvidesPackage{tensor}[2026/10/13 tensor: staggered indices]
+% \tensor{T}{^a_b^c}: the indices of a tensor, each in a place of its own, so
+% that b is not under a but after it: the superscripts are a row, the
+% subscripts another, and each index leaves the width of itself in the other
+% row (as the package does, with an invisible box). \tensor*{T}{...} sets the
+% two rows with no room kept, and \tensor[^a_b]{T}{...} puts indices before
+% the base, in the same way. \indices{^a_b} is the indices alone. The `*`
+% inside an index string, which the package uses to align a pair of rows, is
+% read and ignored, and so are its smash and strut options.
+\DeclareOption*{}
+\ProcessOptions\relax
+
+% The row kept for the other kind of index: the width of the index, or none.
+\let\gm@tph\hphantom
+
+% #1 what to do with the two rows when the string ends, #2 and #3 the rows so
+% far (superscripts, subscripts), then the string in pairs -- ^x or _x -- and
+% \gm@tstop{} to end it. A mark that is neither is dropped alone, with the
+% token after it put back, so a * does no harm. The next step is called after
+% the conditionals, which are not skipped ahead of time: called inside one, it
+% would read its arguments from the \else that follows. A macro passed on is
+% braced, {\gm@tafter}: bare, it would take the arguments after it with it,
+% as the engine reads a command given as an argument.
+\def\gm@tstep#1#2#3#4#5{%
+  \ifx#4\gm@tstop
+    \def\gm@tnext{#1{#2}{#3}}%
+  \else\ifx#4^%
+    \def\gm@tnext{\gm@tstep{#1}{#2{#5}}{#3\gm@tph{#5}}}%
+  \else\ifx#4_%
+    \def\gm@tnext{\gm@tstep{#1}{#2\gm@tph{#5}}{#3{#5}}}%
+  \else
+    \def\gm@tnext{\gm@tstep{#1}{#2}{#3}#5}%
+  \fi\fi\fi
+  \gm@tnext}
+
+% The two rows as scripts, after the base, or on an empty base alone.
+\newcommand{\gm@tafter}[2]{^{#1}_{#2}}
+\newcommand{\gm@tbefore}[2]{{}^{#1}_{#2}}
+
+\DeclareDocumentCommand{\tensor}{ s o m m }{%
+  \IfBooleanTF{#1}{\let\gm@tph\@gobble}{\let\gm@tph\hphantom}%
+  \IfNoValueF{#2}{\gm@tstep{\gm@tbefore}{}{}#2\gm@tstop{}}%
+  {#3}%
+  \gm@tstep{\gm@tafter}{}{}#4\gm@tstop{}}
+
+\DeclareDocumentCommand{\indices}{ s m }{%
+  \IfBooleanTF{#1}{\let\gm@tph\@gobble}{\let\gm@tph\hphantom}%
+  \gm@tstep{\gm@tbefore}{}{}#2\gm@tstop{}}
+
+% \nuclide[A][Z]{X}: the mass number and the atomic number before the symbol.
+\DeclareDocumentCommand{\nuclide}{ O{} O{} m }{{}^{\mathrm{#1}}_{\mathrm{#2}}\mathrm{#3}}

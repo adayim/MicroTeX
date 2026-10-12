@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "atom/atom_basic.h"
+#include "atom/atom_fence.h"
 #include "atom/atom_font.h"
 #include "atom/atom_matrix.h"
 #include "core/formula.h"
@@ -143,6 +144,56 @@ inline cmdmacro(gatheredATATenv) {
   if (arr->cols() == 0) return nullptr;
 
   return sptrOf<MultlineAtom>(args.isPartial(), arr, MultiLineType::gathered);
+}
+
+// The cases package's numcases{left side} and subnumcases: the left side, a
+// brace, and the rows of a case and its explanation, each with a number at
+// the right margin of the display. The lowering has numbered the rows
+// (`_rowTags`), as it does an align's. The numbers are set here as a column of
+// their own at the right, the rows of which are as tall as the cases' (each
+// has a phantom of its row's cells), so that each stands level with its case:
+// as a tag of the one line the display is.
+inline cmdmacro(numcasesATATenv) {
+  const auto arr = args.alignment(2);
+  arr->checkDimensions();
+  std::size_t rows = arr->_array.size();
+  while (rows > 0 && arr->_array[rows - 1].empty()) rows--;
+  if (rows == 0) return nullptr;
+
+  auto numbers = sptrOf<ArrayFormula>();
+  numbers->_stretch = arr->_stretch;
+  bool numbered = false;
+  for (std::size_t r = 0; r < rows; r++) {
+    auto cell = sptrOf<RowAtom>();
+    for (const auto& c : arr->_array[r]) {
+      if (c != nullptr) cell->add(sptrOf<PhantomAtom>(c, false, true, true));
+    }
+    const auto tag = arr->_rowTags.find(static_cast<int>(r));
+    if (tag != arr->_rowTags.end()) {
+      cell->add(tag->second);
+      numbered = true;
+    }
+    numbers->add(cell);
+    const auto gap = arr->_rowGaps.find(static_cast<int>(r));
+    if (gap != arr->_rowGaps.end()) numbers->addRowGap(gap->second);
+    numbers->addRow();
+  }
+  arr->_rowTags.clear();
+
+  const auto left = args.formulaOf(args.text(1), true);
+  auto line = sptrOf<RowAtom>();
+  if (left != nullptr) line->add(left);
+  line->add(sptrOf<FencedAtom>(
+    sptrOf<MatrixAtom>(args.isPartial(), arr, "@{\\hspace{3pt}}>{\\displaystyle}l@{\\quad}l@{}", true), "lbrace", "."));
+
+  auto display = sptrOf<ArrayFormula>();
+  display->add(line);
+  if (numbered) {
+    numbers->checkDimensions();
+    display->_rowTags[0] =sptrOf<MatrixAtom>(args.isPartial(), numbers, "@{}r@{}", true);
+  }
+  display->checkDimensions();
+  return sptrOf<MultlineAtom>(false, display, MultiLineType::gather);
 }
 
 // What a \multicolumn or \multirow spans is a cell: math in an array, text

@@ -1,0 +1,4 @@
+\begin{numcases}{|x|=} x, & for $x \geq 0$ \\ -x, & for $x < 0$ \nonumber \\ \frac{1}{x} & if $x \neq 0$ \label{a} \end{numcases} \eqref{a}
+\begin{subnumcases}{w=} 0 & if $a$ \\ 1 & if $b$ \tag{*} \end{subnumcases}\begin{equation} z \end{equation}
+\begin{numcases}{} a & \text{b $c$} \\ \end{numcases}
+\begin{numcases}{\left(} \end{numcases}

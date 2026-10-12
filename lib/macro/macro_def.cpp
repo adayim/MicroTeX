@@ -93,6 +93,8 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(2, macro_alignedatATATenv, "alignedat@@env"),
   mac(2, macro_multlineATATenv, "multline@@env"),
   mac(2, macro_gatherATATenv, "gather@@env"),
+  mac(2, macro_numcasesATATenv, "numcases@@env"),
+  mac(2, macro_numcasesATATenv, "subnumcases@@env"),
   mac(2, macro_gatheredATATenv, "gathered@@env"),
   mac(1, macro_itemizeATATenv, "itemize@@env"),
   mac(1, macro_enumerateATATenv, "enumerate@@env"),

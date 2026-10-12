@@ -1,0 +1,106 @@
+\ProvidesPackage{commath}[2026/10/13 commath: derivatives, brackets and intervals]
+% The commands of the commath package (version 0.3), written from its
+% documentation: \dif, \od, \pd and \md (and their \t.. and \d.. forms, which
+% set the fraction in text or display size), brackets with a size from 0 to
+% 4 in [..] (-1, the default, sizes them to what they hold), intervals,
+% \eval, \abs and \norm, \fullfunction and the \thmref family. The colon the
+% package makes a relation of is not changed, and nor is \delimitershortfall.
+%
+% Loading it replaces \set and the other names it shares with braket,
+% KaTeX and physics, as the package does; so it is not loaded until a label
+% asks for it.
+\RequirePackage{amsmath}
+
+\DeclareMathOperator{\dif}{d \!}
+\DeclareMathOperator{\Dif}{D \!}
+
+% --- derivatives -----------------------------------------------------------
+
+% A fraction of #1 over #2, in the size #3 (\dfrac or \tfrac) or, with #3 empty,
+% in display size in a display and text size elsewhere.
+\newcommand{\gm@cmfrac}[3]{%
+  \ifx#3\relax
+    \mathchoice{\dfrac{#1}{#2}}{\tfrac{#1}{#2}}{\tfrac{#1}{#2}}{\tfrac{#1}{#2}}%
+  \else
+    #3{#1}{#2}%
+  \fi}
+
+% #1 the order, or no value; #2 d or \partial; #3 what is differentiated, #4 by what.
+\newcommand{\gm@cmder}[5]{%
+  \IfNoValueTF{#1}%
+    {\gm@cmfrac{#2 #3}{#2 #4}{#5}}%
+    {\gm@cmfrac{#2^{#1}#3}{#2 #4^{#1}}{#5}}}
+
+\DeclareDocumentCommand{\od}{ o m m }{\gm@cmder{#1}{\dif}{#2}{#3}{\relax}}
+\DeclareDocumentCommand{\tod}{ o m m }{\mathinner{\gm@cmder{#1}{\dif}{#2}{#3}{\tfrac}}}
+\DeclareDocumentCommand{\dod}{ o m m }{\mathinner{\gm@cmder{#1}{\dif}{#2}{#3}{\dfrac}}}
+\DeclareDocumentCommand{\pd}{ o m m }{\gm@cmder{#1}{\partial}{#2}{#3}{\relax}}
+\DeclareDocumentCommand{\tpd}{ o m m }{\mathinner{\gm@cmder{#1}{\partial}{#2}{#3}{\tfrac}}}
+\DeclareDocumentCommand{\dpd}{ o m m }{\mathinner{\gm@cmder{#1}{\partial}{#2}{#3}{\dfrac}}}
+
+% A mixed derivative of f (#1) of order #2, by x (#3) to the #4 and y (#5) to the #6.
+\newcommand{\gm@cmmix}[7]{%
+  \gm@cmfrac{\partial^{#2}#1}{\partial #3^{#4}\partial #5^{#6}}{#7}}
+\DeclareDocumentCommand{\md}{ m m m m m m }{\gm@cmmix{#1}{#2}{#3}{#4}{#5}{#6}{\relax}}
+\DeclareDocumentCommand{\tmd}{ m m m m m m }{\mathinner{\gm@cmmix{#1}{#2}{#3}{#4}{#5}{#6}{\tfrac}}}
+\DeclareDocumentCommand{\dmd}{ m m m m m m }{\mathinner{\gm@cmmix{#1}{#2}{#3}{#4}{#5}{#6}{\dfrac}}}
+
+% --- brackets and intervals -------------------------------------------------
+
+% #1 the size, -1 to 4; #2 and #3 the delimiters, #4 what is between them.
+\newcommand{\gm@cmfence}[4]{\mathinner{%
+  \ifnum#1<0 \left#2#4\right#3%
+  \else\ifnum#1=0 #2#4#3%
+  \else\ifnum#1=1 \bigl#2#4\bigr#3%
+  \else\ifnum#1=2 \Bigl#2#4\Bigr#3%
+  \else\ifnum#1=3 \biggl#2#4\biggr#3%
+  \else \Biggl#2#4\Biggr#3%
+  \fi\fi\fi\fi\fi}}
+
+\DeclareDocumentCommand{\del}{ O{-1} m }{\gm@cmfence{#1}(){#2}}
+\DeclareDocumentCommand{\set}{ O{-1} m }{\gm@cmfence{#1}\{\}{#2}}
+\let\cbr\set
+\DeclareDocumentCommand{\sbr}{ O{-1} m }{\gm@cmfence{#1}[]{#2}}
+\DeclareDocumentCommand{\intoo}{ O{-1} m }{\gm@cmfence{#1}(){#2}}
+\DeclareDocumentCommand{\intcc}{ O{-1} m }{\gm@cmfence{#1}[]{#2}}
+\DeclareDocumentCommand{\intoc}{ O{-1} m }{\gm@cmfence{#1}(]{#2}}
+\DeclareDocumentCommand{\intco}{ O{-1} m }{\gm@cmfence{#1}[){#2}}
+
+% The bar of an evaluation: the size -1 is the largest.
+\DeclareDocumentCommand{\sVert}{ O{0} }{\mathinner{%
+  \ifnum#1=0 \rvert
+  \else\ifnum#1=1 \bigr\rvert
+  \else\ifnum#1=2 \Bigr\rvert
+  \else\ifnum#1=3 \biggr\rvert
+  \else \Biggr\rvert
+  \fi\fi\fi\fi}}
+\DeclareDocumentCommand{\eval}{ O{-1} m }{\mathinner{#2\sVert[#1]}}
+
+% \abs and \norm start with a thin negative space, except at size 0.
+\newcommand{\gm@cmbars}[4]{\mathinner{%
+  \ifnum#1=0 \else\!\fi
+  \gm@cmfence{#1}{#2}{#3}{#4}}}
+\DeclareDocumentCommand{\envert}{ O{-1} m }{\gm@cmbars{#1}\lvert\rvert{#2}}
+\DeclareDocumentCommand{\enVert}{ O{-1} m }{\gm@cmbars{#1}\lVert\rVert{#2}}
+\let\abs\envert
+\let\norm\enVert
+
+% --- the rest ----------------------------------------------------------------
+
+\DeclareDocumentCommand{\fullfunction}{ m m m m m }{%
+  \begin{array}{ccrcl}
+    {#1} & \colon & {#2} & \longrightarrow & {#3} \\
+    \mbox{} & \mbox{} & {#4} & \longmapsto & {#5}
+  \end{array}}
+
+\providecommand{\thmref}[1]{Theorem~\ref{#1}}
+\providecommand{\exref}[1]{Example~\ref{#1}}
+\providecommand{\defnref}[1]{Definition~\ref{#1}}
+\providecommand{\secref}[1]{\S\ref{#1}}
+\providecommand{\lemref}[1]{Lemma~\ref{#1}}
+\providecommand{\propref}[1]{Proposition~\ref{#1}}
+\providecommand{\remref}[1]{Remark~\ref{#1}}
+\providecommand{\figref}[1]{Figure~\ref{#1}}
+\providecommand{\colref}[1]{Corollary~\ref{#1}}
+\providecommand{\appref}[1]{Appendix~\ref{#1}}
+\providecommand{\assref}[1]{Assumption~\ref{#1}}

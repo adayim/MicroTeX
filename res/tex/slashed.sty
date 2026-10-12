@@ -1,0 +1,6 @@
+\ProvidesPackage{slashed}[2026/10/13 slashed: the Feynman slash through a symbol]
+% \slashed{p} sets a / through the middle of its argument, as David
+% Carlisle's package does. \declareslashed, which moves the slash for a
+% symbol it looks wrong on, is read and ignored.
+\DeclareRobustCommand{\slashed}[1]{\mathord{\not{#1}}}
+\DeclareRobustCommand{\declareslashed}[5]{}

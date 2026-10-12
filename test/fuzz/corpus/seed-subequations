@@ -1,0 +1,5 @@
+\begin{subequations}\label{all}\begin{align} a &= b \label{f} \\ c &= d \tag{*} \\ e &= f \notag \\ g &= h \end{align}\begin{equation} y \end{equation}\end{subequations}\ref{all}\eqref{f}
+\begin{subequations}\begin{subequations}\begin{align} a &= b \end{align}\end{subequations}\end{subequations}
+\begin{subequations}\begin{numcases}{} a & b \\ \begin{subnumcases}{x} 1 & 2 \end{subnumcases} & c \end{numcases}
+\setcounter{equation}{25}\begin{subequations}\begin{align} a &= b \\ c &= d \end{align}\end{subequations}
+\end{subequations}\begin{subequations}

@@ -1394,10 +1394,12 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
       const SourceSpan cellAt = peek().tok.span;
       if (firstCell) row.span = cellAt;
       firstCell = false;
-      const NodeId list = parseList(cellMode, cellStop, cellAt);
+      const Mode thisMode =
+        spec != nullptr && spec->textAfterFirst && !cells.empty() ? Mode::text : cellMode;
+      const NodeId list = parseList(thisMode, cellStop, cellAt);
       Node cell;
       cell.kind = NodeKind::cell;
-      cell.mode = cellMode;
+      cell.mode = thisMode;
       cell.span = cellAt;
       cells.push_back(_ast.add(std::move(cell), {list}));
       if (_rowEnded) {

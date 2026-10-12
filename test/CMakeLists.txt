@@ -3,7 +3,7 @@
 # MICROTEX_FUZZ is on). test/run.sh builds and runs everything here.
 
 if (MICROTEX_TESTS)
-    add_executable(front_tests main.cpp test_lexer.cpp test_expander.cpp test_parser.cpp test_tblr.cpp test_siunitx.cpp test_mhchem.cpp test_engine.cpp test_equivalence.cpp test_packages.cpp test_diagnostics.cpp test_labels.cpp test_lists.cpp test_document.cpp test_math.cpp test_document_mode.cpp test_tables.cpp test_split.cpp test_diagrams.cpp test_text.cpp test_definitions.cpp test_runs.cpp test_supported.cpp)
+    add_executable(front_tests main.cpp test_lexer.cpp test_expander.cpp test_parser.cpp test_tblr.cpp test_siunitx.cpp test_mhchem.cpp test_engine.cpp test_equivalence.cpp test_packages.cpp test_diagnostics.cpp test_labels.cpp test_lists.cpp test_document.cpp test_math.cpp test_document_mode.cpp test_tables.cpp test_split.cpp test_diagrams.cpp test_text.cpp test_definitions.cpp test_runs.cpp test_supported.cpp test_cases.cpp)
     target_link_libraries(front_tests PRIVATE microtex)
     target_compile_definitions(front_tests PRIVATE MICROTEX_TEX_DIR="${CMAKE_SOURCE_DIR}/res/tex"
         MICROTEX_TEST_OTF="${CMAKE_SOURCE_DIR}/res/firamath/FiraMath-Regular.otf"

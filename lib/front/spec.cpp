@@ -261,6 +261,8 @@ struct Table {
     add({"notag", "nonumber"}, "");
     add({"label"}, "r");
     add({"setcounter"}, "rr");
+    // amsmath's subequations, which the prelude writes with these two.
+    add({"gmsubeqbegin", "gmsubeqend"}, "");
     add({"hspace", "vspace"}, "d");
     // --- our own (lib/atom/) ----------------------------------------------
     add({"gmfontfamily"}, "rt");
@@ -276,6 +278,11 @@ struct Table {
     // baseline of lines around it to align to).
     env({"aligned", "gathered"}, "R", EnvBody::alignment);
     env({"alignat"}, "r", EnvBody::alignment);
+    // The cases package's numbered cases: {left side}, then rows of a case
+    // and its explanation, each with a number (a lettered one in subnumcases).
+    env({"numcases", "subnumcases"}, "r", EnvBody::alignment);
+    envs["numcases"].textAfterFirst = true;
+    envs["subnumcases"].textAfterFirst = true;
     env({"array", "alignedat"}, "Rr", EnvBody::alignment);
     // As array, but its cells are text, as LaTeX's are.
     env({"tabular"}, "Rr", EnvBody::alignment, true);
@@ -325,7 +332,8 @@ bool isFloatEnvironment(const std::string& name) {
 }
 
 bool isBlockEnvironment(const std::string& name) {
-  return name == "abstract" || name == "thebibliography" || name == "proof";
+  return name == "abstract" || name == "thebibliography" || name == "proof" ||
+         name == "subequations";
 }
 
 bool isCitation(const std::string& name) {
@@ -345,7 +353,7 @@ bool isLineAlignment(const std::string& name) {
 bool isDisplayEnvironment(const std::string& name) {
   static const std::set<std::string> display = {
     // Built by the engine.
-    "align", "alignat", "flalign", "gather", "multline",
+    "align", "alignat", "flalign", "gather", "multline", "numcases", "subnumcases",
     // Written in LaTeX by the prelude.
     "displaymath", "equation", "eqnarray"};
   const bool starred = name.size() > 1 && name.back() == '*';
@@ -353,8 +361,8 @@ bool isDisplayEnvironment(const std::string& name) {
 }
 
 bool isNumberedEnvironment(const std::string& name) {
-  static const std::set<std::string> numbered = {"align",  "alignat",  "flalign",
-                                                  "gather", "multline", "eqnarray"};
+  static const std::set<std::string> numbered = {"align",    "alignat",   "flalign",    "gather",
+                                                  "multline", "eqnarray",  "numcases", "subnumcases"};
   return numbered.count(name) > 0;
 }
 

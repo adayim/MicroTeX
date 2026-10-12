@@ -192,6 +192,131 @@ TEST(physics_as_a_start_package_is_loaded_before_every_input) {
   CHECK_PAIRS_WITH((Pairs{{R"(\abs{x})", R"(\left\lvert x\right\rvert)"}}), opt);
 }
 
+// --- commath, which a label asks for ----------------------------------------
+
+namespace {
+
+// A formula set as a display, as an equation is: what \od and \pd choose their
+// fraction by.
+check::Options displayStyle() {
+  check::Options opt;
+  opt.display = true;
+  return opt;
+}
+
+}  // namespace
+
+TEST(commath_is_not_loaded_until_asked_for) {
+  CHECK(check::warns(check::render(R"(\od{f}{x})"), "unknown command"));
+  // \set is KaTeX's until commath takes it, and then it has a size.
+  CHECK_PAIRS((Pairs{{R"(\usepackage{commath}\set[0]{x})", R"(\mathinner{\{x\}})"}}));
+}
+
+TEST(commath_derivatives_draw_as_the_fractions_they_stand_for) {
+  const std::string with = R"(\usepackage{commath})";
+  CHECK_PAIRS_WITH(after(with, Pairs{
+    {R"(\od{f}{x})", with + R"(\dfrac{\dif f}{\dif x})"},
+    {R"(\od[2]{f}{x})", with + R"(\dfrac{\dif^{2}f}{\dif x^{2}})"},
+    {R"(\pd{f}{x})", R"(\dfrac{\partial f}{\partial x})"},
+    {R"(\pd[2]{f}{x})", R"(\dfrac{\partial^{2}f}{\partial x^{2}})"},
+    {R"(\tpd{f}{x})", R"(\mathinner{\tfrac{\partial f}{\partial x}})"},
+    {R"(\dod[3]{f}{x})", with + R"(\mathinner{\dfrac{\dif^{3}f}{\dif x^{3}}})"},
+    {R"(\md{f}{2}{x}{1}{y}{1})", R"(\dfrac{\partial^{2}f}{\partial x^{1}\partial y^{1}})"},
+    {R"(\dif x)", R"(\operatorname{d \!}x)"},
+  }), displayStyle());
+  // In text size they are text fractions.
+  CHECK_PAIRS(after(with, Pairs{
+    {R"(\od{f}{x})", with + R"(\tfrac{\dif f}{\dif x})"},
+    {R"(\pd[2]{f}{x})", R"(\tfrac{\partial^{2}f}{\partial x^{2}})"},
+  }));
+}
+
+TEST(commath_brackets_and_intervals_have_a_size_from_0_to_4_and_minus_1_for_automatic) {
+  CHECK_PAIRS(after(R"(\usepackage{commath})", Pairs{
+    {R"(\del{x})", R"(\mathinner{\left(x\right)})"},
+    {R"(\del[0]{x})", R"(\mathinner{(x)})"},
+    {R"(\del[1]{x})", R"(\mathinner{\bigl(x\bigr)})"},
+    {R"(\del[2]{x})", R"(\mathinner{\Bigl(x\Bigr)})"},
+    {R"(\del[3]{x})", R"(\mathinner{\biggl(x\biggr)})"},
+    {R"(\del[4]{x})", R"(\mathinner{\Biggl(x\Biggr)})"},
+    {R"(\set{x})", R"(\mathinner{\left\{x\right\}})"},
+    {R"(\cbr[2]{x})", R"(\mathinner{\Bigl\{x\Bigr\}})"},
+    {R"(\sbr{x})", R"(\mathinner{\left[x\right]})"},
+    {R"(\intoo{a,b})", R"(\mathinner{\left(a,b\right)})"},
+    {R"(\intcc[0]{a,b})", R"(\mathinner{[a,b]})"},
+    {R"(\intoc{a,b})", R"(\mathinner{\left(a,b\right]})"},
+    {R"(\intco[1]{a,b})", R"(\mathinner{\bigl[a,b\bigr)})"},
+  }));
+}
+
+TEST(commath_eval_abs_and_norm) {
+  CHECK_PAIRS(after(R"(\usepackage{commath})", Pairs{
+    {R"(\eval{x^2})", R"(\mathinner{x^2\mathinner{\Biggr\rvert}})"},
+    {R"(\eval[0]{x^2})", R"(\mathinner{x^2\mathinner{\rvert}})"},
+    {R"(\eval[2]{x^2})", R"(\mathinner{x^2\mathinner{\Bigr\rvert}})"},
+    {R"(\sVert[1])", R"(\mathinner{\bigr\rvert})"},
+    {R"(\abs{x})", R"(\mathinner{\!\mathinner{\left\lvert x\right\rvert}})"},
+    {R"(\abs[0]{x})", R"(\mathinner{\mathinner{\lvert x\rvert}})"},
+    {R"(\abs[1]{x})", R"(\mathinner{\!\mathinner{\bigl\lvert x\bigr\rvert}})"},
+    {R"(\norm{x})", R"(\mathinner{\!\mathinner{\left\lVert x\right\rVert}})"},
+    {R"(\norm[0]{x})", R"(\mathinner{\mathinner{\lVert x\rVert}})"},
+    {R"(\envert{x})", R"(\usepackage{commath}\abs{x})"},
+  }));
+}
+
+TEST(commath_fullfunction_and_the_reference_commands) {
+  CHECK_PAIRS(after(R"(\usepackage{commath})", Pairs{
+    {R"(\fullfunction{f}{X}{Y}{x}{y})",
+     R"(\begin{array}{ccrcl}{f} & \colon & {X} & \longrightarrow & {Y} \\ \mbox{} & \mbox{} & {x} & \longmapsto & {y}\end{array})"},
+  }));
+  check::Options label(microtex::InputMode::mixed);
+  CHECK_PAIRS_WITH(after(R"(\usepackage{commath})", Pairs{
+    {R"(\thmref{a})", R"(Theorem~\ref{a})"},
+    {R"(\secref{a})", R"(\S\ref{a})"},
+    {R"(\figref{a})", R"(Figure~\ref{a})"},
+  }), label);
+}
+
+TEST(commath_a_name_it_defines_is_no_longer_free_to_define_once_it_is_loaded) {
+  CHECK(check::render(R"(\newcommand{\od}[2]{x}\od{a}{b})").warnings.empty());
+  CHECK(check::warns(check::render(R"(\usepackage{commath}\newcommand{\od}[2]{x})"), "already exists"));
+}
+
+// --- slashed and tensor, which every label starts with ---------------------------
+
+TEST(slashed_sets_a_slash_through_its_argument) {
+  CHECK_PAIRS((Pairs{
+    {R"(\slashed{p})", R"(\mathord{\not{p}})"},
+    {R"(\gamma^\mu\slashed{D}_\mu)", R"(\gamma^\mu\mathord{\not{D}}_\mu)"},
+    // \declareslashed is read and does nothing.
+    {R"(\declareslashed{}{/}{.1}{0}{D}\slashed{D})", R"(\slashed{D})"},
+  }));
+  CHECK(!check::sameInk(check::render(R"(\slashed{p})"), check::render("p")));
+}
+
+TEST(tensor_staggers_its_indices_each_in_a_place_of_its_own) {
+  CHECK_PAIRS((Pairs{
+    {R"(\tensor{T}{^a_b})", R"({T}^{{a}\hphantom{b}}_{\hphantom{a}{b}})"},
+    {R"(\tensor{T}{^a_b^c})", R"({T}^{{a}\hphantom{b}{c}}_{\hphantom{a}{b}\hphantom{c}})"},
+    {R"(\tensor{T}{_a^b_c})", R"({T}^{\hphantom{a}{b}\hphantom{c}}_{{a}\hphantom{b}{c}})"},
+    {R"(\tensor{R}{^i_{jkl}})", R"({R}^{{i}\hphantom{jkl}}_{\hphantom{i}{jkl}})"},
+    // The `*` that aligns a pair of rows in the package is read and left out.
+    {R"(\tensor{T}{^a*_b})", R"(\tensor{T}{^a_b})"},
+    {R"(\tensor{T}{})", R"({T}^{}_{})"},
+  }));
+  // Staggered, b is after a and not under it.
+  CHECK(!check::sameInk(check::render(R"(\tensor{T}{^a_b})"), check::render(R"(T^a_b)")));
+}
+
+TEST(tensor_star_keeps_no_room_prescripts_come_before_and_indices_stand_alone) {
+  CHECK_PAIRS((Pairs{
+    {R"(\tensor*{T}{^a_b^c_d})", R"({T}^{{a}{c}}_{{b}{d}})"},
+    {R"(\tensor[^a_b]{T}{^c_d})", R"({}^{{a}\hphantom{b}}_{\hphantom{a}{b}}{T}^{{c}\hphantom{d}}_{\hphantom{c}{d}})"},
+    {R"(\indices{^a_b})", R"({}^{{a}\hphantom{b}}_{\hphantom{a}{b}})"},
+    {R"(\nuclide[4][2]{He})", R"({}^{\mathrm{4}}_{\mathrm{2}}\mathrm{He})"},
+  }));
+}
+
 // --- \usepackage, as a label meets it ---------------------------------------
 
 TEST(packages_usepackage_of_a_package_we_have_or_have_not_changes_nothing_a_label_draws) {

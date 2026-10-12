@@ -88,6 +88,9 @@ struct EnvSpec {
   /** Its cells or items are text when it is met in text, as in LaTeX
    *  (tabular, itemize); met in math, they are math, as they always were. */
   bool textInText = false;
+  /** Its cells after the first are text, whatever surrounds it: the explanation
+   *  column of the cases package's numcases. */
+  bool textAfterFirst = false;
 };
 
 /** The spec of an environment the engine builds, or nullptr. Environments
