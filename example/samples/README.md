@@ -1,6 +1,6 @@
 # Samples
 
-The formulas of [`res/SAMPLES.tex`](../../res/SAMPLES.tex), drawn by [`microtex-svg`](../svg/svg_main.cpp) with `--samples`; the warnings are the engine's, with their line and column in the formula. Text is drawn as outlines from the fonts given, and a character none of them has is left blank. Fallback fonts: `res/twemoji/Twemoji.Mozilla.ttf` ([notes](../../res/twemoji/README.md)).
+The formulas of [`res/SAMPLES.tex`](../../res/SAMPLES.tex), drawn by [`microtex-svg`](../svg/svg_main.cpp) with `--samples`; the warnings are the engine's, with their line and column in the formula. Text is drawn as outlines from the fonts given, and a character none of them has is left blank. Fallback fonts: `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` `/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf` `res/twemoji/Twemoji.Mozilla.ttf` ([notes](../../res/twemoji/README.md)).
 
 ## 1. doge
 
