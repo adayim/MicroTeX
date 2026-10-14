@@ -643,6 +643,53 @@ TEST(docmode_refstepcounter_makes_the_label_name_the_counter_at_that_point) {
   CHECK_EQ(drawn("see \\ref{x}.\\newcounter{c}\\refstepcounter{c}\\label{x}"), std::string("see 1."));
 }
 
+// The distance from the start of the last-but-one text run to the start of the
+// last, at a text size of 10 (1em = 10): "a", a space, "b".
+static float gapBetween(const std::string& tex) {
+  const auto xs = xsOf(runs(tex, InputMode::document, 0, 10));
+  return xs.at(xs.size() - 1) - xs.at(xs.size() - 2);
+}
+
+// The lengths LaTeX's article class sets at 10pt, in em so that they follow the
+// text size: \parindent 15pt, \tabcolsep 6pt, \arraycolsep 5pt, \fboxsep 3pt,
+// \baselineskip 12pt, \columnsep 10pt. A length is read as \linewidth is: in
+// the dimension of a command.
+TEST(docmode_a_length_stands_where_a_dimension_does) {
+  const float plain = gapBetween("a\\hspace{0em}b");
+  CHECK(close(gapBetween("a\\hspace{\\parindent}b") - plain, 15.f));
+  CHECK(close(gapBetween("a\\hspace{2\\tabcolsep}b") - plain, 12.f));
+  CHECK(close(gapBetween("a\\hspace{\\arraycolsep}b") - plain, 5.f));
+  CHECK(close(gapBetween("a\\hspace{\\baselineskip}b") - plain, 12.f));
+  // A sign in front is a factor of -1, as it is for \linewidth.
+  CHECK(close(gapBetween("a\\hspace{-\\parindent}b"), gapBetween("a\\hspace{-1.5em}b")));
+}
+
+TEST(docmode_setlength_addtolength_and_newlength_change_a_length) {
+  const float plain = gapBetween("a\\hspace{0em}b");
+  CHECK(close(gapBetween("\\newlength{\\gap}\\setlength{\\gap}{3em}a\\hspace{\\gap}b") - plain, 30.f));
+  CHECK(close(gapBetween("\\newlength{\\gap}\\setlength{\\gap}{3em}a\\hspace{2\\gap}b") - plain, 60.f));
+  CHECK(close(gapBetween("\\setlength{\\parindent}{1em}\\addtolength{\\parindent}{2em}a\\hspace{\\parindent}b") - plain, 30.f));
+  // One length from another.
+  CHECK(close(gapBetween("\\newlength{\\g}\\setlength{\\g}{\\tabcolsep}a\\hspace{\\g}b") - plain, 6.f));
+  // TeX's glue: only the natural part is used.
+  CHECK(close(gapBetween("\\setlength{\\parskip}{1em plus 2em minus 1em}a\\hspace{\\parskip}b") - plain, 10.f));
+}
+
+// A group ends what a length was set to in it, as in LaTeX.
+TEST(docmode_a_length_set_in_a_group_is_what_it_was_after_the_group) {
+  const float plain = gapBetween("a\\hspace{0em}b");
+  CHECK(close(gapBetween("{\\setlength{\\parindent}{0em}}a\\hspace{\\parindent}b") - plain, 15.f));
+  CHECK(close(gapBetween("\\begin{center}\\setlength{\\parindent}{0em}x\\end{center}a\\hspace{\\parindent}b") - plain, 15.f));
+  CHECK(close(gapBetween("\\setlength{\\parindent}{0em}a\\hspace{\\parindent}b") - plain, 0.f));
+}
+
+TEST(docmode_a_length_that_is_not_defined_or_not_a_length_warns) {
+  CHECK(check::warns(rec("\\setlength{\\nosuch}{1em}"), "length `\\nosuch' is not defined"));
+  CHECK(check::warns(rec("\\setlength{\\parindent}{many}"), "`many' is not a length"));
+  CHECK(check::warns(rec("\\addtolength{\\parindent}{3pt}"), "cannot add 3pt to 1.5em"));
+  CHECK(rec("\\newlength{\\x}\\setlength{\\x}{3pt}").warnings.empty());
+}
+
 TEST(docmode_a_counter_that_is_not_defined_warns_and_nothing_changes) {
   CHECK(check::warns(rec("\\stepcounter{nosuch}"), "no counter `nosuch'"));
   CHECK(check::warns(rec("\\setcounter{nosuch}{3}"), "no counter `nosuch'"));

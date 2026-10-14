@@ -183,17 +183,17 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
   // Checked against the legacy build when the old parser went: each of
   // these draws as it did there.
   CHECK_EQ(minus(specCommands, engineAll),
-           sorted({"(", "[", "\\", "above", "addtocounter", "alph", "Alph", "arabic", "fnsymbol", "gmcurrentlabel",
+           sorted({"(", "[", "\\", "above", "addtocounter", "addtolength", "alph", "Alph", "arabic", "fnsymbol", "gmcurrentlabel",
                    "gmnewcounter", "stepcounter", "value", "abovewithdelims", "atop", "atopwithdelims",
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "cmidrule", "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
                    "fontfamily", "fontspec", "fontsize", "footnote", "footnotesize", "frak", "gmarraystretch", "gmbibitem", "gmrows", "gmtagstar", "gmtheorem", "gmsubeqbegin", "gmsubeqend", "graphicspath", "href", "huge", "Huge",
                    "hskip", "it", "kern", "label", "large", "Large", "LARGE", "left", "limits", "makeatletter",
-                   "makeatother", "mkern", "mskip", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
+                   "makeatother", "mkern", "mskip", "newlength", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
                    "overwithdelims", "pageref", "par", "paragraph", "raggedleft",
                    "raggedright", "ref", "relscale", "right", "rm", "scriptscriptstyle",
-                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "setmainfont", "setmathfont", "setmonofont", "setsansfont", "sf", "sixptsize", "small", "subsection",
+                   "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "setlength", "setmainfont", "setmathfont", "setmonofont", "setsansfont", "sf", "sixptsize", "small", "subsection",
                    "subsubsection", "tag", "textsc", "textstyle", "tiny", "tt", "url", "verb"}));
 }
 
