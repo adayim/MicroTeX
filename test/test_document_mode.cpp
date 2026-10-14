@@ -531,6 +531,55 @@ TEST(docmode_natbibs_citations_draw_what_natbib_draws_for_an_unknown_key) {
   CHECK(check::warns(rec("\\citet{k1}"), "citation `k1' is undefined: drawn as (author?) [?]"));
 }
 
+// pdflatex, two runs: \cite{a} is [1] whether the bibliography comes before or
+// after it; \cite{a,b} is [1, 2] (\@citex puts ", " between the keys).
+TEST(docmode_cite_draws_the_number_of_its_bibitem_before_or_after_it) {
+  const auto drawn = [](const std::string& tex) {
+    std::string out;
+    for (const auto& t : check::texts(rec(tex))) out += t;
+    return out;
+  };
+  const std::string bib = "\n\n\\begin{thebibliography}{9}\\bibitem{a} A.\\bibitem{b} B.\\end{thebibliography}";
+  CHECK(drawn("See \\cite{a}." + bib).find("See [1].") != std::string::npos);
+  CHECK(drawn(bib + "\n\nSee \\cite{b}.").find("See [2].") != std::string::npos);
+  CHECK(drawn("\\cite{a,b}" + bib).find("[1, 2]") != std::string::npos);
+  CHECK(drawn("\\citep[see][ch.~2]{a}" + bib).find("[see 1, ch. 2]") != std::string::npos);
+  CHECK_EQ(drawn("\\citealp{b}" + bib).rfind("2", 0), std::size_t(0));
+  CHECK(!check::warns(rec("\\cite{a,b}" + bib), "citation"));
+}
+
+// \bibitem[Knuth 1984]{k}: marked [Knuth 1984], and \cite{k} draws the same.
+// The mark is the list's label column, drawn as characters: "[Knuth 1984]" is
+// eleven of them where the unlabelled "[1]" is three.
+TEST(docmode_a_labelled_bibitem_is_marked_and_cited_by_its_label) {
+  const std::string bib = "\\begin{thebibliography}{9}\\bibitem[Knuth 1984]{k} K.\\end{thebibliography}";
+  const auto marks = rec(bib);
+  CHECK_EQ(check::count(marks, DrawRecord::GLYPH) + check::count(marks, DrawRecord::PATH), 11);
+  std::string s;
+  for (const auto& t : check::texts(rec("\\cite{k}\n\n" + bib))) s += t;
+  CHECK(s.find("[Knuth 1984]") != std::string::npos);
+}
+
+TEST(docmode_a_key_no_bibitem_names_warns_once_per_key) {
+  const auto l = rec("\\cite{a,nokey}\n\n\\begin{thebibliography}{9}\\bibitem{a} A.\\end{thebibliography}");
+  CHECK(check::warns(l, "citation `nokey' is undefined: drawn as [?]"));
+  CHECK(!check::warns(l, "citation `a'"));
+}
+
+// A citation in a table cell or a list item is lowered by a Lowerer of its own,
+// and is found as well.
+TEST(docmode_a_cite_in_a_table_cell_or_a_list_item_resolves) {
+  const std::string bib = "\n\n\\begin{thebibliography}{9}\\bibitem{a} A.\\end{thebibliography}";
+  const auto drawn = [](const std::string& tex) {
+    std::string out;
+    for (const auto& t : check::texts(rec(tex))) out += t;
+    return out;
+  };
+  CHECK(drawn("\\begin{tabular}{l}x \\cite{a}\\end{tabular}" + bib).find("x [1]") != std::string::npos);
+  CHECK(drawn("\\begin{itemize}\\item y \\cite{a}\\end{itemize}" + bib).find("y [1]") != std::string::npos);
+  CHECK(check::warns(rec("\\begin{tabular}{l}\\cite{nokey}\\end{tabular}"), "citation `nokey' is undefined"));
+}
+
 TEST(docmode_specialrule_is_a_rule_of_the_thickness_it_names) {
   const auto l = rec("\\begin{tabular}{l}a \\\\ \\specialrule{3pt}{0pt}{0pt} b\\end{tabular}");
   CHECK_EQ(check::texts(l), Strings({"a", "b"}));  // its arguments are read

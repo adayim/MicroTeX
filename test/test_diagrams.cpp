@@ -629,3 +629,9 @@ TEST(diagrams_a_cd_with_something_it_cannot_read_warns_and_goes_on) {
   CHECK(warnsAbout(cd("@VVV \\\\ A"), "above"));
   CHECK_EQ(shafts(rec(cd("A @X B @>>> C"))).size(), std::size_t(1));
 }
+
+// A mix names an arrow's colour as a name does (tikz-cd reads xcolor's syntax).
+TEST(diagrams_an_arrow_takes_a_mixed_colour) {
+  CHECK(check::drawsColour(check::render("\\begin{tikzcd} A \\arrow[r, red!50] & B \\end{tikzcd}"), 0xFFFF8080u));
+  CHECK(check::drawsColour(check::render("\\begin{tikzcd} A \\arrow[r, draw=red!50] & B \\end{tikzcd}"), 0xFFFF8080u));
+}

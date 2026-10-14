@@ -258,3 +258,39 @@ TEST(definitions_newcommand_and_def_do_not_leak_between_independent_parses) {
   CHECK(pmat.records.size() >= 4);
   for (const auto& t : check::texts(pmat)) CHECK(t.find("pmatrix") == std::string::npos);
 }
+
+// xcolor's mixes, as pdflatex writes them into the PDF: red!50 is `1 .5 .5 rg`,
+// red!50!blue `.5 0 .5 rg`, blue!20!black `0 0 .2 rg`, -red (the complement)
+// `0 1 1 rg`; red!30!blue!60 is (red!30!blue)!60 with white. A channel of
+// 127.5 is drawn as 128.
+TEST(definitions_xcolor_mixes_are_the_colours_xcolor_makes) {
+  CHECK(check::drawsColour(rec("\\textcolor{red!50}{x}"), 0xFFFF8080u));
+  CHECK(check::drawsColour(rec("\\textcolor{red!50!blue}{x}"), 0xFF800080u));
+  CHECK(check::drawsColour(rec("\\textcolor{blue!20!black}{x}"), 0xFF000033u));
+  CHECK(check::drawsColour(rec("\\textcolor{red!30!blue!60}{x}"), 0xFF9466D1u));
+  CHECK(check::drawsColour(rec("\\textcolor{-red}{x}"), 0xFF00FFFFu));
+  CHECK(check::drawsColour(rec("{\\color{red!50} x}"), 0xFFFF8080u));
+}
+
+// xcolor stops with "Undefined color"; we recover: a warning at its place, and
+// the colour around it stays.
+TEST(definitions_an_undefined_colour_warns_and_leaves_the_colour_as_it_was) {
+  const auto l = rec("{\\color{blue}\\textcolor{nosuchcolour}{x}}");
+  CHECK(check::warns(l, "undefined colour `nosuchcolour'"));
+  CHECK(check::drawsColour(l, 0xFF0000FFu));
+  CHECK(check::warns(rec("\\textcolor{red!fifty}{x}"), "undefined colour `red!fifty'"));
+  CHECK(check::warns(rec("{\\color{nosuchcolour} x}"), "undefined colour `nosuchcolour'"));
+}
+
+// \colorbox has no frame: with a colour that is not defined it is its content.
+TEST(definitions_a_colorbox_with_an_undefined_colour_is_its_content_with_no_frame) {
+  const auto l = rec("\\colorbox{nosuchcolour}{x}");
+  CHECK(check::warns(l, "undefined colour `nosuchcolour'"));
+  CHECK_EQ(check::count(l, DrawRecord::RECT) + check::count(l, DrawRecord::FILL_RECT), 0);
+  CHECK(check::sameInk(l, rec("x")));
+}
+
+TEST(definitions_colorlet_names_a_mix) {
+  CHECK(check::drawsColour(rec("\\colorlet{soft}{red!50}\\textcolor{soft}{x}"), 0xFFFF8080u));
+  CHECK(check::warns(rec("\\colorlet{soft}{nosuchcolour}"), "undefined colour `nosuchcolour'"));
+}

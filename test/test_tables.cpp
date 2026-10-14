@@ -401,3 +401,14 @@ TEST(tblr_a_talltblr_has_its_caption_above_it_and_what_is_not_understood_is_said
   CHECK(check::warns(w, "rowsep"));
   CHECK(check::warns(w, "row span"));
 }
+
+// kableExtra's striped rows are \rowcolor{gray!10}: pdflatex fills them with
+// `.95 g`, 242 of 255. They were black.
+TEST(tables_a_mixed_row_colour_fills_the_row_in_that_colour) {
+  const auto l = rec("\\begin{tabular}{l}\\rowcolor{gray!10} a\\end{tabular}");
+  CHECK(check::drawsColour(l, 0xFFF2F2F2u));
+  for (const auto& r : check::of(l, DrawRecord::FILL_RECT)) CHECK(r.col != 0xFF000000u);
+  const auto bad = rec("\\begin{tabular}{l}\\rowcolor{nosuchcolour} a\\end{tabular}");
+  CHECK(check::warns(bad, "undefined colour `nosuchcolour'"));
+  CHECK(check::of(bad, DrawRecord::FILL_RECT).empty());
+}
