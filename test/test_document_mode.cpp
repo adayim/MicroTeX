@@ -714,6 +714,28 @@ TEST(docmode_parindent_and_parskip_are_the_lengths_of_a_paragraph) {
   CHECK(close(firstX("\\setlength{\\parindent}{0pt}\\setlength{\\parskip}{6pt plus 2pt minus 1pt}a\n\nb"), 0.f));
 }
 
+// pdflatex: \fbox adds \fboxsep + \fboxrule (3pt + 0.4pt) on every side of its
+// text, \colorbox just \fboxsep (3pt), and \fcolorbox both, as \fbox does. At a
+// size of 100 the lengths are 0.3em + 0.04em = 34 and 0.3em = 30. The engine
+// had 0.5em and its own rule: 11bp where LaTeX has 6.8 at 10pt.
+TEST(docmode_fbox_colorbox_and_boxed_pad_by_fboxsep) {
+  const auto dims = [](const std::string& tex) { return rec(tex, InputMode::math, 0, 100); };
+  const auto a = dims("a");
+  // A render's height is the whole box, its depth what is below the baseline.
+  const auto grows = [&](const std::string& tex, float side) {
+    const auto l = dims(tex);
+    return std::fabs((l.width - a.width) - 2 * side) <= 1.5f && std::fabs((l.height - a.height) - 2 * side) <= 1.5f &&
+           std::fabs((l.depth - a.depth) - side) <= 1.5f;
+  };
+  CHECK(grows("\\fbox{a}", 34.f));
+  CHECK(grows("\\colorbox{red}{a}", 30.f));
+  CHECK(grows("\\fcolorbox{blue}{red}{a}", 34.f));
+  CHECK(grows("\\setlength{\\fboxsep}{1em}\\fbox{a}", 104.f));
+  CHECK(grows("\\setlength{\\fboxsep}{0em}\\colorbox{red}{a}", 0.f));
+  // \colorbox has no frame, only its colour.
+  CHECK_EQ(check::count(rec("\\colorbox{red}{a}", InputMode::math), DrawRecord::RECT), 0);
+}
+
 // enumitem's label templates (`\roman*`) and the number `\roman{12}` are not
 // counters' names: neither says there is no counter.
 TEST(docmode_roman_of_a_template_or_a_number_is_not_a_counter) {
