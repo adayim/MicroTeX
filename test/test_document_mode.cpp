@@ -439,7 +439,11 @@ TEST(docmode_x_columns_share_what_the_table_needs_and_a_column_spec_aligns_its_l
     if (t.y > top) least = std::min(least, t.x);
     greatest = std::max(greatest, t.x);
   }
-  CHECK(least < 120);
+  // The third column starts at 126 here, 10 more than when the columns were
+  // padded by 1em and not by LaTeX's 12pt (1.2em): 2 at the edge and 4 at each
+  // of two gaps, at this size of 20. Were
+  // the two X columns to share equally it would start at about 154.
+  CHECK(least < 140);
   CHECK(greatest <= 250);
   const std::string cell = " a cell of words that wraps \\\\ \\end{tabular}";
   const auto starts = [&](const std::string& spec) {
@@ -688,6 +692,35 @@ TEST(docmode_a_length_that_is_not_defined_or_not_a_length_warns) {
   CHECK(check::warns(rec("\\setlength{\\parindent}{many}"), "`many' is not a length"));
   CHECK(check::warns(rec("\\addtolength{\\parindent}{3pt}"), "cannot add 3pt to 1.5em"));
   CHECK(rec("\\newlength{\\x}\\setlength{\\x}{3pt}").warnings.empty());
+}
+
+// \parindent and \parskip: pandoc's template sets both, \parindent 0pt and
+// \parskip 6pt plus 2pt minus 1pt. A first line is indented \parindent (15pt;
+// 1.5em) and a paragraph break adds \parskip (0 in article).
+TEST(docmode_parindent_and_parskip_are_the_lengths_of_a_paragraph) {
+  const auto firstX = [](const std::string& tex) {
+    return xsOf(runs(tex, InputMode::document, 300, 10)).at(0);
+  };
+  const auto baselines = [](const std::string& tex) { return ysOf(runs(tex, InputMode::document, 300, 10)); };
+  CHECK(close(firstX("a\n\nb"), 15.f));
+  CHECK(close(firstX("\\setlength{\\parindent}{0em}a\n\nb"), 0.f));
+  CHECK(close(firstX("\\setlength{\\parindent}{2em}a\n\nb"), 20.f));
+  const auto plain = baselines("a\n\nb");
+  const auto spaced = baselines("\\setlength{\\parskip}{1em}a\n\nb");
+  CHECK_EQ(plain.size(), std::size_t(2));
+  CHECK_EQ(spaced.size(), std::size_t(2));
+  CHECK(close((spaced[1] - spaced[0]) - (plain[1] - plain[0]), 10.f));
+  // Glue: only the natural length.
+  CHECK(close(firstX("\\setlength{\\parindent}{0pt}\\setlength{\\parskip}{6pt plus 2pt minus 1pt}a\n\nb"), 0.f));
+}
+
+// enumitem's label templates (`\roman*`) and the number `\roman{12}` are not
+// counters' names: neither says there is no counter.
+TEST(docmode_roman_of_a_template_or_a_number_is_not_a_counter) {
+  CHECK(!check::warns(rec("[\\roman*)]", InputMode::math), "no counter"));
+  CHECK(!check::warns(rec("[\\Roman*.]", InputMode::math), "no counter"));
+  CHECK_EQ(drawn("\\roman{12}"), std::string("xii"));
+  CHECK(!check::warns(rec("\\begin{enumerate}[label=(\\roman*)]\\item a\\end{enumerate}"), "no counter"));
 }
 
 TEST(docmode_a_counter_that_is_not_defined_warns_and_nothing_changes) {

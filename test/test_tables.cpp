@@ -412,3 +412,52 @@ TEST(tables_a_mixed_row_colour_fills_the_row_in_that_colour) {
   CHECK(check::warns(bad, "undefined colour `nosuchcolour'"));
   CHECK(check::of(bad, DrawRecord::FILL_RECT).empty());
 }
+
+namespace {
+bool near(float a, float b) { return std::fabs(a - b) <= 1e-3f; }
+
+std::vector<float> textXs(const std::string& tex) {
+  return check::column(check::of(rec(tex, 300, 10), DrawRecord::TEXT), &DrawRecord::x);
+}
+}  // namespace
+
+// pdflatex, tabular{ll} with a and b: the second column's text starts
+// width(a) + 2*\tabcolsep after the first's, and the first starts \tabcolsep
+// in: 12pt and 6pt at 10pt; the engine had 1em (10pt) for both. The stub
+// measurer's "a" is 0.55em, 5.5 at a size of 10.
+TEST(tables_a_tabular_pads_its_columns_by_tabcolsep) {
+  const auto plain = textXs("a");
+  const auto t = textXs("\\begin{tabular}{ll}a&b\\end{tabular}");
+  CHECK_EQ(t.size(), std::size_t(2));
+  CHECK(near(t[0] - plain[0], 6.f));
+  CHECK(near(t[1] - t[0], 5.5f + 12.f));
+  const auto wide = textXs("\\setlength{\\tabcolsep}{1em}\\begin{tabular}{ll}a&b\\end{tabular}");
+  CHECK(near(wide[0] - plain[0], 10.f));
+  CHECK(near(wide[1] - wide[0], 5.5f + 20.f));
+  // The group ends it.
+  const auto after = textXs("{\\setlength{\\tabcolsep}{1em}}\\begin{tabular}{ll}a&b\\end{tabular}");
+  CHECK(near(after[1] - after[0], 5.5f + 12.f));
+}
+
+// A math array is 2\arraycolsep apart (10pt: it already was) and \arraycolsep at the edges.
+TEST(tables_an_array_pads_its_columns_by_arraycolsep) {
+  const auto glyphXs = [](const std::string& tex) {
+    return check::column(check::of(rec(tex, 300, 10, InputMode::math), DrawRecord::GLYPH), &DrawRecord::x);
+  };
+  const auto d = glyphXs("\\begin{array}{ll}a&b\\end{array}");
+  const auto w = glyphXs("\\setlength{\\arraycolsep}{1em}\\begin{array}{ll}a&b\\end{array}");
+  CHECK_EQ(d.size(), std::size_t(2));
+  CHECK_EQ(w.size(), std::size_t(2));
+  CHECK(near((w[1] - w[0]) - (d[1] - d[0]), 10.f));  // 2em apart against 1em
+}
+
+// The other text tables read it too.
+TEST(tables_the_other_text_tables_pad_by_tabcolsep) {
+  const auto gap = [](const std::string& tex) {
+    const auto xs = textXs(tex);
+    return xs.at(1) - xs.at(0);
+  };
+  const float base = gap("\\begin{tabular}{ll}a&b\\end{tabular}");
+  CHECK(near(gap("\\begin{longtable}{ll}a&b\\end{longtable}"), base));
+  CHECK(near(gap("\\setlength{\\tabcolsep}{0em}\\begin{longtable}{ll}a&b\\end{longtable}"), base - 12.f));
+}
