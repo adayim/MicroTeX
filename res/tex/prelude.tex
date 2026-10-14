@@ -54,7 +54,6 @@
 \newcommand{\em}{\it}
 \newenvironment{abstract}{\small\begin{center}\textbf{Abstract}\end{center}}{\par}
 \newenvironment{thebibliography}[1]{\section*{References}\begin{enumerate}[{[}\arabic*{]}]}{\end{enumerate}}
-\newcommand{\bibitem}[2][]{\item}
 \newcommand{\newblock}{}
 \newcommand{\newline}{\\}
 \newcommand{\bfseries}{\bf}
@@ -161,6 +160,10 @@
 \newcommand{\IfBooleanTF}[1]{\ifx\BooleanTrue#1\expandafter\@firstoftwo\else\expandafter\@secondoftwo\fi}
 \newcommand{\IfBooleanT}[1]{\ifx\BooleanTrue#1\expandafter\@firstofone\else\expandafter\@gobble\fi}
 \newcommand{\IfBooleanF}[1]{\ifx\BooleanTrue#1\expandafter\@gobble\else\expandafter\@firstofone\fi}
+
+% thebibliography's items: \bibitem[label]{key} is marked [label], or [n] in
+% turn when it has none, and \cite{key} draws the same.
+\NewDocumentCommand{\bibitem}{om}{\IfNoValueTF{#1}{\item\gmbibitem{#2}{}}{\item[{[}#1{]}]\gmbibitem{#2}{#1}}}
 
 % The packages every input starts with. A name one of them defines is free for
 % an input to define, unless the input asks for the package.
