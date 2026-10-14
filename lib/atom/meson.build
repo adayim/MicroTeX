@@ -24,6 +24,7 @@ atom_src = [
     'atom/font_family_atom.cpp',
     'atom/image_atom.cpp',
     'atom/diagram_atom.cpp',
+    'atom/tikz_atom.cpp',
     'atom/mark_atom.cpp'
 ]
 
@@ -53,6 +54,7 @@ if install_headerfiles
         'font_family_atom.h',
         'image_atom.h',
         'diagram_atom.h',
+        'tikz_atom.h',
         'mark_atom.h'
 	], subdir: 'microtex/atom')
 endif

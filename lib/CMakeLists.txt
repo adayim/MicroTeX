@@ -106,6 +106,7 @@ set(
     atom/mark_atom.cpp
     atom/image_atom.cpp
     atom/diagram_atom.cpp
+    atom/tikz_atom.cpp
     otf/otf_math_reader.cpp
     # compiles to no-ops without FriBidi (see MICROTEX_BIDI)
     utils/bidi.cpp

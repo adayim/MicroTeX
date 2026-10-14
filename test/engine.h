@@ -239,6 +239,7 @@ inline const char* typeName(microtex::DrawRecord::Type t) {
     case T::TEXT: return "text";
     case T::MARK: return "mark";
     case T::IMAGE: return "image";
+    case T::STROKE_PATH: return "stroke_path";
   }
   return "?";
 }
