@@ -187,7 +187,8 @@ TEST(equivalence_over_and_kin_end_at_a_row_break_and_the_rows_go_on) {
 
 TEST(equivalence_an_alignments_position_is_not_its_columns) {
   CHECK_PAIRS((Pairs{
-    {R"(\begin{array}[t]{cc} a & b \end{array})", R"(\begin{array}{cc} a & b \end{array})"},
+    // [c] is the middle, as none is; [t] and [b] move the baseline (test_tables).
+    {R"(\begin{array}[c]{cc} a & b \end{array})", R"(\begin{array}{cc} a & b \end{array})"},
     {R"(\begin{aligned}[b] a &= b \end{aligned})", R"(\begin{aligned} a &= b \end{aligned})"},
     {R"(\begin{gathered}[c] a \end{gathered})", R"(\begin{gathered} a \end{gathered})"},
   }));

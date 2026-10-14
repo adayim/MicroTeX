@@ -451,6 +451,147 @@ TEST(tables_an_array_pads_its_columns_by_arraycolsep) {
   CHECK(near((w[1] - w[0]) - (d[1] - d[0]), 10.f));  // 2em apart against 1em
 }
 
+// kableExtra's footnote(threeparttable = TRUE) writes tablenotes with \item[a]:
+// threeparttable sets a list with each label a superscript in a box of 0.5em,
+// the text 1.5em in (pdflatex, in points: the label at 141, the text at 148,
+// the left edge at 133).
+TEST(tables_tablenotes_are_a_list_of_superscript_labelled_notes) {
+  const std::string tex =
+    "\\begin{threeparttable}\\begin{tabular}{l}x\\end{tabular}"
+    "\\begin{tablenotes}\\item[a] First note\\item Second note\\item[b] Third note\\end{tablenotes}"
+    "\\end{threeparttable}";
+  const auto l = rec(tex, 300, 10);
+  CHECK(l.warnings.empty());
+  const auto at = [&](const std::string& word) {
+    for (const auto& r : check::of(l, DrawRecord::TEXT)) {
+      if (r.text == word) return r;
+    }
+    return DrawRecord();
+  };
+  // One column of text, 1.5em in at this size of 10, whether or not a note has a label...
+  CHECK(near(at("First").x, 15.f));
+  CHECK(near(at("Second").x, 15.f));
+  CHECK(near(at("Third").x, 15.f));
+  // ...and the labels in a column of their own, 0.8em in, raised.
+  CHECK(near(at("a").x, 8.f));
+  CHECK(near(at("b").x, 8.f));
+  CHECK(at("a").y < at("First").y);
+  // The notes stand under the table, in order.
+  CHECK(at("x").y < at("First").y);
+  CHECK(at("First").y < at("Second").y);
+  CHECK(at("Second").y < at("Third").y);
+}
+
+// [para] runs the notes on in one paragraph, each with its label; a \small
+// before the first item sets the notes small, as it does in LaTeX.
+TEST(tables_tablenotes_para_runs_on_and_a_leading_small_sets_them) {
+  const auto para = rec("\\begin{tablenotes}[para]\\item[a] One\\item[b] Two\\end{tablenotes}", 300, 10);
+  CHECK(para.warnings.empty());
+  // The text of both notes is on one baseline; the labels stand above it.
+  const auto t = check::of(para, DrawRecord::TEXT);
+  CHECK_EQ(t.size(), std::size_t(4));
+  CHECK_EQ(t[1].text, std::string("One"));
+  CHECK_EQ(t[3].text, std::string("Two"));
+  CHECK(near(t[1].y, t[3].y));
+  CHECK(t[1].x < t[3].x);
+  CHECK(t[0].y < t[1].y);
+  const auto plain = check::of(rec("\\begin{tablenotes}\\item Note\\end{tablenotes}", 300, 10), DrawRecord::TEXT);
+  const auto small = check::of(rec("\\begin{tablenotes}\\small\\item Note\\end{tablenotes}", 300, 10), DrawRecord::TEXT);
+  CHECK_EQ(plain.size(), std::size_t(1));
+  CHECK_EQ(small.size(), std::size_t(1));
+  CHECK(small[0].font_size < plain[0].font_size);
+}
+
+// tabular[t] puts the baseline on the first row's, [b] on the last row's, and
+// none on the middle (the math axis), so "a" beside a two-row tabular is level
+// with its first row, its last row, or between the two.
+TEST(tables_a_tabular_with_a_position_sets_its_baseline_by_a_row) {
+  const auto ys = [](const std::string& pos) {
+    const auto l = rec("a \\begin{tabular}" + pos + "{l}x\\\\y\\end{tabular}", 300, 10);
+    std::map<std::string, float> y;
+    for (const auto& r : check::of(l, DrawRecord::TEXT)) y[r.text] = r.y;
+    return y;
+  };
+  const auto top = ys("[t]");
+  const auto bottom = ys("[b]");
+  const auto middle = ys("");
+  CHECK(near(top.at("a"), top.at("x")));
+  CHECK(near(bottom.at("a"), bottom.at("y")));
+  CHECK(middle.at("a") > middle.at("x"));
+  CHECK(middle.at("a") < middle.at("y"));
+}
+
+// makecell's [vh]: the vertical letter (t, c or b) and the horizontal one (l,
+// c or r), either alone or both -- makecell.sty's \mcell@tabular -- a tabular
+// of one column set that way.
+TEST(tables_makecell_takes_a_vertical_and_a_horizontal_letter) {
+  const auto same = [](const std::string& cell, const std::string& tabular) {
+    return check::sameInk(rec("\\begin{tabular}{l}" + cell + "\\end{tabular}", 300, 10),
+                          rec("\\begin{tabular}{l}" + tabular + "\\end{tabular}", 300, 10));
+  };
+  CHECK(same("\\makecell[tl]{a\\\\bb}", "\\begin{tabular}[t]{l}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[br]{a\\\\bb}", "\\begin{tabular}[b]{r}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[cl]{a\\\\bb}", "\\begin{tabular}[c]{l}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[r]{a\\\\bb}", "\\begin{tabular}[c]{r}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[t]{a\\\\bb}", "\\begin{tabular}[t]{c}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell{a\\\\bb}", "\\begin{tabular}[c]{c}a\\\\bb\\end{tabular}"));
+  CHECK(rec("\\begin{tabular}{l}\\makecell[tl]{a\\\\b}\\end{tabular}", 300, 10).warnings.empty());
+  // \thead is a bold \makecell.
+  CHECK(same("\\thead[l]{a\\\\bb}", "\\makecell[l]{\\bfseries a\\\\bb}"));
+}
+
+namespace {
+// Where the decimal marker of each row's number stands in `\begin{tabular}{spec}`
+// of rows `a & cell`. The cells are drawn a character at a time, 5.5 wide at a
+// size of 10; a number with no marker has it where it would be, after its
+// last character.
+struct Markers {
+  std::vector<float> x;
+  Strings warnings;
+};
+
+Markers markersOf(const std::string& spec, const std::vector<std::string>& cells) {
+  std::string tex = "\\begin{tabular}{" + spec + "}";
+  for (const auto& cell : cells) tex += "a&" + cell + "\\\\";
+  tex += "\\end{tabular}";
+  const auto l = rec(tex, 300, 10);
+  std::map<int, std::vector<DrawRecord>> rows;
+  for (const auto& r : check::of(l, DrawRecord::TEXT)) {
+    if (r.text != "a") rows[static_cast<int>(std::lround(r.y))].push_back(r);
+  }
+  Markers found;
+  found.warnings = l.warnings;
+  for (const auto& [y, row] : rows) {
+    float marker = -1.f, end = 0.f;
+    for (const auto& r : row) {
+      if (r.text == "." || r.text == ",") marker = r.x;
+      end = std::max(end, r.x + 5.5f);
+    }
+    found.x.push_back(marker >= 0.f ? marker : end);
+  }
+  return found;
+}
+}  // namespace
+
+// siunitx's S column sets its numbers with their decimal markers in a column,
+// as pdflatex does: the digits before it to the left, those after to the right.
+TEST(tables_a_siunitx_s_column_lines_up_the_decimal_markers) {
+  const auto plain = markersOf("lS", {"1.5", "12.25", "3", "-0.125"});
+  CHECK(plain.warnings.empty());
+  CHECK_EQ(plain.x.size(), std::size_t(4));
+  for (const float x : plain.x) CHECK(near(x, plain.x.at(0)));
+  // Its options are for siunitx: the column is read all the same.
+  const auto options = markersOf("lS[table-format=2.3]", {"1.5", "12.25"});
+  CHECK(options.warnings.empty());
+  CHECK_EQ(options.x.size(), std::size_t(2));
+  CHECK(near(options.x.at(0), options.x.at(1)));
+  // A comma is a decimal marker too.
+  const auto comma = markersOf("lS", {"1,5", "12,25"});
+  CHECK(comma.warnings.empty());
+  CHECK_EQ(comma.x.size(), std::size_t(2));
+  CHECK(near(comma.x.at(0), comma.x.at(1)));
+}
+
 // The other text tables read it too.
 TEST(tables_the_other_text_tables_pad_by_tabcolsep) {
   const auto gap = [](const std::string& tex) {
