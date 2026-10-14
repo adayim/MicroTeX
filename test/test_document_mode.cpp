@@ -580,6 +580,78 @@ TEST(docmode_a_cite_in_a_table_cell_or_a_list_item_resolves) {
   CHECK(check::warns(rec("\\begin{tabular}{l}\\cite{nokey}\\end{tabular}"), "citation `nokey' is undefined"));
 }
 
+// \parbox is a minipage written inline: the same ink, with and without the
+// optional position, height and inner position.
+TEST(docmode_parbox_draws_what_a_minipage_of_that_width_draws) {
+  CHECK(check::sameInk(rec("\\parbox{3cm}{a b c d e f}"),
+                       rec("\\begin{minipage}{3cm}a b c d e f\\end{minipage}")));
+  CHECK(check::sameInk(rec("\\parbox[t]{3cm}{a b c d e f}"),
+                       rec("\\begin{minipage}[t]{3cm}a b c d e f\\end{minipage}")));
+  CHECK(check::sameInk(rec("\\parbox[b][2cm][t]{3cm}{a b c d e f}"),
+                       rec("\\begin{minipage}[b][2cm][t]{3cm}a b c d e f\\end{minipage}")));
+  CHECK(rec("\\parbox{3cm}{a}").warnings.empty());
+}
+
+// Inline: in a table cell and in a frame, and beside text on a line.
+TEST(docmode_parbox_stands_in_a_cell_a_frame_and_a_line) {
+  CHECK(rec("\\begin{tabular}{l}\\parbox{3cm}{a b c}\\end{tabular}").warnings.empty());
+  CHECK(rec("\\fbox{\\parbox{3cm}{a b c}}").warnings.empty());
+  const auto l = rec("x \\parbox{3cm}{a} y");
+  CHECK(l.warnings.empty());
+  CHECK_EQ(textsOf(runs("x \\parbox{3cm}{a} y")),
+           textsOf(runs("x \\begin{minipage}{3cm}a\\end{minipage} y")));
+}
+
+// The text a document draws, its runs one after the other.
+static std::string drawn(const std::string& tex) {
+  std::string out;
+  for (const auto& t : check::texts(rec(tex))) out += t;
+  return out;
+}
+
+// pdflatex: \newcounter{c}\setcounter{c}{3}\stepcounter{c} then
+// \arabic{c} \roman{c} \Roman{c} \alph{c} \Alph{c} gives "4 iv IV d D";
+// \fnsymbol{2} is a dagger.
+TEST(docmode_counters_are_set_stepped_and_shown_in_every_style) {
+  const std::string c = "\\newcounter{c}\\setcounter{c}{3}\\stepcounter{c}";
+  CHECK_EQ(drawn(c + "\\arabic{c} \\roman{c} \\Roman{c} \\alph{c} \\Alph{c}"), std::string("4 iv IV d D"));
+  CHECK_EQ(drawn(c + "\\thec"), std::string("4"));
+  CHECK_EQ(drawn("\\newcounter{c}\\addtocounter{c}{5}\\addtocounter{c}{-2}\\arabic{c}"), std::string("3"));
+  CHECK_EQ(drawn("\\newcounter{c}\\setcounter{c}{2}\\fnsymbol{c}"), std::string("†"));
+  CHECK(rec(c + "\\arabic{c}").warnings.empty());
+}
+
+TEST(docmode_value_reads_another_counter_and_a_renewed_the_changes_how_a_counter_shows) {
+  CHECK_EQ(drawn("\\newcounter{a}\\newcounter{b}\\setcounter{a}{7}\\setcounter{b}{\\value{a}}\\arabic{b}"),
+           std::string("7"));
+  CHECK_EQ(drawn("\\newcounter{c}\\renewcommand{\\thec}{\\Alph{c}}\\stepcounter{c}\\thec"), std::string("A"));
+}
+
+// \newcounter{s}[c]: stepping c sets s to zero, as in LaTeX.
+TEST(docmode_a_counter_within_another_starts_again_when_that_steps) {
+  CHECK_EQ(drawn("\\newcounter{c}\\newcounter{s}[c]\\stepcounter{c}\\stepcounter{s}\\stepcounter{s}"
+                 "\\arabic{c}.\\arabic{s} \\stepcounter{c}\\arabic{c}.\\arabic{s}"),
+           std::string("1.2 2.0"));
+}
+
+// \refstepcounter{c} steps it and the next \label names it: \ref draws the
+// number the counter had then, not the one it ends with.
+TEST(docmode_refstepcounter_makes_the_label_name_the_counter_at_that_point) {
+  CHECK_EQ(drawn("\\newcounter{c}\\setcounter{c}{4}\\refstepcounter{c}\\label{x}"
+                 "\\stepcounter{c}\\stepcounter{c}See \\ref{x}, now \\arabic{c}"),
+           std::string("See 5, now 7"));
+  CHECK_EQ(drawn("see \\ref{x}.\\newcounter{c}\\refstepcounter{c}\\label{x}"), std::string("see 1."));
+}
+
+TEST(docmode_a_counter_that_is_not_defined_warns_and_nothing_changes) {
+  CHECK(check::warns(rec("\\stepcounter{nosuch}"), "no counter `nosuch'"));
+  CHECK(check::warns(rec("\\setcounter{nosuch}{3}"), "no counter `nosuch'"));
+  CHECK(check::warns(rec("\\arabic{nosuch}"), "no counter `nosuch'"));
+  CHECK(check::warns(rec("\\newcounter{c}\\newcounter{c}"), "counter `c' is already defined"));
+  // The counters LaTeX has stay settable.
+  CHECK(rec("\\setcounter{equation}{3}\\setcounter{section}{2}").warnings.empty());
+}
+
 TEST(docmode_specialrule_is_a_rule_of_the_thickness_it_names) {
   const auto l = rec("\\begin{tabular}{l}a \\\\ \\specialrule{3pt}{0pt}{0pt} b\\end{tabular}");
   CHECK_EQ(check::texts(l), Strings({"a", "b"}));  // its arguments are read

@@ -183,7 +183,8 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
   // Checked against the legacy build when the old parser went: each of
   // these draws as it did there.
   CHECK_EQ(minus(specCommands, engineAll),
-           sorted({"(", "[", "\\", "above", "abovewithdelims", "atop", "atopwithdelims",
+           sorted({"(", "[", "\\", "above", "addtocounter", "alph", "Alph", "arabic", "fnsymbol", "gmcurrentlabel",
+                   "gmnewcounter", "stepcounter", "value", "abovewithdelims", "atop", "atopwithdelims",
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "cmidrule", "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",

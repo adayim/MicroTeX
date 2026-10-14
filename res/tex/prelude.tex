@@ -161,6 +161,14 @@
 \newcommand{\IfBooleanT}[1]{\ifx\BooleanTrue#1\expandafter\@firstofone\else\expandafter\@gobble\fi}
 \newcommand{\IfBooleanF}[1]{\ifx\BooleanTrue#1\expandafter\@gobble\else\expandafter\@firstofone\fi}
 
+% \parbox[position][height][inner position]{width}{text}: a minipage inline.
+\NewDocumentCommand{\parbox}{O{c}oom+m}{\begin{minipage}[#1]\IfNoValueTF{#2}{}{[#2]\IfNoValueTF{#3}{}{[#3]}}{#4}#5\end{minipage}}
+
+% \newcounter{c}[within]: makes the counter and its \thec; the lowering keeps
+% the value. \refstepcounter steps it and names it for the next \label.
+\NewDocumentCommand{\newcounter}{mo}{\@namedef{the#1}{\arabic{#1}}\gmnewcounter{#1}{\IfNoValueTF{#2}{}{#2}}}
+\newcommand{\refstepcounter}[1]{\stepcounter{#1}\gmcurrentlabel{\csname the#1\endcsname}}
+
 % thebibliography's items: \bibitem[label]{key} is marked [label], or [n] in
 % turn when it has none, and \cite{key} draws the same.
 \NewDocumentCommand{\bibitem}{om}{\IfNoValueTF{#1}{\item\gmbibitem{#2}{}}{\item[{[}#1{]}]\gmbibitem{#2}{#1}}}
