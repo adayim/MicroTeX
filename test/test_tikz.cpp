@@ -398,6 +398,62 @@ TEST(tikz_a_style_is_the_options_it_names) {
   }));
 }
 
+// pgf's ellipse is the one through the corners of the box (1.4142136 of its half sides): a 1:1 box gives
+// radii 1.4142 times half of it; its `north east` anchor is at 0.707107 of the radii; `(a) -- (b)` ends on it.
+TEST(tikz_an_ellipse_is_the_ellipse_through_the_corners_of_its_box) {
+  const auto box = strokes(pic(R"(\node[draw] {ab};)"));
+  const auto ell = strokes(pic(R"(\node[draw, ellipse] {ab};)"));
+  CHECK_EQ(ell.size(), std::size_t(1));
+  // The outline is cubics; its extent is the radii, outer separation taken off.
+  CHECK(near(extentOf(ell[0]).width(), 1.4142136f * extentOf(box[0]).width(), 2.f));
+  CHECK(near(extentOf(ell[0]).height(), 1.4142136f * extentOf(box[0]).height(), 2.f));
+  // (At this size the ellipse of two letters is some 250 px wide: the floors are above that.)
+  const auto floor = strokes(pic(R"(\node[draw, ellipse, minimum width=12cm, minimum height=10cm] {ab};)"));
+  CHECK(near(extentOf(floor[0]).width(), cm(12), 1.f));
+  CHECK(near(extentOf(floor[0]).height(), cm(10), 1.f));
+  // The line from an ellipse to a node on its right starts where the ray meets the ellipse: on its east tip.
+  const auto l = strokes(pic(R"(\node[draw, ellipse] (a) {A}; \node[draw, right=2cm of a] (b) {B}; \draw (a) -- (b);)"));
+  CHECK(near(extentOf(l[2]).x0, extentOf(l[0]).x1 + 0.0f, 1.5f));
+}
+
+// pgf's diamond: tips at the half box widened by the other half side times the aspect; `aspect=2` is twice as wide
+// as high where the tips were level.
+TEST(tikz_a_diamond_has_its_tips_where_pgf_puts_them) {
+  const auto box = strokes(pic(R"(\node[draw] {ab};)"));
+  const auto d = strokes(pic(R"(\node[draw, diamond] {ab};)"));
+  CHECK_EQ(d.size(), std::size_t(1));
+  CHECK_EQ(d[0].path_segments.size(), std::size_t(5));  // four tips and the close
+  const float hw = extentOf(box[0]).width() / 2, hh = extentOf(box[0]).height() / 2;
+  CHECK(near(extentOf(d[0]).width(), 2 * (hw + hh), 2.f));
+  CHECK(near(extentOf(d[0]).height(), 2 * (hw + hh), 2.f));
+  const auto wide = strokes(pic(R"(\node[draw, diamond, aspect=2] {ab};)"));
+  CHECK(near(extentOf(wide[0]).width(), 2 * (hw + 2 * hh), 2.f));
+  CHECK(near(extentOf(wide[0]).height(), 2 * (hw / 2 + hh), 2.f));
+  // The line from a diamond starts on its edge: halfway between a tip and the next for the diagonal.
+  const auto l = strokes(pic(R"(\node[draw, diamond] (a) at (0,0) {A}; \draw (a.north east) -- ++(0,1);)"));
+  const Extent e = extentOf(l[0]);
+  CHECK(near(l[1].path_segments[0].coords[0], e.x0 + extentOf(l[1]).width() / 2 + 0.f, 1e9f));
+  CHECK(near(l[1].path_segments[0].coords[0], (e.x0 + e.x1) / 2 + (e.x1 - e.x0) / 4, 1.5f));
+}
+
+// A rounded rectangle is a stadium by default: two semicircles over its height at the ends, the tips farther out
+// than the box by the chord the text leaves; its width keeps the minimum.
+TEST(tikz_a_rounded_rectangle_has_semicircular_ends) {
+  const auto r = strokes(pic(R"(\node[draw, rounded rectangle] {ab};)"));
+  CHECK_EQ(r.size(), std::size_t(1));
+  int cubics = 0;
+  for (const auto& s : r[0].path_segments) cubics += s.cmd == DrawRecord::PathSegment::CUBIC;
+  CHECK_EQ(cubics, 4);
+  const auto box = strokes(pic(R"(\node[draw] {ab};)"));
+  CHECK(near(extentOf(r[0]).height(), extentOf(box[0]).height(), 1.f));
+  CHECK(extentOf(r[0]).width() > extentOf(box[0]).width());
+  // pgf takes the extra width as `(minimum width - natural width) / 2` on each side, so the node ends up
+  // 2 inner sep short of the minimum: pdfTeX's `Wide` of `minimum width=4cm` is that much narrower (read
+  // from the same node set in both, tools/tikz-ref h05).
+  const auto wide = strokes(pic(R"(\node[draw, rounded rectangle, minimum width=12cm] {ab};)"));
+  CHECK(near(extentOf(wide[0]).width(), cm(12) - static_cast<float>(plain(R"(\hspace{0.66667em})").width), 2.f));
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
