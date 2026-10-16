@@ -115,6 +115,8 @@ struct Options {
   bool optimalBreak = false;
   /** gp$fontsize: the size of the text, and of 1em. */
   float textSize = 20;
+  /** The extra space between lines, in px: R passes (lineheight - 1) x fontsize, so `0.2 * textSize` is the default 1.2. */
+  float lineSpace = 10.0f;
 };
 
 struct Layout {
@@ -159,7 +161,7 @@ inline Layout render(const std::string& tex, const Options& opt = {}) {
   microtex::front::setStartPackages(opt.packages);
 
   std::unique_ptr<microtex::Render> render(microtex::MicroTeX::parse(
-    tex, opt.maxWidth, opt.textSize, 10.0f, 0xFF000000u, true,
+    tex, opt.maxWidth, opt.textSize, opt.lineSpace, 0xFF000000u, true,
     opt.display ? microtex::OverrideTeXStyle{true, microtex::TexStyle::display}
                 : microtex::OverrideTeXStyle{false, microtex::TexStyle::text},
     "", "", opt.mode));

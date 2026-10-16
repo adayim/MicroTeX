@@ -889,3 +889,78 @@ TEST(docmode_textwidth_and_linewidth_are_the_text_width_as_in_latex) {
   // With no page to measure, article's 345pt.
   CHECK(std::fabs(w("\\rule{\\columnwidth}{1pt}") - 345 * 72 / 72.27f) <= 1);
 }
+
+namespace {
+
+// A document at the size and the line height of R's default (1.2), the measure in px. The stub font is 0.55em a
+// character, 0.8em above the baseline and 0.2em below.
+Records lineRuns(const std::string& tex, float width, float size = 20) {
+  Options opt = typeface(InputMode::document, width, size);
+  opt.lineSpace = 0.2f * size;
+  Records r = check::of(check::render(tex, opt), DrawRecord::TEXT);
+  std::stable_sort(r.begin(), r.end(), [](const auto& a, const auto& b) { return a.y != b.y ? a.y < b.y : a.x < b.x; });
+  return r;
+}
+
+// The distances between the baselines of the text runs named in order.
+std::vector<float> pitches(const Records& r, const std::vector<std::string>& names) {
+  std::vector<float> ys;
+  for (const auto& n : names) {
+    for (const auto& run : r) {
+      if (run.text == n) {
+        ys.push_back(run.y);
+        break;
+      }
+    }
+  }
+  std::vector<float> out;
+  for (std::size_t i = 1; i < ys.size(); i++) out.push_back(ys[i] - ys[i - 1]);
+  return out;
+}
+
+}  // namespace
+
+// pdflatex, article at 10pt: the lines of a paragraph, and of two paragraphs (\parskip is 0), are 12pt apart, a
+// \baselineskip of 1.2em, whatever the font's own height is (11bp before, 9.2bp between paragraphs).
+TEST(docmode_lines_are_a_baselineskip_apart_as_in_tex) {
+  const float size = 20;
+  const auto r = lineRuns("aaaaaaaaa bbbbbbbbb ccccccccc\n\nddd", 110, size);
+  const auto p = pitches(r, {"aaaaaaaaa", "bbbbbbbbb", "ccccccccc", "ddd"});
+  CHECK_EQ(p.size(), std::size_t(3));
+  for (const float d : p) CHECK(std::fabs(d - 1.2f * size) < 0.5f);
+}
+
+// pdflatex: a display below a full line is 22pt on from it and the line after is 22pt on (\baselineskip and the 10pt
+// \abovedisplayskip, \belowdisplayskip); below a short line, with the short skips (0 and 6pt), 12 and 18;
+// a display that follows a blank line is not set below a line of its paragraph, so the short skips too -- five of
+// them are 18pt apart; an align is `\halign to \displaywidth`, so its skips are the long ones after any line of text.
+TEST(docmode_display_skips_are_texs_long_after_a_full_line_and_short_after_a_short_one) {
+  const float size = 20, line = 1.2f * size, em = size;
+  const auto full = lineRuns("aaaaaaaaaaaaaaaaaa\n\\[ \\text{P} \\]\nbbb", 220, size);
+  const auto a = pitches(full, {"aaaaaaaaaaaaaaaaaa", "P", "bbb"});
+  CHECK_EQ(a.size(), std::size_t(2));
+  if (a.size() < 2) return;
+  CHECK(std::fabs(a[0] - (line + em)) < 0.5f);
+  CHECK(std::fabs(a[1] - (line + em)) < 0.5f);
+  const auto shortLine = lineRuns("ab\n\\[ \\text{Q} \\]\nbbb", 220, size);
+  const auto b = pitches(shortLine, {"ab", "Q", "bbb"});
+  CHECK_EQ(b.size(), std::size_t(2));
+  if (b.size() < 2) return;
+  CHECK(std::fabs(b[0] - line) < 0.5f);
+  CHECK(std::fabs(b[1] - (line + 0.6f * em)) < 0.5f);
+  // A blank line ends the paragraph the display would have interrupted.
+  const auto fresh = lineRuns("aaaaaaaaaaaaaaaaaa\n\n\\[ \\text{R} \\]", 220, size);
+  CHECK(std::fabs(pitches(fresh, {"aaaaaaaaaaaaaaaaaa", "R"})[0] - line) < 0.5f);
+  const auto five = lineRuns("\\[ \\text{S} \\] \\[ \\text{T} \\] \\[ \\text{U} \\]", 220, size);
+  const auto c = pitches(five, {"S", "T", "U"});
+  CHECK_EQ(c.size(), std::size_t(2));
+  if (c.size() < 2) return;
+  CHECK(std::fabs(c[0] - (line + 0.6f * em)) < 0.5f);
+  CHECK(std::fabs(c[1] - (line + 0.6f * em)) < 0.5f);
+  const auto align = lineRuns("ab\n\\begin{align} \\text{V} &= 1 \\end{align}\nbbb", 220, size);
+  const auto d = pitches(align, {"ab", "V", "bbb"});
+  CHECK_EQ(d.size(), std::size_t(2));
+  if (d.size() < 2) return;
+  CHECK(std::fabs(d[0] - (line + em)) < 1.f);
+  CHECK(std::fabs(d[1] - (line + em)) < 1.f);
+}
