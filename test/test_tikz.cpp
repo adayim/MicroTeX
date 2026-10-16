@@ -454,6 +454,49 @@ TEST(tikz_a_rounded_rectangle_has_semicircular_ends) {
   CHECK(near(extentOf(wide[0]).width(), cm(12) - static_cast<float>(plain(R"(\hspace{0.66667em})").width), 2.f));
 }
 
+// A label is a node on the border of its owner, anchored on the side that faces it (`tikz@compute@direction`):
+// south for `above`, west for `right`, `south west` for 45 degrees.
+TEST(tikz_a_label_is_a_node_on_the_border_of_the_one_it_belongs_to) {
+  CHECK_PAIRS((check::Pairs{
+    {R"(\begin{tikzpicture}\node[draw, label=above:T] (a) at (0,0) {x};\end{tikzpicture})",
+     R"(\begin{tikzpicture}\node[draw] (a) at (0,0) {x};\node[anchor=south] at (a.north) {T};\end{tikzpicture})"},
+    {R"(\begin{tikzpicture}\node[draw, label=right:T] (a) at (0,0) {x};\end{tikzpicture})",
+     R"(\begin{tikzpicture}\node[draw] (a) at (0,0) {x};\node[anchor=west] at (a.east) {T};\end{tikzpicture})"},
+    {R"(\begin{tikzpicture}\node[draw, label=45:T] (a) at (0,0) {x};\end{tikzpicture})",
+     R"(\begin{tikzpicture}\node[draw] (a) at (0,0) {x};\node[anchor=south west] at (a.45) {T};\end{tikzpicture})"},
+    // With no angle it is above; the options in brackets are the label's own.
+    {R"(\begin{tikzpicture}\node[draw, label=T] (a) at (0,0) {x};\end{tikzpicture})",
+     R"(\begin{tikzpicture}\node[draw, label=above:T] (a) at (0,0) {x};\end{tikzpicture})"},
+    {R"(\begin{tikzpicture}\node[draw, label={[red]below:T}] (a) at (0,0) {x};\end{tikzpicture})",
+     R"(\begin{tikzpicture}\node[draw] (a) at (0,0) {x};\node[anchor=north, red] at (a.south) {T};\end{tikzpicture})"},
+  }));
+}
+
+// `label distance` is the enclosing scope's: pdfTeX leaves a node's own `label distance=3mm` unused (a picture of
+// 49 px high, as with none) and spaces the label by it from the picture or the path (67 px).
+TEST(tikz_label_distance_is_read_from_the_scope_round_the_node) {
+  const auto height = [](const std::string& tex) { return static_cast<float>(pic(tex).height); };
+  const std::string label = R"(\node[draw, label=above:Top] at (0,0) {y};)";
+  const float none = height(label);
+  CHECK(near(height("[label distance=3mm]" + label), none + cm(0.3), 1.f));
+  CHECK(near(height(R"(\path[label distance=3mm] node[draw, label=above:Top] at (0,0) {y};)"), none + cm(0.3), 1.f));
+  CHECK(near(height(R"(\node[draw, label distance=3mm, label=above:Top] at (0,0) {y};)"), none, 0.5f));
+}
+
+// A pin is a label with a line to it, gray and 0.2pt (`help lines`), and 3ex out by default.
+TEST(tikz_a_pin_is_a_label_with_a_line) {
+  const auto p = strokes(pic(R"(\node[draw, pin=above:T] at (0,0) {y};)"));
+  CHECK_EQ(p.size(), std::size_t(2));
+  CHECK((p[1].col & 0xFFFFFFu) == 0x808080u || (p[1].col & 0xFFFFFFu) == 0x7F7F7Fu);  // gray, half way
+  CHECK(p[1].line_width < p[0].line_width);
+  CHECK_EQ(strokes(pic(R"(\node[draw, label=above:T] at (0,0) {y};)")).size(), std::size_t(1));
+  // The line is upright and as long as the pin distance, 3ex.
+  CHECK(near(extentOf(p[1]).width(), 0.f, 0.5f));
+  CHECK(near(extentOf(p[1]).height(), static_cast<float>(plain(R"(\hspace{3ex})").width), 1.5f));
+  // The pin's own `pin edge` gives the line its tip.
+  CHECK(strokes(pic(R"(\node[draw, pin={[pin edge={->}]above:T}] at (0,0) {y};)")).size() > 2);
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
