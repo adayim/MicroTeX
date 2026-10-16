@@ -529,6 +529,53 @@ TEST(tikz_calc_points_are_the_points_they_say) {
   CHECK(check::warns(pic(R"(\draw ($(0,0)!x!(1,1)$) -- (1,0);)"), "calculation"));
 }
 
+// `fit=(a)(b)` puts a node round the points: the box of the nodes' west, east, north and south anchors, and
+// `inner sep` more on each side (tikzlibraryfit makes the text box that big).
+TEST(tikz_fit_puts_a_node_round_its_points) {
+  const std::string two = R"(\node[draw] (a) at (0,0) {A}; \node[draw] (b) at (3,2) {B};)";
+  const auto s = strokes(pic(two + R"(\node[draw, inner sep=0pt, fit=(a)(b)] {};)"));
+  CHECK_EQ(s.size(), std::size_t(3));
+  const Extent ea = extentOf(s[0]), eb = extentOf(s[1]), ef = extentOf(s[2]);
+  // The outer separation of the two nodes (half the line width) is inside the box they are fitted by.
+  const float lw = s[0].line_width;
+  CHECK(near(ef.x0, ea.x0 - lw / 2, 0.6f));
+  CHECK(near(ef.x1, eb.x1 + lw / 2, 0.6f));
+  CHECK(near(ef.y0, eb.y0 - lw / 2, 0.6f));
+  CHECK(near(ef.y1, ea.y1 + lw / 2, 0.6f));
+  // The default inner sep (0.3333em) is outside that.
+  const auto padded = strokes(pic(two + R"(\node[draw, fit=(a)(b)] {};)"));
+  const float gap = static_cast<float>(plain(R"(\hspace{0.33333em})").width);
+  CHECK(near(extentOf(padded[2]).width() - ef.width(), 2 * gap, 1.f));
+  // Plain points fit too, and so does a `(1,2)` that holds a comma.
+  const auto pts = strokes(pic(R"(\node[draw, inner sep=0pt, fit={(0,0) (2,1)}] {};)"));
+  CHECK(near(extentOf(pts[0]).width(), cm(2), 1.f));
+  CHECK(near(extentOf(pts[0]).height(), cm(1), 1.f));
+  CHECK(near(extentOf(strokes(pic(R"(\node[draw, inner sep=0pt, fit=(0,0)(2,1)] {};)"))[0]).width(), cm(2), 1.f));
+}
+
+// A background layer is drawn before the main one, whatever the order they are written in; within a layer, in order.
+TEST(tikz_a_background_layer_is_drawn_first) {
+  const auto order = [](const std::string& body) {
+    std::vector<unsigned> cols;
+    for (const auto& r : pic(body).records) {
+      if (r.type == DrawRecord::PATH) cols.push_back(r.col);
+    }
+    return cols;
+  };
+  const auto plainOrder = order(R"(\fill[red] (0,0) rectangle (1,1); \fill[blue] (0,0) rectangle (1,1);)");
+  CHECK_EQ(plainOrder.size(), std::size_t(2));
+  CHECK_EQ(plainOrder[0], 0xFFFF0000u);
+  const auto layers = order(R"(\fill[red] (0,0) rectangle (1,1);
+    \begin{scope}[on background layer]\fill[blue] (0,0) rectangle (1,1);\end{scope})");
+  CHECK_EQ(layers.size(), std::size_t(2));
+  CHECK_EQ(layers[0], 0xFF0000FFu);
+  const auto env = order(R"(\fill[red] (0,0) rectangle (1,1);
+    \begin{pgfonlayer}{background}\fill[blue] (0,0) rectangle (1,1);\fill[green] (0,0) rectangle (1,1);\end{pgfonlayer})");
+  CHECK_EQ(env.size(), std::size_t(3));
+  CHECK_EQ(env[0], 0xFF0000FFu);
+  CHECK_EQ(env[2], 0xFFFF0000u);
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
