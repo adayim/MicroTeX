@@ -930,33 +930,6 @@ Units	nolatex	\huge\rule{18mu}{18mu}
 Units	ok	\rule{10pt}{10pt}
 Units	nolatex	\scriptscriptstyle\rule{10pt}{10pt}
 Units	nolatex	\huge\rule{10pt}{10pt}
-Beyond KaTeX / More commands	nolatex	\euro
-Beyond KaTeX / More commands	ok	\idotsint
-Beyond KaTeX / More commands	ok	\iiiint
-Beyond KaTeX / More commands	ok	\text{\textsection\textparagraph\textcopyright\texttrademark}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\num{12345.6789}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\num{1.5e-4}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\num{1.2(3)e3}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\SI{9.81}{\meter\per\second\squared}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\qty{1.5}{\kilo\gram}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\si{kg.m.s^-2}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\ang{1;2;3}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\numrange{1}{10}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\SIrange{1}{5}{\volt}
-Beyond KaTeX / Numbers and units (a subset of siunitx)	ok	\numlist{1;2;3}
-Beyond KaTeX / Equations	ok	a = b \tag{1}
-Beyond KaTeX / Equations	ok	a = b \tag*{(*)}
-Beyond KaTeX / Equations	ok	\cancelto{0}{x}
-Beyond KaTeX / Equations	ok	\bigl\lvert x \bigr\rvert
-Beyond KaTeX / Equations	ok	\begin{dcases} x & x>0 \\ -x & \text{otherwise} \end{dcases}
-Beyond KaTeX / Equations	ok	\begin{subarray}{c} i<n \\ j<m \end{subarray}
-Beyond KaTeX / Equations	ok	\sqrt[\leftroot{-2}\uproot{2}n]{x}
-Beyond KaTeX / Tables	nolatex	\begin{array}{c:c} a & b \\ \hdashline c & d \end{array}
-Beyond KaTeX / Tables	ok	\begin{tabular}{|l|r|} \hline a & 1 \\ \hline b & 22 \\ \hline \end{tabular}
-Beyond KaTeX / Tables	ok	\begin{array}{l} \textbf{Bold} \\ \textsc{Small caps} \\ \verb|verbatim| \end{array}
-Beyond KaTeX / Commutative diagrams	ok	\begin{tikzcd} A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\ C \arrow[r, hook, "k"'] & D \end{tikzcd}
-Beyond KaTeX / Commutative diagrams	ok	\begin{tikzcd}[column sep=large] A \arrow[r, "f", bend left] \arrow[r, "g"', bend right] & B \arrow[r, two heads, dashed] & C \end{tikzcd}
-Beyond KaTeX / Commutative diagrams	ok	\begin{CD} A @>f>> B \\ @VgVV @VVhV \\ C @>>k> D \end{CD}
 Extensions / mhchem	ok	\ce{H2O}
 Extensions / mhchem	ok	\ce{CO2 + C -> 2 CO}
 Extensions / mhchem	ok	\ce{SO4^2- + Ba^2+ -> BaSO4 v}
@@ -968,3 +941,30 @@ Extensions / mhchem	ok	\ce{CuSO4*5H2O}
 Extensions / mhchem	nolatex	\pu{1.5 mol/L}
 Extensions / mhchem	nolatex	\pu{123 kJ/mol}
 Extensions / mhchem	nolatex	\pu{1.2e-3 mol L-1}
+Further LaTeX / More commands	nolatex	\euro
+Further LaTeX / More commands	ok	\idotsint
+Further LaTeX / More commands	ok	\iiiint
+Further LaTeX / More commands	ok	\text{\textsection\textparagraph\textcopyright\texttrademark}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\num{12345.6789}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\num{1.5e-4}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\num{1.2(3)e3}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\SI{9.81}{\meter\per\second\squared}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\qty{1.5}{\kilo\gram}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\si{kg.m.s^-2}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\ang{1;2;3}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\numrange{1}{10}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\SIrange{1}{5}{\volt}
+Further LaTeX / Numbers and units (a subset of siunitx)	ok	\numlist{1;2;3}
+Further LaTeX / Equations	ok	a = b \tag{1}
+Further LaTeX / Equations	ok	a = b \tag*{(*)}
+Further LaTeX / Equations	ok	\cancelto{0}{x}
+Further LaTeX / Equations	ok	\bigl\lvert x \bigr\rvert
+Further LaTeX / Equations	ok	\begin{dcases} x & x>0 \\ -x & \text{otherwise} \end{dcases}
+Further LaTeX / Equations	ok	\begin{subarray}{c} i<n \\ j<m \end{subarray}
+Further LaTeX / Equations	ok	\sqrt[\leftroot{-2}\uproot{2}n]{x}
+Further LaTeX / Tables	nolatex	\begin{array}{c:c} a & b \\ \hdashline c & d \end{array}
+Further LaTeX / Tables	ok	\begin{tabular}{|l|r|} \hline a & 1 \\ \hline b & 22 \\ \hline \end{tabular}
+Further LaTeX / Tables	ok	\begin{array}{l} \textbf{Bold} \\ \textsc{Small caps} \\ \verb|verbatim| \end{array}
+Further LaTeX / Commutative diagrams	ok	\begin{tikzcd} A \arrow[r, "f"] \arrow[d, "g"'] & B \arrow[d, "h"] \\ C \arrow[r, hook, "k"'] & D \end{tikzcd}
+Further LaTeX / Commutative diagrams	ok	\begin{tikzcd}[column sep=large] A \arrow[r, "f", bend left] \arrow[r, "g"', bend right] & B \arrow[r, two heads, dashed] & C \end{tikzcd}
+Further LaTeX / Commutative diagrams	ok	\begin{CD} A @>f>> B \\ @VgVV @VVhV \\ C @>>k> D \end{CD}
