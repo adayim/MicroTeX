@@ -243,6 +243,77 @@ TEST(docmode_a_subfigure_is_lettered_and_its_label_is_the_figures_number_and_the
   CHECK(!check::warns(rec(body, InputMode::document), "undefined"));
 }
 
+// \vspace between two lines of a document is TeX's glue: added to the baselineskip glue, so `A\par\vspace{20pt}B` is 20pt
+// farther apart than `A\par B` (pdflatex: 12 and 32). It was the next line's height, short by a line. \smallskip,
+// \medskip and \bigskip are LaTeX's 3, 6 and 12pt, which at a size of 10 are 0.3, 0.6 and 1.2em.
+TEST(docmode_vspace_adds_to_the_baselineskip_between_two_lines) {
+  const float em = 20;
+  const auto pitch = [&](const std::string& tex) {
+    const auto r = runs(tex, InputMode::document, 400);
+    return first(ysOf(named(r, "B"))) - first(ysOf(named(r, "A")));
+  };
+  const float plain = pitch("A\\par B");
+  CHECK(close(pitch("A\\par\\vspace{1em}B") - plain, em, 0.01f));
+  CHECK(close(pitch("A\\par\\vspace{2em}B") - plain, 2 * em, 0.01f));
+  CHECK(close(pitch("A\\par\\vspace{1em}\\vspace{1em}B") - plain, 2 * em, 0.01f));
+  CHECK(close(pitch("A\\par\\vspace{10pt}\\vspace{1cm}B") - pitch("A\\par\\vspace{1cm}\\vspace{10pt}B"), 0.f, 0.01f));
+  CHECK(close(pitch("A\\par\\smallskip B") - plain, 0.3f * em, 0.01f));
+  CHECK(close(pitch("A\\par\\medskip B") - plain, 0.6f * em, 0.01f));
+  CHECK(close(pitch("A\\par\\bigskip B") - plain, 1.2f * em, 0.01f));
+  // Inside a paragraph it lands after the line it stands in (vadjust): before the next line, which here is a new paragraph.
+  const auto after = [&](const std::string& tex) {
+    const auto r = runs(tex, InputMode::document, 400);
+    return first(ysOf(named(r, "B"))) - first(ysOf(named(r, "Z")));
+  };
+  CHECK(close(after("Z\\par A \\vspace{1em} x\\par B") - after("Z\\par A x\\par B"), em, 0.01f));
+  // Before anything is drawn it is what it was, the height of the first line (TeX would drop it at the top of a page).
+  const auto top = runs("\\vspace{3em}A", InputMode::document, 400);
+  CHECK(first(ysOf(named(top, "A"))) > first(ysOf(named(runs("A", InputMode::document, 400), "A"))) + em);
+}
+
+// article's \maketitle (scratchpad/col/mt.tex, pdflatex at 10pt): the title in \LARGE, the authors in \large in tabulars
+// 1em apart for \and, the date in \large, all centred, one after the other, then the body 1.5em below; an element that
+// was not given is left out, and \thanks makes footnotes marked by symbols, the counter 0 again after.
+TEST(docmode_maketitle_sets_the_title_the_authors_and_the_date_centred_one_after_the_other) {
+  const auto f = runs("\\title{Tit}\\author{Ann \\and Bob}\\date{Day}\\maketitle\nBody", InputMode::document, 400);
+  CHECK_EQ(textsOf(f), Strings({"Tit", "Ann", "Bob", "Day", "Body"}));
+  CHECK(close(first(ysOf(named(f, "Ann"))), first(ysOf(named(f, "Bob"))), 0.01f));
+  CHECK(first(ysOf(named(f, "Tit"))) < first(ysOf(named(f, "Ann"))));
+  CHECK(first(ysOf(named(f, "Ann"))) < first(ysOf(named(f, "Day"))));
+  CHECK(first(ysOf(named(f, "Day"))) < first(ysOf(named(f, "Body"))));
+  CHECK(first(xsOf(named(f, "Ann"))) < first(xsOf(named(f, "Bob"))));
+  // Centred as `center` centres: the same place as the title set by hand.
+  const auto by_hand = runs("\\begin{center}{\\LARGE Tit\\par}\\end{center}", InputMode::document, 400);
+  CHECK(close(first(xsOf(named(f, "Tit"))), first(xsOf(named(by_hand, "Tit"))), 0.01f));
+  // The date, from \today when none is given, and nothing when it is empty.
+  CHECK(textsOf(runs("\\title{T}\\maketitle", InputMode::document, 400)).size() > 1);
+  CHECK_EQ(textsOf(runs("\\title{T}\\date{}\\maketitle", InputMode::document, 400)), Strings({"T"}));
+  CHECK_EQ(textsOf(runs("\\author{A}\\date{}\\maketitle\nB", InputMode::document, 400)), Strings({"A", "B"}));
+  CHECK_EQ(textsOf(runs("\\maketitle\nB", InputMode::document, 400)).back(), std::string("B"));
+  // \today is one run of text, "Month D, YYYY"; the title is drawn once, as article does (a second \maketitle is \relax).
+  const auto today = textsOf(runs("\\today", InputMode::document, 400));
+  CHECK_EQ(today.size(), std::size_t(1));
+  CHECK(today[0].size() > 10 && today[0].find(", 20") != std::string::npos);
+  CHECK_EQ(textsOf(runs("\\title{T}\\date{}\\maketitle\\maketitle", InputMode::document, 400)), Strings({"T"}));
+  // The preamble's \title and \author are read, and draw nothing there.
+  CHECK_EQ(textsOf(runs("\\documentclass{article}\\title{P}\\author{Q}\\date{R}\\begin{document}\\maketitle\\end{document}",
+                        InputMode::document, 400)),
+           Strings({"P", "Q", "R"}));
+}
+
+TEST(docmode_thanks_in_a_title_is_a_symbol_footnote_and_the_counter_starts_again_after_it) {
+  const auto f = runs("\\title{T\\thanks{Funded.}}\\author{A\\thanks{Dept.}\\and B}\\date{}\\maketitle\nBody\\footnote{Note.}",
+                      InputMode::document, 400);
+  const Strings t = textsOf(f);
+  // The two title marks are symbols, the body's own footnote is the number 1.
+  CHECK(std::find(t.begin(), t.end(), "*") != t.end());
+  CHECK(std::find(t.begin(), t.end(), "\xe2\x80\xa0") != t.end());  // the dagger
+  CHECK(std::find(t.begin(), t.end(), "Funded.") != t.end());
+  CHECK(std::find(t.begin(), t.end(), "Dept.") != t.end());
+  CHECK(std::find(t.begin(), t.end(), "1") != t.end());
+  CHECK(std::find(t.begin(), t.end(), "Note.") != t.end());
+}
+
 // caption.sty's \abovecaptionskip is 10pt above a float's caption, subcaption.sty's skip 6pt above a sub-caption (in
 // \small): pdflatex's rows, a table's body to its caption 18bp against the 12bp of two lines. Here, in em.
 TEST(docmode_a_float_caption_stands_below_its_body_by_the_caption_skip) {

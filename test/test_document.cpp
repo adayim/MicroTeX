@@ -371,7 +371,8 @@ TEST(document_the_preamble_title_metadata_and_alignment_declarations_draw_nothin
     "\\documentclass[12pt]{article}\\usepackage[utf8]{inputenc}"
     "\\usepackage{amsmath}\\begin{document}$x^2$\\end{document}",
     "$x^2$");
-  drawsAs("\\maketitle\\title{Foo}\\author{Bar}\\label{eq:1}content", "content");
+  // \title, \author and \date are kept for \maketitle and draw nothing themselves.
+  drawsAs("\\title{Foo}\\author{Bar}\\date{Baz}\\label{eq:1}content", "content");
   drawsAs("\\bibliographystyle{plain}content", "content");
 }
 
@@ -479,9 +480,9 @@ TEST(document_text_commands_a_grob_has_no_equivalent_for_are_drawn_as_the_neares
   drawsAs("a\\par b", "a\\\\b");
   drawsAs("a\\newline b", "a\\\\b");
   // Fixed space. A space after a command word is dropped, as in TeX.
-  drawsAs("a\\smallskip b", "a\\vspace{0.25em}b");
-  drawsAs("a\\medskip b", "a\\vspace{0.5em}b");
-  drawsAs("a\\bigskip b", "a\\vspace{1em}b");
+  drawsAs("a\\smallskip b", "a\\vspace{0.3em}b");
+  drawsAs("a\\medskip b", "a\\vspace{0.6em}b");
+  drawsAs("a\\bigskip b", "a\\vspace{1.2em}b");
   drawsAs("a\\vfill b", "a\\vspace{1em}b");
   drawsAs("a\\hfill b", "a\\quad b");
 }
