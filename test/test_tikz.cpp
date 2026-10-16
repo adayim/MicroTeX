@@ -723,6 +723,37 @@ TEST(tikz_a_matrix_of_math_nodes_sets_its_cells_in_math) {
   CHECK(check::warns(pic(R"(\matrix { \node {a}; & \node {b}; \\ };)"), "matrix"));
 }
 
+// pgf's brace decoration on a straight line: a path of two bumps and a point `aspect` of the way along, `amplitude` high
+// (the whole brace is that high), above the path to its left; `mirror` below it, `raise` away from it. The picture grows to
+// hold it.
+TEST(tikz_a_brace_decorates_a_straight_path) {
+  const auto b = strokes(pic(R"(\draw[decorate, decoration={brace, amplitude=1cm}] (0,0) -- (4,0);)"));
+  CHECK_EQ(b.size(), std::size_t(1));
+  if (b.size() < 1) return;
+  CHECK_EQ(b[0].path_segments.size(), std::size_t(7));  // move, curve, line, curve, curve, line, curve
+  const Extent e = extentOf(b[0]);
+  CHECK(near(e.width(), cm(4), 1.f));
+  CHECK(near(e.height(), cm(1), 1.5f));  // the tip is the full amplitude; control points stay below it
+  // The point is at half the way, on the side the path's left is: above, which is smaller y here.
+  const auto& seg = b[0].path_segments;
+  CHECK(near(seg[3].coords[4], e.x0 + e.width() / 2, 1.f));  // the end of the third segment is the tip
+  CHECK(near(seg[3].coords[5], e.y0, 1.f));
+  const auto mirrored = strokes(pic(R"(\draw[decorate, decoration={brace, amplitude=1cm, mirror}] (0,0) -- (4,0);)"));
+  CHECK(near(mirrored[0].path_segments[3].coords[5], extentOf(mirrored[0]).y1, 1.f));
+  // `raise` moves the brace along the same side the tip is on.
+  const auto raised = strokes(pic(R"(\draw (0,0) -- (4,0); \draw[decorate, decoration={brace, amplitude=1cm, raise=2mm}] (0,0) -- (4,0);)"));
+  CHECK_EQ(raised.size(), std::size_t(2));
+  if (raised.size() < 2) return;
+  CHECK(near(extentOf(raised[0]).y1 - extentOf(raised[1]).y1, cm(0.2), 1.f));  // its feet stand 2mm off the line
+  // `aspect` moves the point along.
+  const auto aspect = strokes(pic(R"(\draw[decorate, decoration={brace, amplitude=5mm, aspect=0.25}] (0,0) -- (4,0);)"));
+  CHECK(near(aspect[0].path_segments[3].coords[4], extentOf(aspect[0]).x0 + cm(1), 1.f));
+  // A decoration that is not drawn is said, once, and the path is drawn as it stands.
+  const auto zig = pic(R"(\draw[decorate, decoration=zigzag] (0,0) -- (4,0);)");
+  CHECK(check::warns(zig, "zigzag"));
+  CHECK_EQ(strokes(zig)[0].path_segments.size(), std::size_t(2));
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
