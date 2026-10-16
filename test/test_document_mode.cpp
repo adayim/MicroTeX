@@ -271,6 +271,63 @@ TEST(docmode_vspace_adds_to_the_baselineskip_between_two_lines) {
   CHECK(first(ysOf(named(top, "A"))) > first(ysOf(named(runs("A", InputMode::document, 400), "A"))) + em);
 }
 
+// cleveref's \cref and \Cref and hyperref's \autoref name the kind of what a label labels, as pdflatex sets them
+// (scratchpad/col/rc.tex, ra.tex, c.tex; every expected text below is one of its outputs): \cref abbreviates
+// ("eq. (1)", "fig. 1"), \Cref writes the capitalised full name, \autoref hyperref's; labels of one kind are joined
+// "(1), (3) and (5)" and three consecutive ones are "(1) to (3)", kinds are joined "A, B, and C".
+TEST(docmode_cref_cref_and_autoref_name_the_kind_of_a_label_as_cleveref_and_hyperref_do) {
+  const std::string pre =
+    "\\newtheorem{thm}{Theorem}\\newtheorem{lem}{Lemma}\n"
+    "\\section{First}\\label{s1}\n\\subsection{Sub}\\label{ss1}\n"
+    "\\begin{equation}a\\label{e1}\\end{equation}\\begin{equation}a\\label{e2}\\end{equation}\n"
+    "\\begin{equation}a\\label{e3}\\end{equation}\\begin{equation}a\\label{e4}\\end{equation}\n"
+    "\\begin{equation}a\\label{e5}\\end{equation}\n"
+    "\\begin{figure}\\caption{F}\\label{f1}\\end{figure}\\begin{figure}\\caption{F}\\label{f2}\\end{figure}\n"
+    "\\begin{table}\\caption{T}\\label{t1}\\end{table}\n"
+    "\\begin{thm}X\\label{th1}\\end{thm}\\begin{lem}X\\label{lm1}\\end{lem}\n"
+    "\\begin{align}b &= 1\\label{a1}\\\\ c &= 2\\label{a2}\\end{align}\n\n";
+  const auto drawn = [&](const std::string& ref) {
+    std::string all;
+    for (const auto& r : runs(pre + "XX " + ref, InputMode::document, 600)) all += r.text;
+    all.erase(std::remove(all.begin(), all.end(), ' '), all.end());
+    const auto at = all.rfind("XX");
+    return at == std::string::npos ? all : all.substr(at + 2);
+  };
+  const std::vector<std::pair<std::string, std::string>> cases = {
+    {"\\cref{e1}", "eq.(1)"}, {"\\Cref{e1}", "Equation(1)"}, {"\\autoref{e1}", "Equation1"},
+    {"\\cref{e1,e2}", "eqs.(1)and(2)"}, {"\\cref{e1,e2,e3}", "eqs.(1)to(3)"}, {"\\cref{e1,e3}", "eqs.(1)and(3)"},
+    {"\\cref{e1,e3,e5}", "eqs.(1),(3)and(5)"}, {"\\cref{e1,e2,e4}", "eqs.(1),(2)and(4)"},
+    {"\\cref{e1,e2,e3,e5}", "eqs.(1)to(3)and(5)"}, {"\\cref{e3,e1}", "eqs.(1)and(3)"},
+    {"\\cref{e1,f1}", "eq.(1)andfig.1"}, {"\\cref{e1,f1,t1}", "eq.(1),fig.1,andtable1"},
+    {"\\cref{e1,e2,f1,f2}", "eqs.(1)and(2)andfigs.1and2"}, {"\\Cref{e1,e2}", "Equations(1)and(2)"},
+    {"\\cref{f1}", "fig.1"}, {"\\Cref{f1}", "Figure1"}, {"\\autoref{f1}", "Figure1"}, {"\\cref{f1,f2}", "figs.1and2"},
+    {"\\cref{t1}", "table1"}, {"\\autoref{t1}", "Table1"},
+    {"\\cref{s1}", "section1"}, {"\\Cref{s1}", "Section1"}, {"\\autoref{s1}", "section1"},
+    {"\\cref{ss1}", "section1.1"}, {"\\autoref{ss1}", "subsection1.1"}, {"\\cref{s1,ss1}", "sections1and1.1"},
+    {"\\cref{th1}", "theorem1"}, {"\\Cref{th1}", "Theorem1"}, {"\\cref{lm1}", "lemma1"}, {"\\Cref{lm1}", "Lemma1"},
+    {"\\cref{th1,lm1}", "theorem1andlemma1"},
+    {"\\crefrange{e1}{e3}", "eqs.(1)to(3)"}, {"\\crefrange{e1}{e5}", "eqs.(1)to(5)"},
+    {"\\Crefrange{f1}{f2}", "Figures1to2"}, {"\\crefrange{e1}{f1}", "eq.(1)andfig.1"},
+    {"\\cref{a1,a2}", "eqs.(6)and(7)"}};
+  for (const auto& c : cases) CHECK_EQ(drawn(c.first), c.second);
+  // hyperref prints only the number for a theorem, with a warning; a title is a better name for it.
+  CHECK_EQ(drawn("\\autoref{th1}"), std::string("Theorem1"));
+  // A key no label names is ??, once, as \ref does; \ref is as it was.
+  CHECK_EQ(drawn("\\cref{nosuch}"), std::string("??"));
+  CHECK(check::warns(rec(pre + "\\cref{e1,nosuch} \\autoref{x}", InputMode::document, 600), "reference `nosuch' is undefined"));
+  CHECK(check::warns(rec(pre + "\\autoref{x}", InputMode::document, 600), "reference `x' is undefined"));
+  CHECK(!check::warns(rec(pre + "\\cref{e1} \\Cref{f1} \\autoref{s1}", InputMode::document, 600), "undefined"));
+  CHECK_EQ(drawn("\\ref{e2}"), std::string("2"));
+  // A reference may come before its label, and a sub-figure is its figure's number and a letter.
+  CHECK(textsOf(runs("\\cref{late}\n\\begin{equation}a\\label{late}\\end{equation}")).front().find("eq.") == 0);
+  const std::string sub =
+    "\\begin{figure}\\begin{subfigure}{5cm}X\\caption{A}\\label{sa}\\end{subfigure}\\caption{M}\\end{figure}\nXX ";
+  std::string all;
+  for (const auto& r : runs(sub + "\\cref{sa}", InputMode::document, 600)) all += r.text;
+  all.erase(std::remove(all.begin(), all.end(), ' '), all.end());
+  CHECK(all.size() >= 6 && all.substr(all.size() - 6) == "fig.1a");
+}
+
 // article's \maketitle (scratchpad/col/mt.tex, pdflatex at 10pt): the title in \LARGE, the authors in \large in tabulars
 // 1em apart for \and, the date in \large, all centred, one after the other, then the body 1.5em below; an element that
 // was not given is left out, and \thanks makes footnotes marked by symbols, the counter 0 again after.
