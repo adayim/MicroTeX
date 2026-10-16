@@ -325,6 +325,8 @@ TEST(tables_a_colour_defined_with_capitals_is_found_by_the_name_it_was_given) {
 
 TEST(tables_caption_star_is_a_caption_with_no_star) {
   CHECK_EQ(linesOf("\\begin{table}\\caption*{Cap}\\begin{tabular}{l}a\\end{tabular}\\end{table}"), Strings({"Cap", "a"}));
+  // ... and the numbered one has its "Table 1: ".
+  CHECK_EQ(linesOf("\\begin{table}\\caption{Cap}\\begin{tabular}{l}a\\end{tabular}\\end{table}"), Strings({"Table1:Cap", "a"}));
 }
 
 // --- tabularray, as tinytable writes it ---------------------------------------

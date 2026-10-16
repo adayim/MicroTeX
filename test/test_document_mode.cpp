@@ -208,11 +208,53 @@ TEST(docmode_a_list_or_a_float_is_set_apart_from_its_paragraph) {
   CHECK_EQ(first(xsOf(named(d, "after."))), 0.0f);
   // A float is set where it is written, on lines of its own.
   const auto f = runs("Before \\begin{table}\\caption{Cap}\\begin{tabular}{l}cell\\end{tabular}\\end{table} after.");
-  CHECK_EQ(textsOf(f), Strings({"Before", "Cap", "cell", "after."}));
+  CHECK_EQ(textsOf(f), Strings({"Before", "Table 1: ", "Cap", "cell", "after."}));
   CHECK_EQ(rows(f), std::size_t(4));
   // In a label a list is part of the line.
   const auto m = runs("Before \\begin{itemize}\\item one\\end{itemize}", InputMode::mixed);
   CHECK(first(xsOf(named(m, "one"))) > static_cast<float>(rec("Before", InputMode::mixed).width));
+}
+
+// pdflatex: a figure's caption is "Figure n: text" and a table's "Table n: text", each counting its own; a
+// \caption* is the text alone.
+TEST(docmode_a_floats_caption_is_numbered_by_its_kind) {
+  const auto f = runs("\\begin{figure}\\caption{A}\\end{figure}\n\\begin{table}\\caption{B}\\end{table}\n"
+                      "\\begin{figure}\\caption{C}\\end{figure}\n\\begin{figure}\\caption*{D}\\end{figure}");
+  CHECK_EQ(textsOf(f), Strings({"Figure 1: ", "A", "Table 1: ", "B", "Figure 2: ", "C", "D"}));
+}
+
+// pdflatex with subcaption: subfigures are lettered "(a) First", the figure's own caption follows ("Figure 1:
+// Both"), \ref{sa} is 1a, \subref{sa} is a, and the next figure starts again at (a).
+TEST(docmode_a_subfigure_is_lettered_and_its_label_is_the_figures_number_and_the_letter) {
+  const std::string body =
+    "\\begin{figure}\\begin{subfigure}{0.45\\textwidth}AAA\\caption{First}\\label{sa}\\end{subfigure}\\hfill"
+    "\\begin{subfigure}{0.45\\textwidth}BBB\\caption{Second}\\label{sb}\\end{subfigure}"
+    "\\caption{Both}\\label{f1}\\end{figure}\n"
+    "\\begin{figure}\\begin{subfigure}{0.9\\textwidth}CCC\\caption{Third}\\label{sc}\\end{subfigure}"
+    "\\caption{Next}\\label{f2}\\end{figure}\n\n";
+  const auto f = runs(body + "REFS \\ref{f1} \\ref{sa} \\subref{sa} \\ref{sb} \\ref{f2} \\ref{sc}");
+  const Strings t = textsOf(f);
+  for (const char* s : {"(a)", "First", "(b)", "Second", "Figure 1: ", "Both", "(a)", "Third", "Figure 2: ", "Next"}) {
+    CHECK(std::find(t.begin(), t.end(), s) != t.end());
+  }
+  std::string refs;
+  for (const auto& s : t) refs += s;
+  CHECK(refs.find("REFS 1 1a a 1b 2 2a") != std::string::npos);
+  CHECK(!check::warns(rec(body, InputMode::document), "undefined"));
+}
+
+// caption.sty's \abovecaptionskip is 10pt above a float's caption, subcaption.sty's skip 6pt above a sub-caption (in
+// \small): pdflatex's rows, a table's body to its caption 18bp against the 12bp of two lines. Here, in em.
+TEST(docmode_a_float_caption_stands_below_its_body_by_the_caption_skip) {
+  const auto two = runs("X\\par Y");
+  const float plain = first(ysOf(named(two, "Y"))) - first(ysOf(named(two, "X")));
+  const auto fig = runs("\\begin{figure}X\\caption{C}\\end{figure}");
+  const float main = first(ysOf(named(fig, "Figure 1: "))) - first(ysOf(named(fig, "X")));
+  const auto sub = runs("\\begin{figure}\\begin{subfigure}{5cm}X\\caption{C}\\end{subfigure}\\end{figure}");
+  const float lettered = first(ysOf(named(sub, "(a)"))) - first(ysOf(named(sub, "X")));
+  CHECK(main > plain + 5.f);
+  CHECK(lettered > plain - 1.f);
+  CHECK(lettered < main);
 }
 
 TEST(docmode_center_and_centering_centre_a_documents_lines) {

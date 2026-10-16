@@ -27,10 +27,13 @@
 \newcommand{\documentclass}[2][]{}
 \newcommand{\bibliographystyle}[1]{}
 \newenvironment{document}{}{}
-\newenvironment{table}[1][]{}{}
-\newenvironment{table*}[1][]{}{}
-\newenvironment{figure}[1][]{}{}
-\newenvironment{figure*}[1][]{}{}
+\newenvironment{table}[1][]{\gmfloat{table}}{\gmfloat{}}
+\newenvironment{table*}[1][]{\gmfloat{table}}{\gmfloat{}}
+\newenvironment{figure}[1][]{\gmfloat{figure}}{\gmfloat{}}
+\newenvironment{figure*}[1][]{\gmfloat{figure}}{\gmfloat{}}
+% subcaption's sub-floats: minipages whose \caption is "(a) text", lettered within the float; \subref{key} is the letter.
+\NewDocumentEnvironment{subfigure}{O{c}m}{\begin{minipage}[#1]{#2}\gmsubfloat{subfigure}}{\gmsubfloat{}\end{minipage}}
+\NewDocumentEnvironment{subtable}{O{c}m}{\begin{minipage}[#1]{#2}\gmsubfloat{subtable}}{\gmsubfloat{}\end{minipage}}
 \newenvironment{center}{}{}
 \newenvironment{flushleft}{}{}
 \newenvironment{flushright}{}{}
