@@ -2,7 +2,7 @@
 
 It is a dynamic, cross-platform, and embeddable LaTeX rendering library. Its main purpose is to display mathematical formulas written in LaTeX, and it sets the text, tables, lists and displays around them too. The engine needs no graphics library, it records what it draws, and graphics backends for Cairo, Qt, Skia and Windows GDI+ are included for applications that want to draw directly.
 
-This is a fork of [NanoMichael/MicroTeX](https://github.com/NanoMichael/MicroTeX) by Nano Michael, from its `openmath` branch. The layout engine, the symbol tables and the graphics interface are his work, and the credit for them is his. The fork is the engine of [gridmicrotex](https://github.com/adayim/gridmicrotex), which renders LaTeX in R graphics, and the sources in `lib/` are kept in step with the copy that package ships. The build files (`CMakeLists.txt`, `meson.build`), [`lib/host_defaults.cpp`](lib/host_defaults.cpp), `lib/microtexapi.h` and `lib/wrapper/` are this fork's own.
+This is version 0.1.0 of a fork of [NanoMichael/MicroTeX](https://github.com/NanoMichael/MicroTeX) by Nano Michael and the MicroTeX contributors, from its `openmath` branch at commit `086f4eb` (2024-08-05). The layout engine, the symbol tables and the graphics interface are their work, and the credit for them is theirs. The fork is the engine of [gridmicrotex](https://github.com/adayim/gridmicrotex), which renders LaTeX in R graphics, and the sources in `lib/` are kept in step with the copy that package ships. The build files (`CMakeLists.txt`, `meson.build`), [`lib/host_defaults.cpp`](lib/host_defaults.cpp), `lib/microtexapi.h` and `lib/wrapper/` are this fork's own.
 
 ![integral](readme/example_integral.svg)
 
@@ -25,6 +25,16 @@ These were drawn by [`example/svg`](example/svg/svg_main.cpp), with Latin Modern
 - **Right-to-left text**, reordered with FriBidi when it is built in.
 - **TeX's own layout rules** where TeX has one, checked against pdfLaTeX output: the row spacing of matrices and alignments, text style in arrays, equation numbers.
 - **Safer and more portable.** The engine is tested under AddressSanitizer and UBSan and fuzzed with libFuzzer on every push.
+
+# Versions
+
+The fork has a version of its own, a tag `vMAJOR.MINOR.PATCH` that [gridmicrotex](https://github.com/adayim/gridmicrotex) names in its NEWS and in `inst/COPYRIGHTS` when the engine it ships changes. Upstream's own tag, `v0.0.1`, is older and unrelated. While the major number is 0:
+
+- **minor** when what the engine draws changes for an input that worked before (spacing, a new default), or the interface a host uses changes (`lib/microtexapi.h`, `lib/front/hooks.h`, the draw records);
+- **minor** also for a new command, environment or package that is drawn;
+- **patch** for fixes that change nothing else, and for build, test and documentation changes.
+
+0.1.0 is the first release of the fork. It is tagged on the commit that `lib/` was synced from into gridmicrotex 0.2.1.
 
 # Status
 
