@@ -654,6 +654,75 @@ TEST(tikz_children_have_children_and_their_edges_can_have_a_path_of_their_own) {
   CHECK_EQ(check::texts(labelled).size() >= 3, true);
 }
 
+// pgfmodulematrix: the cells' origins are on one vertical line in a column and one horizontal line in a row, a column is as
+// wide as its widest cell, `column sep` and `row sep` go between the borders (or between the origins), the matrix is a node
+// whose text is that box, and each cell is a node named `m-row-column`.
+TEST(tikz_a_matrix_of_nodes_sets_its_cells_in_columns_and_rows) {
+  const std::string head = R"([every node/.style={}]\matrix (m) [matrix of nodes, nodes={draw, inner sep=0pt}] )";
+  const auto m = strokes(pic(head + R"({ a & bbbb \\ cc & d \\ };)"));
+  CHECK_EQ(m.size(), std::size_t(4));  // four cells; the matrix itself is not drawn
+  if (m.size() < 4) return;
+  const Centre a = centreOf(m[0]), b = centreOf(m[1]), c = centreOf(m[2]), d = centreOf(m[3]);
+  // The cells of a column stand on one line, those of a row on another.
+  CHECK(near(a.x, c.x, 1.f));
+  CHECK(near(b.x, d.x, 1.f));
+  CHECK(near(a.y, b.y, 1.f));
+  CHECK(near(c.y, d.y, 1.f));
+  CHECK(c.y > a.y);
+  // A column is as wide as its widest cell (cc, bbbb), nothing between them.
+  CHECK(near(b.x - c.x, extentOf(m[2]).width() / 2 + extentOf(m[1]).width() / 2, 1.f));
+  // Rows touch: the tall cells have the same height here.
+  CHECK(near(c.y - a.y, extentOf(m[0]).height(), 1.f));
+  const auto sep = strokes(pic(R"(\matrix (m) [matrix of nodes, nodes={draw, inner sep=0pt}, column sep=1cm, row sep=5mm] { a & bbbb \\ cc & d \\ };)"));
+  CHECK_EQ(sep.size(), std::size_t(4));
+  if (sep.size() < 4) return;
+  CHECK(near(centreOf(sep[1]).x - centreOf(sep[0]).x - (b.x - a.x), cm(1), 1.5f));
+  CHECK(near(centreOf(sep[2]).y - centreOf(sep[0]).y - (c.y - a.y), cm(0.5), 1.5f));
+  // Between origins, the sep is the distance between the lines the cells stand on.
+  const auto fixed = strokes(pic(R"(\matrix (m) [matrix of nodes, nodes={draw, inner sep=0pt}, column sep={2cm, between origins}] { a & bbbb \\ };)"));
+  CHECK(near(centreOf(fixed[1]).x - centreOf(fixed[0]).x, cm(2), 1.f));
+}
+
+// The matrix node round its box has the node's inner sep, and is drawn behind its cells; cells are named and can be
+// used, empty ones take no room and make no node unless asked.
+TEST(tikz_a_matrix_is_a_node_and_its_cells_have_names) {
+  const auto m = strokes(pic(R"(\matrix (m) [matrix of nodes, draw, inner sep=3pt, nodes={draw, inner sep=0pt}] { a & b \\ };)"));
+  CHECK_EQ(m.size(), std::size_t(3));  // the matrix, then its cells
+  if (m.size() < 3) return;
+  const Extent outer = extentOf(m[0]), left = extentOf(m[1]), right = extentOf(m[2]);
+  CHECK(near(left.x0 - outer.x0, static_cast<float>(plain(R"(\hspace{3pt})").width), 1.f));
+  CHECK(near(outer.x1 - right.x1, static_cast<float>(plain(R"(\hspace{3pt})").width), 1.f));
+  CHECK(near(outer.y1 - left.y1, static_cast<float>(plain(R"(\hspace{3pt})").width), 1.f));
+  const auto used = strokes(pic(R"(\matrix (m) [matrix of nodes, row sep=2cm, nodes={draw, inner sep=0pt}] { a & b \\ c & d \\ }; \draw (m-1-2) -- (m-2-1);)"));
+  CHECK_EQ(used.size(), std::size_t(5));
+  CHECK(near(extentOf(used[4]).y0, extentOf(used[1]).y1, 1.f));  // out of the bottom of b ...
+  CHECK(near(extentOf(used[4]).y1, extentOf(used[2]).y0, 1.f));  // ... into the top of c
+  const auto gap = strokes(pic(R"(\matrix (m) [matrix of nodes, nodes={draw}] { a & \\ & d \\ };)"));
+  CHECK_EQ(gap.size(), std::size_t(2));
+  CHECK_EQ(strokes(pic(R"(\matrix (m) [matrix of nodes, nodes in empty cells, nodes={draw}] { a & \\ & d \\ };)")).size(), std::size_t(4));
+  // `|[options]|` is a cell's own, and column and row styles come before it.
+  const auto styled = pic(R"(\matrix (m) [matrix of nodes, column 1/.style={nodes={draw}}] { a & b \\ |[draw]| c & d \\ };)");
+  CHECK_EQ(strokes(styled).size(), std::size_t(2));  // a and c, from column 1: c's own draw is the same one
+  CHECK_EQ(strokes(pic(R"(\matrix (m) [matrix of nodes] { a & b \\ |[draw]| c & d \\ };)")).size(), std::size_t(1));
+}
+
+// `matrix of math nodes` sets each cell in math; a matrix of paths is said, once, and left out.
+TEST(tikz_a_matrix_of_math_nodes_sets_its_cells_in_math) {
+  const auto text = check::render(R"(\begin{tikzpicture}\matrix [matrix of nodes] { x \\ };\end{tikzpicture})", [] {
+    Options o(InputMode::math);
+    o.path = false;
+    return o;
+  }());
+  const auto math = check::render(R"(\begin{tikzpicture}\matrix [matrix of math nodes] { x \\ };\end{tikzpicture})", [] {
+    Options o(InputMode::math);
+    o.path = false;
+    return o;
+  }());
+  CHECK(!check::of(text, DrawRecord::TEXT).empty());
+  CHECK(check::of(math, DrawRecord::TEXT).empty() && !check::of(math, DrawRecord::GLYPH).empty());
+  CHECK(check::warns(pic(R"(\matrix { \node {a}; & \node {b}; \\ };)"), "matrix"));
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
