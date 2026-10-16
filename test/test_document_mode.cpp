@@ -330,8 +330,13 @@ TEST(docmode_multicols_balances_its_body_in_columns_a_columnsep_apart) {
   for (const char* w : {"one", "two", "three", "four"}) CHECK_EQ(first(xsOf(at(two, w))), 0.f);
   for (const char* w : {"five", "six", "seven"}) CHECK(close(first(xsOf(at(two, w))), second, 0.01f));
   CHECK(close(first(ysOf(at(two, "one"))), first(ysOf(at(two, "five"))), 0.01f));
-  CHECK(close(first(ysOf(at(two, "three"))), first(ysOf(at(two, "seven"))), 0.01f));
-  CHECK(first(ysOf(at(two, "four"))) > first(ysOf(at(two, "seven"))));
+  // The short column is stretched to the height of the tallest: pdflatex has five, six, seven at 163, 181, 199 where
+  // one..four are at 163, 175, 187, 199 -- the glue between its paragraphs takes the missing line, evenly.
+  CHECK(close(first(ysOf(at(two, "seven"))), first(ysOf(at(two, "four"))), 0.01f));
+  const float gapA = first(ysOf(at(two, "six"))) - first(ysOf(at(two, "five")));
+  const float gapB = first(ysOf(at(two, "seven"))) - first(ysOf(at(two, "six")));
+  CHECK(close(gapA, gapB, 0.01f));
+  CHECK(gapA > first(ysOf(at(two, "two"))) - first(ysOf(at(two, "one"))) + 1.f);
   const auto three = runs("\\begin{multicols}{3}ant\\par bee\\par cat\\par dog\\par elk\\par fox\\par gnu\\par hen\\par "
                           "ibis\\par jay\\end{multicols}", InputMode::document, 400);
   const float middle = (400.f - 40.f) / 3 + 20.f;
@@ -340,6 +345,9 @@ TEST(docmode_multicols_balances_its_body_in_columns_a_columnsep_apart) {
   CHECK(close(first(xsOf(at(three, "hen"))), middle, 0.01f));
   CHECK(close(first(xsOf(at(three, "ibis"))), 2 * middle, 0.01f));
   CHECK(close(first(xsOf(at(three, "jay"))), 2 * middle, 0.01f));
+  // A column two lines short (pdflatex: g9, g10 at 438, 450) is not stretched.
+  CHECK(close(first(ysOf(at(three, "jay"))) - first(ysOf(at(three, "ibis"))),
+              first(ysOf(at(three, "bee"))) - first(ysOf(at(three, "ant"))), 0.01f));
 }
 
 TEST(docmode_multicols_has_a_header_and_a_multicolsep_round_it) {
