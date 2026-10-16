@@ -497,6 +497,38 @@ TEST(tikz_a_pin_is_a_label_with_a_line) {
   CHECK(strokes(pic(R"(\node[draw, pin={[pin edge={->}]above:T}] at (0,0) {y};)")).size() > 2);
 }
 
+// tikzlibrarycalc: `($(a)!t!(b)$)` is a fraction of the way, `!1cm!` a distance, `!(p)!` the foot of p on the line,
+// `+` and `-` add the points, `k*(a)` scales one; a result is the point you would have written.
+TEST(tikz_calc_points_are_the_points_they_say) {
+  const std::string def = R"(\coordinate (a) at (0,0); \coordinate (b) at (4,2); \coordinate (c) at (3,0);)";
+  CHECK_PAIRS((check::Pairs{
+    {R"(\begin{tikzpicture})" + def + R"(\draw ($(a)!0.5!(b)$) -- (0,-1);\end{tikzpicture})",
+     R"(\begin{tikzpicture})" + def + R"(\draw (2,1) -- (0,-1);\end{tikzpicture})"},
+    {R"(\begin{tikzpicture})" + def + R"(\draw ($(a)+(1,2)$) -- ($(b)-(a)$);\end{tikzpicture})",
+     R"(\begin{tikzpicture})" + def + R"(\draw (1,2) -- (4,2);\end{tikzpicture})"},
+    {R"(\begin{tikzpicture})" + def + R"(\draw ($2*(a)+0.5*(b)$) -- ($-1*(c)$);\end{tikzpicture})",
+     R"(\begin{tikzpicture})" + def + R"(\draw (2,1) -- (-3,0);\end{tikzpicture})"},
+    // The foot of (3,0) on the line through (0,0) and (4,2): (2.4,1.2).
+    {R"(\begin{tikzpicture})" + def + R"(\draw ($(a)!(c)!(b)$) -- (0,-1);\end{tikzpicture})",
+     R"(\begin{tikzpicture})" + def + R"(\draw (2.4,1.2) -- (0,-1);\end{tikzpicture})"},
+    // Turned about the first point: (b) at 90 degrees from (a) is (-2,4).
+    {R"(\begin{tikzpicture})" + def + R"(\draw ($(a)!0.5!90:(b)$) -- (0,-1);\end{tikzpicture})",
+     R"(\begin{tikzpicture})" + def + R"(\draw (-1,2) -- (0,-1);\end{tikzpicture})"},
+    // Steps chain, and a node's anchor is a point.
+    {R"(\begin{tikzpicture}\node[draw] (n) at (0,0) {x};\draw ($(n.east)!0!(n.west)$) -- (3,0);\end{tikzpicture})",
+     R"(\begin{tikzpicture}\node[draw] (n) at (0,0) {x};\draw (n.east) -- (3,0);\end{tikzpicture})"},
+    {R"(\begin{tikzpicture})" + def + R"(\draw ($(a)!0.5!(b)!0.5!(b)$) -- (0,-1);\end{tikzpicture})",
+     R"(\begin{tikzpicture})" + def + R"(\draw (3,1.5) -- (0,-1);\end{tikzpicture})"},
+  }));
+  // A distance walks that far from the first point towards the second: 1cm along (3,4) from the origin is (0.6,0.8).
+  CHECK_PAIRS((check::Pairs{
+    {R"(\begin{tikzpicture}\draw ($(0,0)!1cm!(3,4)$) -- (0,-1);\end{tikzpicture})",
+     R"(\begin{tikzpicture}\draw (0.6,0.8) -- (0,-1);\end{tikzpicture})"},
+  }));
+  // What cannot be read is said and left out.
+  CHECK(check::warns(pic(R"(\draw ($(0,0)!x!(1,1)$) -- (1,0);)"), "calculation"));
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");

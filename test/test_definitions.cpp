@@ -294,3 +294,23 @@ TEST(definitions_colorlet_names_a_mix) {
   CHECK(check::drawsColour(rec("\\colorlet{soft}{red!50}\\textcolor{soft}{x}"), 0xFFFF8080u));
   CHECK(check::warns(rec("\\colorlet{soft}{nosuchcolour}"), "undefined colour `nosuchcolour'"));
 }
+
+// The names xcolor has with no option are its own (pdflatex: orange `1 .5 0`, purple `.75 0 .25`, violet
+// `.5 0 .5`, brown `.75 .5 .25`, lime `.75 1 0`, teal `0 .5 .5`, pink `1 .75 .75`, olive `.5 .5 0`); dvips's
+// namesakes are the capitalised ones, and a capital never reaches the lower-case name.
+TEST(definitions_the_base_colour_names_are_xcolors_and_dvips_names_are_capitalised) {
+  CHECK(check::drawsColour(rec("\\textcolor{orange}{x}"), 0xFFFF7F00u));
+  CHECK(check::drawsColour(rec("\\textcolor{purple}{x}"), 0xFFBF003Fu));
+  CHECK(check::drawsColour(rec("\\textcolor{violet}{x}"), 0xFF7F007Fu));
+  CHECK(check::drawsColour(rec("\\textcolor{brown}{x}"), 0xFFBF7F3Fu));
+  CHECK(check::drawsColour(rec("\\textcolor{lime}{x}"), 0xFFBFFF00u));
+  CHECK(check::drawsColour(rec("\\textcolor{teal}{x}"), 0xFF007F7Fu));
+  CHECK(check::drawsColour(rec("\\textcolor{pink}{x}"), 0xFFFFBFBFu));
+  CHECK(check::drawsColour(rec("\\textcolor{olive}{x}"), 0xFF7F7F00u));
+  CHECK(check::drawsColour(rec("\\textcolor{darkgray}{x}"), 0xFF3F3F3Fu));
+  CHECK(check::drawsColour(rec("\\textcolor{lightgray}{x}"), 0xFFBFBFBFu));
+  CHECK(!check::drawsColour(rec("\\textcolor{Orange}{x}"), 0xFFFF7F00u));
+  // dvips's other names still answer to their capitals.
+  CHECK(!check::warns(rec("\\textcolor{OliveGreen}{x}"), "undefined colour"));
+  CHECK(!check::warns(rec("\\textcolor{Purple}{x}"), "undefined colour"));
+}
