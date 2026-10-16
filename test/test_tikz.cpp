@@ -576,6 +576,84 @@ TEST(tikz_a_background_layer_is_drawn_first) {
   CHECK_EQ(env[2], 0xFFFF0000u);
 }
 
+namespace {
+
+struct Centre {
+  float x, y;
+};
+
+Centre centreOf(const DrawRecord& r) {
+  const Extent e = extentOf(r);
+  return {(e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2};
+}
+
+const std::string kBoxes = R"([every node/.style={draw}])";
+
+}  // namespace
+
+// pgf's trees: a child is `level distance` (15mm) from its parent in the way the tree grows (down), the n children are
+// `sibling distance` (15mm) apart, centred on the parent, and each has an edge, a line from border to border.
+TEST(tikz_children_are_a_level_distance_below_their_parent_and_a_sibling_distance_apart) {
+  const auto one = strokes(pic(kBoxes + R"(\node {r} child {node {a}};)"));
+  CHECK_EQ(one.size(), std::size_t(3));  // the two nodes, and the edge
+  const Centre parent = centreOf(one[0]), child = centreOf(one[1]);
+  CHECK(near(child.x, parent.x));
+  CHECK(near(child.y - parent.y, cm(1.5)));  // y grows downwards in the layout
+  // (A level distance that keeps the boxes of the stub font, 121 x 166 px here, clear of each other.)
+  const auto three = strokes(pic(R"([level distance=6cm, every node/.style={draw}]\node {r} child {node {a}} child {node {b}} child {node {c}};)"));
+  CHECK_EQ(three.size(), std::size_t(7));
+  const Centre p = centreOf(three[0]);
+  CHECK(near(centreOf(three[1]).x, p.x - cm(1.5)));
+  CHECK(near(centreOf(three[2]).x, p.x, 1.f));
+  CHECK(near(centreOf(three[3]).x, p.x + cm(1.5)));
+  // The edge to the middle child runs from the parent's bottom border to the child's top border.
+  const Extent edge = extentOf(three[5]);
+  CHECK(near(edge.y0, extentOf(three[0]).y1, 1.f));
+  CHECK(near(edge.y1, extentOf(three[2]).y0, 1.f));
+}
+
+// `level 1/.style` and `level distance` are read at the level they are for; `grow=right` turns the tree; `child[missing]`
+// leaves its place empty; children are named `parent-j`.
+TEST(tikz_tree_options_are_read_at_their_level_and_the_tree_can_grow_any_way) {
+  const auto wide = strokes(pic(R"([level 1/.style={sibling distance=3cm}, every node/.style={draw}]\node {r} child {node {a}} child {node {b}};)"));
+  CHECK(near(centreOf(wide[2]).x - centreOf(wide[1]).x, cm(3)));
+  const auto deep = strokes(pic(R"([level distance=2cm, every node/.style={draw}]\node {r} child {node {a}};)"));
+  CHECK(near(centreOf(deep[1]).y - centreOf(deep[0]).y, cm(2)));
+  const auto right = strokes(pic(R"([grow=right, every node/.style={draw}]\node {r} child {node {a}} child {node {b}};)"));
+  CHECK(near(centreOf(right[1]).x - centreOf(right[0]).x, cm(1.5)));
+  // Spread across the way it grows, the first child below (pgf's `left` of a tree growing right is down).
+  CHECK(near(centreOf(right[1]).y - centreOf(right[2]).y, cm(1.5)));
+
+  const auto miss = strokes(pic(kBoxes + R"(\node {r} child {node {a}} child[missing] child {node {c}};)"));
+  CHECK_EQ(miss.size(), std::size_t(5));  // r, a, c and their two edges
+  CHECK(near(centreOf(miss[2]).x - centreOf(miss[1]).x, cm(3)));
+  // grow=up at its own level puts that child straight above, not among its siblings.
+  const auto up = strokes(pic(kBoxes + R"(\node {r} child[grow=up] {node {u}} child {node {a}};)"));
+  CHECK(near(centreOf(up[1]).x, centreOf(up[0]).x));
+  CHECK(centreOf(up[1]).y < centreOf(up[0]).y);
+  const auto names = strokes(pic(R"([sibling distance=6cm, every node/.style={draw}]\node (p) {r} child {node {a}} child {node {b}}; \draw (p-1) -- (p-2);)"));
+  CHECK_EQ(names.size(), std::size_t(6));
+  CHECK(near(extentOf(names[5]).x0, extentOf(names[1]).x1, 1.f));
+  CHECK(near(extentOf(names[5]).x1, extentOf(names[2]).x0, 1.f));
+}
+
+// Nested children hang below their own parent, `child foreach` makes one per value, and `edge from parent path`
+// replaces the straight edge (the org chart's `-|`).
+TEST(tikz_children_have_children_and_their_edges_can_have_a_path_of_their_own) {
+  const auto t = strokes(pic(kBoxes + R"(\node {r} child {node {a} child {node {a1}} child {node {a2}}} child {node {b}};)"));
+  CHECK_EQ(t.size(), std::size_t(9));  // five nodes and four edges
+  const std::string many = R"(\node {r} child foreach \x in {a,b,c} {node {\x}};)";
+  CHECK_EQ(strokes(pic(kBoxes + many)).size(), std::size_t(7));
+  const auto fork = strokes(pic(R"([every node/.style={draw}, edge from parent path={(\tikzparentnode.south) -- +(0,-8pt) -| (\tikzchildnode)}]
+    \node {r} child {node {a}} child {node {b}};)"));
+  CHECK_EQ(fork.size(), std::size_t(5));
+  // The edge to a child that is not below its parent: down, across, down.
+  CHECK(fork[3].path_segments.size() >= 3);
+  // The label on an edge sits on it.
+  const auto labelled = pic(kBoxes + R"(\node {r} child {node {a} edge from parent node[midway, left] {L}};)");
+  CHECK_EQ(check::texts(labelled).size() >= 3, true);
+}
+
 // A `\foreach` that is not `\x in {list}` is said, once, and left out.
 TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
