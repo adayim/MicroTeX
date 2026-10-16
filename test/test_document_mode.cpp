@@ -378,6 +378,20 @@ TEST(docmode_columnbreak_ends_a_column_early) {
   CHECK(close(first(xsOf(named(g, "c"))), 210.f, 0.01f));
 }
 
+// multicol breaks a list between its items; a tabular is one box and stays in one column.
+TEST(docmode_multicols_breaks_a_list_between_items_but_not_a_table) {
+  const auto list = runs("\\begin{multicols}{2}\\begin{itemize}\\item ant\\item bee\\item cat\\item dog\\end{itemize}"
+                         "\\end{multicols}", InputMode::document, 400);
+  const float second = (400.f - 20.f) / 2 + 20.f;
+  CHECK(first(xsOf(named(list, "bee"))) < 100.f);
+  CHECK(first(xsOf(named(list, "cat"))) > second);
+  CHECK(close(first(ysOf(named(list, "cat"))), first(ysOf(named(list, "ant"))), 0.01f));
+  const auto table = runs("\\begin{multicols}{2}\\begin{tabular}{l}ant\\\\bee\\\\cat\\\\dog\\end{tabular}\\end{multicols}",
+                          InputMode::document, 400);
+  CHECK(close(first(xsOf(named(table, "dog"))), first(xsOf(named(table, "ant"))), 0.01f));
+  CHECK(first(ysOf(named(table, "dog"))) > first(ysOf(named(table, "ant"))));
+}
+
 TEST(docmode_center_and_centering_centre_a_documents_lines) {
   const auto xOf = [](const std::string& tex, const std::string& word, float width, InputMode mode = InputMode::document) {
     return first(xsOf(named(runs(tex, mode, width), word)));

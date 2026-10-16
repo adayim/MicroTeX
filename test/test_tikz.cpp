@@ -368,6 +368,35 @@ TEST(tikz_to_draws_a_line_or_a_curve) {
 }
 
 // \foreach is the same picture written out; `...` counts on from the two values before it; two variables go together.
+// pgfmath calls `3mm` and `\i*3mm` dimensions, and a coordinate is in centimetres: (2*3mm,0) is (0.6,0), and so on. pdfTeX
+// gives the same positions; these were read as nothing, and drawn at the origin with no warning.
+TEST(tikz_a_unit_in_a_coordinate_expression_is_a_length) {
+  CHECK_PAIRS((check::Pairs{
+    {R"(\begin{tikzpicture}\draw (0,0) -- (2*3mm, 1);\end{tikzpicture})",
+     R"(\begin{tikzpicture}\draw (0,0) -- (0.6, 1);\end{tikzpicture})"},
+    {R"(\begin{tikzpicture}\foreach \i in {1,2} \fill (-\i * 3mm, 0) circle (1pt);\end{tikzpicture})",
+     R"(\begin{tikzpicture}\fill (-0.3, 0) circle (1pt);\fill (-0.6, 0) circle (1pt);\end{tikzpicture})"},
+    {R"(\begin{tikzpicture}\draw (0,0) -- (1cm + 5mm, 10pt*2);\end{tikzpicture})",
+     R"(\begin{tikzpicture}\draw (0,0) -- (1.5cm, 20pt);\end{tikzpicture})"}}));
+}
+
+// A coordinate that is neither a point nor a node drawn before it is an error in TikZ ("No shape"); here the path is
+// left out, and the picture says so. Cells of a matrix and children of a tree are nodes, and so is `current bounding box`.
+TEST(tikz_a_coordinate_that_is_no_node_warns) {
+  const auto warns = [](const std::string& body) {
+    return check::warns(check::render("\\begin{tikzpicture}" + body + "\\end{tikzpicture}"), "is not a node drawn before it");
+  };
+  CHECK(warns(R"(\draw (0,0) -- (nosuch);)"));
+  CHECK(warns(R"(\draw (0,0) -- (foo bar, 1);)"));
+  CHECK(warns(R"(\draw (b) -- (0,0); \node (b) {B};)"));
+  CHECK(!warns(R"(\node (a) {A}; \node (b) at (1,0) {B}; \draw (a) -- (b.north);)"));
+  CHECK(!warns(R"(\coordinate (c) at (1,1); \draw (0,0) -- (c);)"));
+  CHECK(!warns(R"(\matrix (m) [matrix of nodes] {a & b \\}; \draw (m-1-1) -- (m-1-2);)"));
+  CHECK(!warns(R"(\node (p) {P} child {node {c}}; \draw (p) -- (p-1);)"));
+  CHECK(!warns(R"(\node {x}; \draw (current bounding box.south west) -- (0,0);)"));
+  CHECK(!warns(R"(\foreach \i in {1,2} \node (n\i) at (\i,0) {}; \draw (n1) -- (n2);)"));
+}
+
 TEST(tikz_foreach_draws_what_the_loop_written_out_would) {
   CHECK_PAIRS((check::Pairs{
     {R"(\begin{tikzpicture}\foreach \x in {0,1,2} \draw (\x,0) -- (\x,1);\end{tikzpicture})",
