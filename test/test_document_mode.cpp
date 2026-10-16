@@ -930,6 +930,55 @@ TEST(docmode_lines_are_a_baselineskip_apart_as_in_tex) {
   for (const float d : p) CHECK(std::fabs(d - 1.2f * size) < 0.5f);
 }
 
+// pdflatex, article at 10pt: the mark of a footnote is a raised number after the word, and the note is set after the body (a page has
+// its foot, a grob only its end): below the last line, in \footnotesize (0.8), numbered as the counter is; a second note is 1 on. The
+// lines of a note are \footnotesize's baselineskip apart, 0.8 of the body's (9.5pt where the body has 12).
+TEST(docmode_a_footnote_is_a_mark_in_the_text_and_a_note_after_the_body) {
+  const float size = 20;
+  const auto r = lineRuns(R"(Aaa\footnote{Nnn} bbb.\footnote{Mmm}
+
+Last)", 400, size);
+  // The text, the marks, then the notes, each below the one before.
+  const auto find = [&](const std::string& t, std::size_t nth = 0) -> const DrawRecord* {
+    for (const auto& run : r) {
+      if (run.text == t && nth-- == 0) return &run;
+    }
+    return nullptr;
+  };
+  const auto* body = find("Aaa");
+  const auto* last = find("Last");
+  const auto* n1 = find("Nnn");
+  const auto* n2 = find("Mmm");
+  CHECK(body != nullptr && last != nullptr && n1 != nullptr && n2 != nullptr);
+  if (body == nullptr || last == nullptr || n1 == nullptr || n2 == nullptr) return;
+  CHECK(last->y > body->y);
+  CHECK(n1->y > last->y + 0.9f * size);  // \skip\footins and the rule lie between
+  CHECK(n2->y > n1->y);
+  // \footnotesize is 0.8 of the body, and the marks are raised, smaller still.
+  CHECK(std::fabs(n1->font_size / body->font_size - 0.8f) < 0.01f);
+  const auto* mark1 = find("1", 0);
+  const auto* mark2 = find("2", 0);
+  CHECK(mark1 != nullptr && mark2 != nullptr);
+  if (mark1 != nullptr) {
+    CHECK(mark1->y < body->y);  // raised
+    CHECK(mark1->x > body->x);  // after the word
+  }
+  // The same notes drawn as marks: 1 and 2, in the text and in front of each note.
+  CHECK(find("1", 1) != nullptr && find("2", 1) != nullptr);
+  // A second paragraph's note continues the count; \footnotemark and \footnotetext make one note by two commands.
+  const auto two = lineRuns(R"(A\footnotemark b\footnotetext{Tt})", 400, size);
+  CHECK(!pitches(two, {"A", "Tt"}).empty());
+  const auto marks = [&](const Records& rs) {
+    std::string s;
+    for (const auto& run : rs) s += run.text + "|";
+    return s;
+  };
+  CHECK(marks(two).find("1|") != std::string::npos);
+  // \renewcommand{\thefootnote}: a symbol, as LaTeX's \fnsymbol.
+  const auto sym = lineRuns(R"(\renewcommand{\thefootnote}{\fnsymbol{footnote}}A\footnote{Nnn})", 400, size);
+  CHECK(marks(sym).find("*|") != std::string::npos);
+}
+
 // pdflatex: a display below a full line is 22pt on from it and the line after is 22pt on (\baselineskip and the 10pt
 // \abovedisplayskip, \belowdisplayskip); below a short line, with the short skips (0 and 6pt), 12 and 18;
 // a display that follows a blank line is not set below a line of its paragraph, so the short skips too -- five of

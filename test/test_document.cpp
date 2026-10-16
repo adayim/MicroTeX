@@ -442,9 +442,6 @@ TEST(document_a_caption_note_or_run_in_heading_is_set_once_per_line_it_runs_over
   // As \textbf{a\\b} is.
   drawsAs("\\caption{one\\\\two}", "\\text{one}\\\\\\text{two}\\\\");
   drawsAs("\\paragraph{One\\\\Two} text", "\\paragraph{One}\\\\\\paragraph{Two} text");
-  for (const InputMode mode : {InputMode::mixed, InputMode::document}) {
-    drawsAs("Value\\footnote{see\\\\below} end", "Value\\footnote{see}\\\\\\footnote{below} end", mode);
-  }
 }
 
 TEST(document_links_look_like_latexs_and_a_url_is_drawn_as_written) {

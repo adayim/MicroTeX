@@ -169,6 +169,13 @@
 \NewDocumentCommand{\newcounter}{mo}{\@namedef{the#1}{\arabic{#1}}\gmnewcounter{#1}{\IfNoValueTF{#2}{}{#2}}}
 \newcommand{\refstepcounter}[1]{\stepcounter{#1}\gmcurrentlabel{\csname the#1\endcsname}}
 
+% Footnotes: the counter's \thefootnote, and the commands over the engine's page notes (a document sets the notes after
+% its body, a label sets a note's text where it was written). \footnotetext numbers its note as the last mark.
+\@namedef{thefootnote}{\arabic{footnote}}
+\NewDocumentCommand{\footnote}{om}{\IfNoValueTF{#1}{\stepcounter{footnote}\gmfootnote{\thefootnote}{#2}}{\gmfootnote{#1}{#2}}}
+\NewDocumentCommand{\footnotemark}{o}{\IfNoValueTF{#1}{\stepcounter{footnote}\gmfootnotemark{\thefootnote}}{\gmfootnotemark{#1}}}
+\NewDocumentCommand{\footnotetext}{om}{\IfNoValueTF{#1}{\gmfootnotetext{\thefootnote}{#2}}{\gmfootnotetext{#1}{#2}}}
+
 % thebibliography's items: \bibitem[label]{key} is marked [label], or [n] in
 % turn when it has none, and \cite{key} draws the same.
 \NewDocumentCommand{\bibitem}{om}{\IfNoValueTF{#1}{\item\gmbibitem{#2}{}}{\item[{[}#1{]}]\gmbibitem{#2}{#1}}}

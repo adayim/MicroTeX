@@ -90,11 +90,13 @@ TEST(text_a_reference_citation_or_footnote_warns_and_draws_what_latex_draws) {
   // One ? for each key, and the note after them, as LaTeX prints it.
   CHECK_EQ(drawn("\\cite{a, b}"), std::string("[|?|, |?|]"));
   CHECK_EQ(drawn("\\cite[p. 5]{key}"), std::string("[|?|, |p. 5|]"));
-  // There is no page for a footnote, so its text is set where it stands;
-  // its optional number has no note to number.
-  CHECK(check::warns(rec("text\\footnote{a note} on"), "no page to put a note on"));
-  CHECK_EQ(drawn("text\\footnote{a note} on"), std::string("text|a note| on"));
-  CHECK_EQ(drawn("text\\footnote[2]{a note} on"), std::string("text|a note| on"));
+  // A label has no page for a footnote, so its text is set where it stands; a document sets the mark, and the
+  // note after its body, numbered as the counter has it, or as the optional number says.
+  CHECK(check::warns(rec("text\\footnote{a note} on", InputMode::mixed), "no page to put a note on"));
+  CHECK_EQ(drawn("text\\footnote{a note} on", InputMode::mixed), std::string("text|a note| on"));
+  CHECK_EQ(drawn("text\\footnote{a note} on"), std::string("text|1| on|1|a note"));
+  CHECK_EQ(drawn("text\\footnote[2]{a note} on"), std::string("text|2| on|2|a note"));
+  CHECK(!check::warns(rec("text\\footnote{a note} on"), "no page"));
 }
 
 TEST(text_a_book_length_body_is_within_the_expansion_caps) {
