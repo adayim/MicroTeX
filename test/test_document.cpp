@@ -151,6 +151,61 @@ TEST(document_a_whole_document_finds_its_body_around_a_verbatim_end_document) {
   CHECK_EQ(linesOf(tex), Strings({"\\end{document}", "kept"}));
 }
 
+// listings, minted and fancyvrb: their code is set as verbatim is, and their options (a look this package does not
+// draw) are read and left out, with no warning: a pasted `[language=R]` is not a problem. A document that
+// \usepackage{...}s one of them keeps its settings (\lstset...) as no-ops.
+TEST(document_listings_minted_and_fancyvrb_set_their_code_as_verbatim_does) {
+  const std::string body = "x <- c(1, 2) # 50% & a_b\n  f(\\x{y})";
+  const Strings expected = linesOf("\\begin{verbatim}\n" + body + "\n\\end{verbatim}");
+  CHECK_EQ(expected, Strings({"x <- c(1, 2) # 50% & a_b", "  f(\\x{y})"}));
+  for (const char* head : {"\\begin{lstlisting}", "\\begin{lstlisting}[language=R, basicstyle=\\small, caption={a, b}]",
+                           "\\begin{minted}{r}", "\\begin{minted}[linenos, frame=single]{python}",
+                           "\\begin{Verbatim}", "\\begin{Verbatim}[fontsize=\\small]"}) {
+    const std::string name = std::string(head).substr(7, std::string(head).find_first_of("}") - 7);
+    const std::string tex = std::string(head) + "\n" + body + "\n\\end{" + name + "}";
+    CHECK_EQ(linesOf(tex), expected);
+    CHECK(quiet(tex));
+    for (const auto& r : textRecords(tex)) CHECK(isMono(r));
+  }
+  CHECK_EQ(linesOf("\\begin{Verbatim*}\na b\n\\end{Verbatim*}"), Strings({"a\u2423b"}));
+  // The rest of the \begin line is no code (spaces after the options), and an option holds a `]` in braces.
+  CHECK_EQ(linesOf("\\begin{lstlisting}[caption={a]b}]  \nx\n\\end{lstlisting}"), Strings({"x"}));
+  // An option is no code: a body that opens with a bracket on the next line is code.
+  CHECK_EQ(linesOf("\\begin{lstlisting}\n[1] 5\n\\end{lstlisting}"), Strings({"[1] 5"}));
+  // Unclosed options and a missing language warn once and the code is still there.
+  CHECK(check::warns(rec("\\begin{lstlisting}[a=b\nx\n\\end{lstlisting}"), "is not closed on its line"));
+  CHECK(check::warns(rec("\\begin{minted}\nx\n\\end{minted}"), "required argument"));
+}
+
+TEST(document_the_inline_code_of_listings_minted_and_fancyvrb_is_set_as_verb_is) {
+  CHECK_EQ(linesOf(R"(\lstinline|a_b & 50%|)"), linesOf(R"(\verb|a_b & 50%|)"));
+  CHECK_EQ(linesOf(R"(\lstinline[language=R]!x_1!)"), linesOf(R"(\verb!x_1!)"));
+  CHECK_EQ(linesOf(R"(\mintinline{r}|x_1 # c|)"), linesOf(R"(\verb|x_1 # c|)"));
+  CHECK_EQ(linesOf(R"(\mintinline[bgcolor=white]{python}|x_1|)"), linesOf(R"(\verb|x_1|)"));
+  CHECK_EQ(linesOf(R"(\Verb|a & b|)"), linesOf(R"(\verb|a & b|)"));
+  // Braces delimit the code of \lstinline and \mintinline, and a brace inside them is part of it.
+  CHECK_EQ(linesOf(R"(\lstinline{a_b})"), linesOf(R"(\verb|a_b|)"));
+  CHECK_EQ(linesOf(R"(\lstinline{f(x){y}})"), linesOf(R"(\verb|f(x){y}|)"));
+  CHECK_EQ(linesOf(R"(\mintinline{r}{x_1})"), linesOf(R"(\verb|x_1|)"));
+  CHECK(quiet(R"(see \lstinline{a_b & 50%} and \mintinline{r}{x # y} here)"));
+  for (const auto& r : textRecords(R"(\lstinline|abc|)")) CHECK(isMono(r));
+}
+
+TEST(document_an_end_document_inside_a_listing_is_text_and_the_settings_are_no_ops) {
+  const std::string tex =
+    "\\documentclass{article}\\usepackage{listings}\\lstset{language=R, basicstyle=\\ttfamily}\\begin{document}\n"
+    "\\begin{lstlisting}\n\\end{document}\n\\end{lstlisting}\nkept \\end{document} dropped";
+  CHECK_EQ(linesOf(tex), Strings({"\\end{document}", "kept"}));
+  CHECK(quiet(tex));
+  CHECK(quiet("\\usepackage{minted}\\usemintedstyle{monokai}\\setminted{fontsize=\\small}x"));
+  CHECK(quiet("\\usepackage{fancyvrb}\\fvset{fontsize=\\small}x"));
+  CHECK(quiet("\\usepackage{listings}\\lstdefinestyle{s}{basicstyle=\\small}\\lstdefinelanguage[x]{y}{morekeywords={a}}x"));
+  // A listing is set apart from its paragraph, as a list is, and works in a list item and with no body at all.
+  CHECK_EQ(linesOf("Before\n\\begin{lstlisting}\nin\n\\end{lstlisting}\nafter"), Strings({"Before", "in", "after"}));
+  CHECK_EQ(linesOf("\\begin{lstlisting}\n\\end{lstlisting}").size(), std::size_t(1));
+  CHECK(check::warns(rec("\\begin{lstlisting}\nabc"), "missing \\end{lstlisting}"));
+}
+
 TEST(document_description_sets_a_bold_label_hanging_before_each_item) {
   const std::string tex = "\\begin{description}\\item[Alpha] first\\item[Beta] second\\end{description}";
   CHECK(quiet(tex));
