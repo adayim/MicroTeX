@@ -257,6 +257,119 @@ TEST(docmode_a_float_caption_stands_below_its_body_by_the_caption_skip) {
   CHECK(lettered < main);
 }
 
+// tcolorbox.sty's defaults (size=normal), read off pdflatex's ink at 10pt: a frame of 1.42bp (boxrule=0.5mm) in
+// black!75!white (#404040), its inside black!5!white (#F2F2F2) with 1mm of arc (the frame's own corners 1.5mm), the text
+// 4mm + 1mm boxsep from the inside edge and 2mm + 1mm from the top, the box as wide as the line. Here in em.
+TEST(docmode_a_tcolorbox_is_a_framed_rounded_box_as_wide_as_the_line) {
+  const float em = 20;
+  const auto l = rec("\\begin{tcolorbox}Hello\\end{tcolorbox}", InputMode::document, 400);
+  const auto fills = check::of(l, DrawRecord::FILL_ROUND_RECT);
+  CHECK_EQ(fills.size(), std::size_t(2));
+  if (fills.size() == 2) {
+    CHECK(fills[0].col == 0xFF404040u && fills[1].col == 0xFFF2F2F2u);
+    CHECK(close(fills[0].width, 400.f, 0.01f));
+    CHECK(close(fills[0].width - fills[1].width, 2 * 0.142264f * em, 0.01f));
+    CHECK(close(fills[0].height - fills[1].height, 2 * 0.142264f * em, 0.01f));
+    CHECK(close(fills[1].rx, 0.284528f * em, 0.01f));
+    CHECK(close(fills[0].rx, (0.142264f + 0.284528f) * em, 0.01f));
+    // The text stands the frame, `left` and `boxsep` in; the padding above and below it is top + boxsep.
+    CHECK(close(first(xsOf(runs("\\begin{tcolorbox}Hello\\end{tcolorbox}", InputMode::document, 400))),
+                (0.142264f + 1.138112f + 0.284528f) * em, 0.01f));
+    CHECK(close(fills[1].height - rec("Hello", InputMode::document, 400).height, 2 * (0.569056f + 0.284528f) * em, 0.5f));
+  }
+  // Set off from the text around it as a list is, by half a baselineskip.
+  CHECK_EQ(textsOf(runs("Before\n\\begin{tcolorbox}in\\end{tcolorbox}\nafter.")), Strings({"Before", "in", "after."}));
+}
+
+// A title is in a band of the frame's colour, white, above the body, with a rule of the frame's thickness between them
+// (pdflatex: band = text + 2mm boxsep, then the 0.5mm rule); colbacktitle fills the band, coltitle colours the text.
+TEST(docmode_a_tcolorbox_title_is_a_band_above_the_body) {
+  const auto l = rec("\\begin{tcolorbox}[title=Head]Body\\end{tcolorbox}", InputMode::document, 400);
+  const auto text = check::of(l, DrawRecord::TEXT);
+  CHECK_EQ(text.size(), std::size_t(2));
+  if (text.size() == 2) {
+    const auto& head = text[0].text == "Head" ? text[0] : text[1];
+    const auto& body = text[0].text == "Head" ? text[1] : text[0];
+    CHECK(head.y < body.y);
+    CHECK(head.col == 0xFFFFFFFFu);
+    CHECK(close(head.x, body.x, 0.01f));
+  }
+  CHECK_EQ(check::of(l, DrawRecord::FILL_ROUND_RECT).size(), std::size_t(2));
+  const auto filled = rec("\\begin{tcolorbox}[title=Head,colbacktitle=red,coltitle=black,colback=yellow,colframe=blue]"
+                          "Body\\end{tcolorbox}", InputMode::document, 400);
+  CHECK(check::drawsColour(filled, 0xFFFF0000u));
+  CHECK(check::drawsColour(filled, 0xFFFFFF00u));
+  CHECK(check::drawsColour(filled, 0xFF0000FFu));
+  CHECK(check::of(filled, DrawRecord::FILL_ROUND_RECT).size() >= 3);
+  // The band and its rule make it taller than a box with no title.
+  const float plain = check::of(rec("\\begin{tcolorbox}Body\\end{tcolorbox}", InputMode::document, 400),
+                                DrawRecord::FILL_ROUND_RECT)[0].height;
+  CHECK(check::of(l, DrawRecord::FILL_ROUND_RECT)[0].height > plain + 20.f);
+}
+
+TEST(docmode_a_tcolorbox_key_that_is_not_drawn_warns_and_sharp_corners_have_no_arc) {
+  CHECK(check::warns(rec("\\begin{tcolorbox}[foo=1]x\\end{tcolorbox}"), "tcolorbox: the key `foo' is not drawn"));
+  CHECK(check::warns(rec("\\begin{tcolorbox}[colback=nosuchcolour]x\\end{tcolorbox}"), "undefined colour `nosuchcolour'"));
+  CHECK(check::warns(rec("\\begin{tcolorbox}[boxrule=-3pt]x\\end{tcolorbox}"), "not a length of zero or more"));
+  // An empty body is a box with nothing in it, and an empty multicols draws nothing.
+  CHECK_EQ(check::of(rec("\\begin{tcolorbox}\\end{tcolorbox}"), DrawRecord::FILL_ROUND_RECT).size(), std::size_t(2));
+  CHECK(check::of(rec("\\begin{multicols}{2}\\end{multicols}"), DrawRecord::TEXT).empty());
+  CHECK(check::of(rec("\\begin{tcolorbox}[sharp corners]x\\end{tcolorbox}"), DrawRecord::FILL_ROUND_RECT).empty());
+  CHECK(!check::of(rec("\\begin{tcolorbox}[sharp corners]x\\end{tcolorbox}"), DrawRecord::FILL_RECT).empty());
+}
+
+// multicol, in pdflatex (10pt, 345pt wide, \columnsep 10pt): seven one-line paragraphs in two columns are four and
+// three, the second column starting 177.5pt in, (345 - 10) / 2 + 10; ten in three are four, four and two (a1..a4 | a5..a8 |
+// a9 a10); the header is set in the whole width and the columns start a \multicolsep (12pt) below its line, the same
+// again below them; with no header the skip is above them as well. Here in em, at 400 wide and a size of 20.
+TEST(docmode_multicols_balances_its_body_in_columns_a_columnsep_apart) {
+  const std::string seven = "one\\par two\\par three\\par four\\par five\\par six\\par seven";
+  const auto two = runs("\\begin{multicols}{2}" + seven + "\\end{multicols}", InputMode::document, 400);
+  const auto at = [&](const Records& rs, const std::string& word) { return named(rs, word); };
+  const float second = (400.f - 20.f) / 2 + 20.f;
+  for (const char* w : {"one", "two", "three", "four"}) CHECK_EQ(first(xsOf(at(two, w))), 0.f);
+  for (const char* w : {"five", "six", "seven"}) CHECK(close(first(xsOf(at(two, w))), second, 0.01f));
+  CHECK(close(first(ysOf(at(two, "one"))), first(ysOf(at(two, "five"))), 0.01f));
+  CHECK(close(first(ysOf(at(two, "three"))), first(ysOf(at(two, "seven"))), 0.01f));
+  CHECK(first(ysOf(at(two, "four"))) > first(ysOf(at(two, "seven"))));
+  const auto three = runs("\\begin{multicols}{3}ant\\par bee\\par cat\\par dog\\par elk\\par fox\\par gnu\\par hen\\par "
+                          "ibis\\par jay\\end{multicols}", InputMode::document, 400);
+  const float middle = (400.f - 40.f) / 3 + 20.f;
+  CHECK_EQ(first(xsOf(at(three, "dog"))), 0.f);
+  CHECK(close(first(xsOf(at(three, "elk"))), middle, 0.01f));
+  CHECK(close(first(xsOf(at(three, "hen"))), middle, 0.01f));
+  CHECK(close(first(xsOf(at(three, "ibis"))), 2 * middle, 0.01f));
+  CHECK(close(first(xsOf(at(three, "jay"))), 2 * middle, 0.01f));
+}
+
+TEST(docmode_multicols_has_a_header_and_a_multicolsep_round_it) {
+  const auto plain = runs("one\\par two", InputMode::document, 400);
+  const float line = first(ysOf(named(plain, "two"))) - first(ysOf(named(plain, "one")));
+  const float em = 20;
+  // Header to the first line of the columns: a line and the 12pt; the text before it to the header: a line.
+  const auto h = runs("Before\\par\\begin{multicols}{2}[Head]a\\par b\\end{multicols}\nAfter", InputMode::document, 400);
+  CHECK(close(first(ysOf(named(h, "Head"))) - first(ysOf(named(h, "Before"))), line, 0.5f));
+  CHECK(close(first(ysOf(named(h, "a"))) - first(ysOf(named(h, "Head"))), line + 1.2f * em, 0.5f));
+  // Four lines in two columns: the skip is measured from the last line, not from the first.
+  const auto k = runs("\\begin{multicols}{2}a\\par b\\par c\\par d\\end{multicols}\nAfter", InputMode::document, 400);
+  CHECK(close(first(ysOf(named(k, "After"))) - first(ysOf(named(k, "b"))), line + 1.2f * em, 0.5f));
+  // Below the columns the skip again; with no header, above them as well.
+  CHECK(close(first(ysOf(named(h, "After"))) - first(ysOf(named(h, "b"))), line + 1.2f * em, 0.5f));
+  const auto n = runs("Before\\par\\begin{multicols}{2}a\\par b\\end{multicols}", InputMode::document, 400);
+  CHECK(close(first(ysOf(named(n, "a"))) - first(ysOf(named(n, "Before"))), line + 1.2f * em, 0.5f));
+}
+
+TEST(docmode_columnbreak_ends_a_column_early) {
+  const std::string body = "\\begin{multicols}{2}a\\par b\\par c\\columnbreak\\par d\\end{multicols}";
+  const auto f = runs(body, InputMode::document, 400);
+  CHECK_EQ(first(xsOf(named(f, "c"))), 0.f);
+  CHECK(close(first(xsOf(named(f, "d"))), 210.f, 0.01f));
+  CHECK(close(first(ysOf(named(f, "d"))), first(ysOf(named(f, "a"))), 0.01f));
+  // And with no break the four lines are two and two.
+  const auto g = runs("\\begin{multicols}{2}a\\par b\\par c\\par d\\end{multicols}", InputMode::document, 400);
+  CHECK(close(first(xsOf(named(g, "c"))), 210.f, 0.01f));
+}
+
 TEST(docmode_center_and_centering_centre_a_documents_lines) {
   const auto xOf = [](const std::string& tex, const std::string& word, float width, InputMode mode = InputMode::document) {
     return first(xsOf(named(runs(tex, mode, width), word)));
