@@ -1,4 +1,6 @@
-\ProvidesPackage{booktabs}[2026/10/11 booktabs rules]
-\newcommand{\toprule}{\thickhline}
-\newcommand{\bottomrule}{\thickhline}
-\newcommand{\midrule}{\hline}
+\ProvidesPackage{booktabs}[2026/10/16 booktabs rules]
+% booktabs' rules and the space round them, in its own lengths: \heavyrulewidth .08em, \lightrulewidth .05em,
+% \abovetopsep 0, \aboverulesep .4ex, \belowrulesep .65ex, \belowbottomsep 0. The optional argument is the width.
+\NewDocumentCommand{\toprule}{o}{\specialrule{\IfNoValueTF{#1}{0.08em}{#1}}{0pt}{0.65ex}}
+\NewDocumentCommand{\midrule}{o}{\specialrule{\IfNoValueTF{#1}{0.05em}{#1}}{0.4ex}{0.65ex}}
+\NewDocumentCommand{\bottomrule}{o}{\specialrule{\IfNoValueTF{#1}{0.08em}{#1}}{0.4ex}{0pt}}

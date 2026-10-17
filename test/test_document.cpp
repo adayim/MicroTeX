@@ -462,15 +462,30 @@ TEST(document_floats_keep_their_contents) {
   drawsAs("\\begin{table*}[ht]x\\end{table*}", "x");
 }
 
-TEST(document_booktabs_rules_are_drawn_as_the_engines_rules) {
+// booktabs' rules are rules with its own widths and space (\heavyrulewidth .08em, \lightrulewidth .05em,
+// \aboverulesep .4ex, \belowrulesep .65ex), which pdflatex measures (scratchpad/col/tabs.tex, 10pt, bp from the rule's
+// centre or the baseline): top rule to first baseline 11.4, baseline to \midrule 5.7, \midrule to baseline 11.5, last
+// baseline to bottom rule 5.6; \cmidrule has \midrule's.
+TEST(document_booktabs_rules_are_rules_with_booktabs_space_round_them) {
   drawsAs(
     "\\begin{tabular}{lr}\\toprule x & y \\\\ \\midrule 1 & 2 \\\\ \\bottomrule\\end{tabular}",
-    "\\begin{tabular}{lr}\\thickhline x & y \\\\ \\hline 1 & 2 \\\\ \\thickhline\\end{tabular}");
+    "\\begin{tabular}{lr}\\specialrule{0.08em}{0pt}{0.65ex} x & y \\\\ \\specialrule{0.05em}{0.4ex}{0.65ex} 1 & 2 \\\\ "
+    "\\specialrule{0.08em}{0.4ex}{0pt}\\end{tabular}");
+  // \cmidrule is as tall as \midrule (it spans columns, so it is not as wide).
+  CHECK(std::fabs(rec("\\begin{tabular}{lr}x & y \\\\ \\cmidrule{1-2} 1 & 2\\end{tabular}").height -
+                  rec("\\begin{tabular}{lr}x & y \\\\ \\midrule 1 & 2\\end{tabular}").height) < 0.01f);
+  drawsAs("\\begin{tabular}{lr}\\toprule[2pt] x & y \\\\ \\bottomrule[2pt]\\end{tabular}",
+          "\\begin{tabular}{lr}\\specialrule{2pt}{0pt}{0.65ex} x & y \\\\ \\specialrule{2pt}{0.4ex}{0pt}\\end{tabular}");
+  // \specialrule's space is real: 1em above and 1em below make the table 2em taller.
+  const auto h = [](const std::string& rule) {
+    return rec("\\begin{tabular}{l}x \\\\ " + rule + " y\\end{tabular}").height;
+  };
+  CHECK(std::fabs((h("\\specialrule{0.05em}{1em}{1em}") - h("\\specialrule{0.05em}{0pt}{0pt}")) - 2 * 20.f) < 0.5f);
   // \cmidrule keeps its column range; width and trims are ignored.
   for (const char* rule : {"\\cmidrule{2-3}", "\\cmidrule(lr){2-3}", "\\cmidrule[2pt]{2-3}",
                            "\\cmidrule[2pt](lr){2-3}"}) {
     drawsAs(std::string("\\begin{tabular}{lrr}x & y & z \\\\ ") + rule + " 1 & 2 & 3\\end{tabular}",
-            "\\begin{tabular}{lrr}x & y & z \\\\ \\cline{2-3} 1 & 2 & 3\\end{tabular}");
+            "\\begin{tabular}{lrr}x & y & z \\\\ \\cmidrule{2-3} 1 & 2 & 3\\end{tabular}");
   }
 }
 

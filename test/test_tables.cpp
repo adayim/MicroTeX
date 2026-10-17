@@ -172,8 +172,13 @@ TEST(tables_multicolumn_1_spans_its_own_column_only) {
 }
 
 TEST(tables_a_tabulars_position_is_not_its_columns_and_tabular_star_drops_its_width) {
-  CHECK(check::sameInk(rec("\\begin{tabular}[t]{ll} a & b \\end{tabular}", 0, 20, InputMode::mixed),
-                       rec("\\begin{tabular}{ll} a & b \\end{tabular}", 0, 20, InputMode::mixed)));
+  // One row: [t] puts its baseline on the text's, the centred one on the axis, which is 0.01em from it with TeX's
+  // strut (0.7 and 0.3 of 1.2em about an axis of 0.25em).
+  const auto top = rec("\\begin{tabular}[t]{ll} a & b \\end{tabular}", 0, 20, InputMode::mixed);
+  const auto mid = rec("\\begin{tabular}{ll} a & b \\end{tabular}", 0, 20, InputMode::mixed);
+  CHECK_EQ(check::texts(top), check::texts(mid));
+  CHECK(std::fabs(check::of(top, microtex::DrawRecord::TEXT).front().y - check::of(mid, microtex::DrawRecord::TEXT).front().y) <
+        0.05f * 20);
   const auto l = rec("\\begin{tabular*}{\\textwidth}{@{\\extracolsep{\\fill}}ll}a&b\\end{tabular*}", 0, 20, InputMode::mixed);
   CHECK(l.warnings.empty());
   CHECK_EQ(check::texts(l), Strings({"a", "b"}));

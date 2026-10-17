@@ -187,7 +187,7 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
                    "gmnewcounter", "stepcounter", "value", "abovewithdelims", "atop", "atopwithdelims",
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
-                   "cmidrule", "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
+                   "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
                    "fontfamily", "fontspec", "fontsize", "footnotesize", "frak", "gmarraystretch", "gmbibitem", "gmfootnote", "gmfootnotemark", "gmfootnotetext", "gmfloat", "gmsubfloat", "subref", "columnbreak", "Verb", "lstinline", "mintinline", "today", "cref", "Cref", "autoref", "crefrange", "Crefrange", "gmrows", "gmtagstar", "gmtheorem", "gmsubeqbegin", "gmsubeqend", "graphicspath", "href", "huge", "Huge",
                    "hskip", "it", "kern", "label", "large", "Large", "LARGE", "left", "limits", "makeatletter",
                    "makeatother", "mkern", "mskip", "newlength", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
