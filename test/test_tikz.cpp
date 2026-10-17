@@ -788,3 +788,188 @@ TEST(tikz_a_foreach_that_is_not_read_warns) {
   const auto l = pic(R"(\foreach \x {1,2} \draw (\x,0) -- (\x,1);)");
   CHECK(check::warns(l, "\\foreach"));
 }
+
+// pgflibraryshapes.geometric: a regular polygon has a corner up when its sides are odd, and half a step round when they are
+// even (a hexagon's are at 60, 120 ... 360 degrees), so a hexagon's east anchor is its sixth corner and a pentagon's north
+// its first; `corner n` and `side n` are the anchors of the polygon the outer separation makes.
+TEST(tikz_a_regular_polygon_has_its_corners_where_pgf_puts_them) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  const std::string hex = R"(\node[regular polygon, regular polygon sides=6, draw] (a) {x};)";
+  const std::string pent = R"(\node[regular polygon, draw] (a) {x};)";
+  CHECK_PAIRS((check::Pairs{
+    {tikz(hex + R"(\draw (a.east) -- ++(1,0);)"), tikz(hex + R"(\draw (a.corner 6) -- ++(1,0);)")},
+    {tikz(hex + R"(\draw (a.west) -- ++(1,0);)"), tikz(hex + R"(\draw (a.corner 3) -- ++(1,0);)")},
+    {tikz(pent + R"(\draw (a.north) -- ++(1,0);)"), tikz(pent + R"(\draw (a.corner 1) -- ++(1,0);)")},
+    // A side's anchor is half way between two corners.
+    {tikz(pent + R"(\draw (a.side 1) -- ++(1,0);)"), tikz(pent + R"(\draw ($(a.corner 1)!0.5!(a.corner 2)$) -- ++(1,0);)")},
+  }));
+  // `shape border rotate` turns the corners: a quarter turn of a square is the same square, drawn from another corner.
+  const Extent square = extentOf(strokes(pic(R"(\node[regular polygon, regular polygon sides=4, draw] {x};)"))[0]);
+  const Extent turned = extentOf(strokes(pic(R"(\node[regular polygon, regular polygon sides=4, shape border rotate=90, draw] {x};)"))[0]);
+  CHECK(near(square.width(), turned.width(), 0.5f) && near(square.height(), turned.height(), 0.5f));
+  CHECK(near(square.width(), square.height(), 0.5f));
+  const auto n = strokes(pic(hex));
+  CHECK_EQ(n.size(), std::size_t(1));
+  CHECK_EQ(n[0].path_segments.size(), std::size_t(7));  // a move, five lines, a close
+  // The size follows the text: the polygon is round the text's incircle, so a longer text makes it wider, a minimum size
+  // makes it at least that big.
+  const auto width = [](const std::string& options, const std::string& text) {
+    return extentOf(strokes(pic("\\node[" + options + ", draw] {" + text + "};"))[0]).width();
+  };
+  CHECK(width("regular polygon sides=6", "xxxxxxxx") > width("regular polygon sides=6", "x"));
+  CHECK(width("regular polygon sides=6, minimum width=3cm", "x") >= 0.99f * static_cast<float>(plain("\\hspace{3cm}").width));
+}
+
+// star: `star points` outer corners at the incircle times `star point ratio` (1.5), the inner ones between them; the anchors
+// are the outer and inner points of the border.
+TEST(tikz_a_star_has_outer_and_inner_points) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  const std::string star = R"(\node[star, draw] (a) {x};)";
+  CHECK_PAIRS((check::Pairs{
+    {tikz(star + R"(\draw (a.north) -- ++(1,0);)"), tikz(star + R"(\draw (a.outer point 1) -- ++(1,0);)")},
+    {tikz(star + R"(\draw (a.inner point 5) -- ++(1,0);)"), tikz(star + R"(\draw (a.inner point 5) -- ++(1,0);)")},
+  }));
+  CHECK_EQ(strokes(pic(star))[0].path_segments.size(), std::size_t(11));  // ten corners and the close
+  CHECK_EQ(strokes(pic(R"(\node[star, star points=7, draw] {x};)"))[0].path_segments.size(), std::size_t(15));
+  // A taller point (`star point height`) makes the star bigger than the default ratio's.
+  const auto tall = [](const std::string& options) {
+    return extentOf(strokes(pic("\\node[star, " + options + ", draw] {x};"))[0]).height();
+  };
+  CHECK(tall("star point height=1cm") > tall("star point ratio=1.2"));
+}
+
+// isosceles triangle: the apex points right, and `shape border rotate=90` turns it up; its apex, corners and sides are anchors.
+TEST(tikz_an_isosceles_triangle_points_right_and_has_its_corners_as_anchors) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  const std::string tri = R"(\node[isosceles triangle, draw] (a) {x};)";
+  const std::string up = R"(\node[isosceles triangle, shape border rotate=90, draw] (a) {x};)";
+  CHECK_PAIRS((check::Pairs{
+    {tikz(tri + R"(\draw (a.apex) -- ++(1,0);)"), tikz(tri + R"(\draw (a.east) -- ++(1,0);)")},
+    {tikz(up + R"(\draw (a.apex) -- ++(1,0);)"), tikz(up + R"(\draw (a.north) -- ++(1,0);)")},
+    {tikz(tri + R"(\draw (a.lower side) -- ++(1,0);)"), tikz(tri + R"(\draw ($(a.left corner)!0.5!(a.right corner)$) -- ++(1,0);)")},
+  }));
+  CHECK_EQ(strokes(pic(tri))[0].path_segments.size(), std::size_t(4));
+  // A wider apex angle makes a shorter, broader triangle.
+  const auto extent = [](const std::string& options, bool horizontal) {
+    const Extent e = extentOf(strokes(pic("\\node[isosceles triangle, " + options + ", draw] {x};"))[0]);
+    return horizontal ? e.width() : e.height();
+  };
+  CHECK(extent("isosceles triangle apex angle=90", true) < extent("isosceles triangle apex angle=30", true));
+  CHECK(extent("isosceles triangle apex angle=90", false) > extent("isosceles triangle apex angle=30", false));
+  // pgf's default is the smallest triangle round the text box; `shape border uses incircle` takes the circle round it, which
+  // is bigger (pdfTeX, `h09-triangle`: 40pt long for `tri` against 57pt).
+  CHECK(extent("", true) < extent("shape border uses incircle", true));
+}
+
+// `\clip`: what is drawn after it, in the same scope, stays inside its path -- pgf's own rule -- and the clip path's own box and
+// what is drawn inside it make the picture's size (pdfTeX: a clip of 2cm x 1cm round a long line is 56.7 x 28.3pt; a clip of
+// 4cm x 3cm round a short one 113.4 x 85.0pt).
+TEST(tikz_a_clip_path_keeps_what_is_drawn_after_it_inside) {
+  const auto clipped = pic(R"(\clip (0,0) rectangle (2,1); \draw (-3,-3) -- (6,4);)");
+  CHECK(clipped.warnings.empty());
+  CHECK(near(static_cast<float>(clipped.width), cm(2), 1.f));
+  CHECK(near(static_cast<float>(clipped.height), cm(1), 1.f));
+  const auto line = strokes(clipped);
+  CHECK_EQ(line.size(), std::size_t(1));
+  if (line.size() == 1) {
+    // The line of slope 7/9 through (-3,-3) enters the box at (6/7, 0) and leaves it through the right side at (2, 8/9).
+    const Extent e = extentOf(line[0]);
+    CHECK(near(e.width(), cm(8.0 / 7.0), 1.5f));
+    CHECK(near(e.height(), cm(8.0 / 9.0), 1.5f));
+  }
+  // The clip path draws nothing of its own, and one larger than what is drawn is the picture's size.
+  const auto roomy = pic(R"(\clip (0,0) rectangle (4,3); \draw (0,0) -- (1,1);)");
+  CHECK(near(static_cast<float>(roomy.width), cm(4), 1.f));
+  CHECK(near(static_cast<float>(roomy.height), cm(3), 1.f));
+  CHECK_EQ(strokes(roomy).size(), std::size_t(1));
+  // A scope ends it.
+  const auto scoped = pic(R"(\begin{scope}\clip (0,0) rectangle (1,1);\end{scope} \draw (-1,0) -- (2,0);)");
+  CHECK(near(extentOf(strokes(scoped)[0]).width(), cm(3), 1.f));
+  // Two clips are the intersection of their paths.
+  const auto both = pic(R"(\begin{scope}\clip (0,0) rectangle (3,3); \clip (1,1) rectangle (4,4); \fill (-1,-1) rectangle (5,5);\end{scope})");
+  const Extent f = extentOf(fills(both)[0]);
+  CHECK(near(f.width(), cm(2), 1.f) && near(f.height(), cm(2), 1.f));
+}
+
+// A circle clips to the lens of the Venn diagram (two unit circles with their centres 1cm apart: 1cm wide, 1.732cm high), a
+// filled shape is cut to the polygon inside and its own stroke is not drawn along the clip's edge; `\path[clip]` and `clip` as
+// an option are `\clip`.
+TEST(tikz_a_circle_clip_cuts_a_fill_to_a_lens_and_a_stroke_to_pieces) {
+  const auto lens = pic(R"(\begin{scope}\clip (0,0) circle (1); \fill (1,0) circle (1);\end{scope})");
+  const Extent e = extentOf(fills(lens)[0]);
+  CHECK(near(e.width(), cm(1), 1.5f));
+  CHECK(near(e.height(), cm(1.7320508), 1.5f));
+  const auto option = pic(R"(\begin{scope}\path[clip] (0,0) circle (1); \fill (1,0) circle (1);\end{scope})");
+  CHECK(near(extentOf(fills(option)[0]).width(), e.width(), 0.5f));
+  // A filled and stroked rectangle that crosses the clip's edge: the fill stops at the edge, the stroke is open pieces there.
+  const auto both = pic(R"(\begin{scope}\clip (0,0) rectangle (2,2); \filldraw[fill=red] (-1,0.5) rectangle (1,1.5);\end{scope})");
+  CHECK_EQ(fills(both).size(), std::size_t(1));
+  const auto outline = strokes(both);
+  CHECK_EQ(outline.size(), std::size_t(1));
+  if (outline.size() == 1) {
+    // Three sides of the rectangle remain (the left one is outside), as one polyline: top, right, bottom.
+    CHECK_EQ(outline[0].path_segments.size(), std::size_t(4));
+    CHECK(near(extentOf(outline[0]).width(), cm(1), 1.f));
+  }
+  // `\draw[clip]` draws, and clips what follows.
+  const auto drawn = pic(R"(\begin{scope}\draw[clip] (0,0) rectangle (1,1); \draw (-1,0.5) -- (3,0.5);\end{scope})");
+  CHECK_EQ(strokes(drawn).size(), std::size_t(2));
+  // Nothing outside the clip is left; a clip of curves is said and not used.
+  CHECK(check::warns(pic(R"(\clip (0,0) .. controls (1,1) and (2,1) .. (3,0); \draw (0,0) -- (3,0);)"), "clip path of curves"));
+}
+
+// `plot (\x, {f(\x)})` is the path through `samples` points of `f` evenly over `domain`; at the start of a path it moves to the
+// first one (pgf's `\pgfsetmovetofirstplotpoint`), after `--` it draws a line to it (`\pgfsetlinetofirstplotpoint`).
+TEST(tikz_a_plot_is_the_polyline_through_its_points) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  CHECK_PAIRS((check::Pairs{
+    {tikz(R"(\draw plot[domain=0:2, samples=3] (\x, {\x*\x});)"), tikz(R"(\draw (0,0) -- (1,1) -- (2,4);)")},
+    {tikz(R"(\draw[domain=0:2, samples=3] plot (\x, {\x*\x});)"), tikz(R"(\draw (0,0) -- (1,1) -- (2,4);)")},
+    {tikz(R"(\draw plot coordinates {(0,0) (1,1) (2,4)};)"), tikz(R"(\draw (0,0) -- (1,1) -- (2,4);)")},
+    {tikz(R"(\draw (0,0) -- plot coordinates {(1,1) (2,0)};)"), tikz(R"(\draw (0,0) -- (1,1) -- (2,0);)")},
+    // Without `--` the first point is a move: two subpaths.
+    {tikz(R"(\draw (0,0) plot coordinates {(1,1) (2,0)};)"), tikz(R"(\draw (0,0) (1,1) -- (2,0);)")},
+    // `variable`, units, and the radians suffix: pgfmath's functions take degrees unless the value ends in `r`.
+    {tikz(R"(\draw plot[variable=\t, domain=0:1, samples=2] ({\t*10mm}, {\t});)"), tikz(R"(\draw (0,0) -- (1,1);)")},
+    {tikz(R"(\draw plot[domain=0:1.5, samples=4] (\x, {sin(\x r)});)"),
+     tikz(R"(\draw plot[domain=0:1.5, samples=4] (\x, {sin(\x*180/pi)});)")},
+    {tikz(R"(\draw plot[samples at={0,1,2}] (\x, {2*\x});)"), tikz(R"(\draw (0,0) -- (1,2) -- (2,4);)")},
+    {tikz(R"(\draw plot[samples at={0,0.5,...,2}] (\x, {\x});)"), tikz(R"(\draw plot[samples=5, domain=0:2] (\x, {\x});)")},
+    // A step is a horizontal run to the next x and then a vertical one; a comb stands on the axis.
+    {tikz(R"(\draw plot[const plot] coordinates {(0,1) (1,2) (2,0)};)"),
+     tikz(R"(\draw (0,1) -- (1,1) -- (1,2) -- (2,2) -- (2,0);)")},
+    {tikz(R"(\draw plot[ycomb] coordinates {(0,1) (1,2)};)"), tikz(R"(\draw (0,0) -- (0,1) (1,0) -- (1,2);)")},
+    {tikz(R"(\draw plot[xcomb] coordinates {(1,0) (2,1)};)"), tikz(R"(\draw (0,0) -- (1,0) (0,1) -- (2,1);)")},
+    {tikz(R"(\draw plot[sharp cycle] coordinates {(0,0) (1,0) (1,1)};)"), tikz(R"(\draw (0,0) -- (1,0) -- (1,1) -- cycle;)")},
+  }));
+}
+
+// pgf's smooth curve: the controls on either side of a point are along the line through its neighbours, 0.2775 * tension of
+// the way (tension 0.5), and the ends have their own point as the outer control. Through (0,0) (1,1) (2,0): the controls
+// at the middle are (1 -+ 0.2775, 1), the first curve starts with its own point as control, the last ends in its own.
+TEST(tikz_a_smooth_plot_passes_through_its_points_with_pgfs_controls) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  CHECK_PAIRS((check::Pairs{
+    {tikz(R"(\draw plot[smooth] coordinates {(0,0) (1,1) (2,0)};)"),
+     tikz(R"(\draw (0,0) .. controls (0,0) and (0.7225,1) .. (1,1) .. controls (1.2775,1) and (2,0) .. (2,0);)")},
+    // A tension of 1 doubles the reach; two points are a straight curve.
+    {tikz(R"(\draw plot[smooth, tension=1] coordinates {(0,0) (1,1) (2,0)};)"),
+     tikz(R"(\draw (0,0) .. controls (0,0) and (0.445,1) .. (1,1) .. controls (1.555,1) and (2,0) .. (2,0);)")},
+    {tikz(R"(\draw plot[smooth] coordinates {(0,0) (3,0)};)"), tikz(R"(\draw (0,0) .. controls (0,0) and (3,0) .. (3,0);)")},
+  }));
+  const auto l = pic(R"(\draw plot[smooth] coordinates {(0,0) (1,1) (2,0) (3,1)};)");
+  CHECK(l.warnings.empty());
+  CHECK_EQ(strokes(l)[0].path_segments.size(), std::size_t(4));  // a move and three curves
+}
+
+// A point that is not a number (1/0) is left out with one warning; the rest of the plot is drawn.
+TEST(tikz_a_plot_leaves_out_a_point_that_is_not_a_number_and_says_so) {
+  const auto l = pic(R"(\draw plot[domain=-1:1, samples=3] (\x, {1/\x});)");
+  CHECK(check::warns(l, "a point of a plot is not a number"));
+  CHECK_EQ(strokes(l)[0].path_segments.size(), std::size_t(2));
+  // `samples=1` is two, a one-point domain is its two ends, no coordinates is no path, and gnuplot's plot is said.
+  CHECK_EQ(strokes(pic(R"(\draw plot[samples=1, domain=0:1] (\x, \x);)"))[0].path_segments.size(), std::size_t(2));
+  CHECK_EQ(strokes(pic(R"(\draw plot[domain=1:1] (\x, \x);)"))[0].path_segments.size(), std::size_t(2));
+  CHECK(strokes(pic(R"(\draw plot coordinates {};)")).empty());
+  CHECK(check::warns(pic(R"(\draw plot function{x*x};)"), "plot function"));
+}
