@@ -1,0 +1,22 @@
+\usepackage{soul,framed,mdframed,wrapfig,listings,minted,cleveref}
+\title{T}\author{A \and B\thanks{x}}\date{}\maketitle
+\sethlcolor{nosuch}\hl{a \ul{b} \st{c}} \hl{} \ul{}
+\definecolor{shadecolor}{gray}{0.9}
+\begin{framed}x\begin{framed}nested\end{framed}\end{framed}
+\begin{shaded}\end{shaded}\begin{snugshade*}y\end{snugshade*}
+\begin{mdframed}[linecolor=red, innerleftmargin=-3pt, roundcorner=99pt, frametitle={T}, hidealllines=true, foo=bar, skipabove=1pt]
+text \begin{mdframed}in\end{mdframed}
+\end{mdframed}
+\begin{mdframed}[frametitle=]\end{mdframed}
+\begin{wrapfigure}[10]{r}{0pt}\caption{c}\label{f}\end{wrapfigure}
+\begin{wraptable}{l}{-5cm}X\caption{t}\end{wraptable}
+\begin{lstlisting}[language=R]
+x <- 1 \end{document}
+\end{lstlisting}
+\lstinline|a|\mintinline{r}{b}
+\cref{f,t,nosuch,f} \Cref{f} \crefrange{f}{t} \autoref{f}
+\vspace{-10pt}\vspace*{3cm}\bigskip\medskip
+\begin{multicols}{0}a\columnbreak b\end{multicols}\begin{multicols}{3}\end{multicols}
+\begin{tcolorbox}[title=T, arc=-1pt, colback=nosuch]\begin{tcolorbox}x\end{tcolorbox}\end{tcolorbox}
+\begin{tabular}{p{2cm}r}\toprule a & \cmidrule{1-2} b\\ \midrule\addlinespace[3pt] \bottomrule\end{tabular}
+\begin{tabular}{l}\specialrule{1pt}{2pt}{3pt}\specialrule{}{}{}\cmidrule(lr){3-9}\end{tabular}

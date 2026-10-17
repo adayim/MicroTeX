@@ -914,6 +914,14 @@ TEST(tikz_a_circle_clip_cuts_a_fill_to_a_lens_and_a_stroke_to_pieces) {
   // `\draw[clip]` draws, and clips what follows.
   const auto drawn = pic(R"(\begin{scope}\draw[clip] (0,0) rectangle (1,1); \draw (-1,0.5) -- (3,0.5);\end{scope})");
   CHECK_EQ(strokes(drawn).size(), std::size_t(2));
+  // A clip path whose literal sides are not convex is said and not used (a concave region cannot be cut to here): the line stays
+  // whole; a convex polygon, whatever it is written with, is clipped to without a word.
+  const auto concave = pic(R"(\clip (0,0) -- (4,0) -- (4,4) -- (2,1) -- (0,4) -- cycle; \draw (-1,2) -- (5,2);)");
+  CHECK(check::warns(concave, "not convex"));
+  CHECK(near(extentOf(strokes(concave)[0]).width(), cm(6), 1.f));
+  const auto convex = pic(R"(\clip (0,0) -- (2,0) -- (3,1) -- (2,2) -- (0,2) -- cycle; \draw (-1,1) -- (5,1);)");
+  CHECK(!check::warns(convex, "convex"));
+  CHECK(near(extentOf(strokes(convex)[0]).width(), cm(3), 1.f));
   // Nothing outside the clip is left; a clip of curves is said and not used.
   CHECK(check::warns(pic(R"(\clip (0,0) .. controls (1,1) and (2,1) .. (3,0); \draw (0,0) -- (3,0);)"), "clip path of curves"));
 }
@@ -972,4 +980,22 @@ TEST(tikz_a_plot_leaves_out_a_point_that_is_not_a_number_and_says_so) {
   CHECK_EQ(strokes(pic(R"(\draw plot[domain=1:1] (\x, \x);)"))[0].path_segments.size(), std::size_t(2));
   CHECK(strokes(pic(R"(\draw plot coordinates {};)")).empty());
   CHECK(check::warns(pic(R"(\draw plot function{x*x};)"), "plot function"));
+}
+
+// A picture holds a node's outline, and half the line when it is drawn -- not its outer separation (pdfTeX, one `x`, 10pt:
+// `\node {x}` 11.899bp wide, `[draw]` 12.298, `[draw, outer sep=5pt]` 12.298, `[fill=red]` 11.899, `[draw, line width=2pt]`
+// 13.892; a star `[draw, outer sep=3pt]` 24.405 against 24.007 without the line).
+TEST(tikz_a_picture_holds_the_outline_of_a_node_and_not_its_outer_sep) {
+  const auto width = [](const std::string& options) {
+    return static_cast<float>(pic("\\node[" + options + "] {x};").width);
+  };
+  // (A layout's width is whole pixels, so the lines are made wide enough to show.)
+  const float plainWidth = width("");
+  CHECK(near(width("draw, line width=10pt") - plainWidth, static_cast<float>(plain("\\hspace{10pt}").width), 1.5f));
+  CHECK(near(width("draw, line width=10pt, outer sep=30pt"), width("draw, line width=10pt"), 1.5f));
+  CHECK(near(width("fill=red, outer sep=30pt"), plainWidth, 1.5f));
+  for (const char* shape : {"circle", "star", "regular polygon", "isosceles triangle"}) {
+    const std::string s = shape;
+    CHECK(near(width(s + ", draw, outer sep=30pt"), width(s + ", draw"), 1.5f));
+  }
 }
