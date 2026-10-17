@@ -34,19 +34,31 @@
 % subcaption's sub-floats: minipages whose \caption is "(a) text", lettered within the float; \subref{key} is the letter.
 \NewDocumentEnvironment{subfigure}{O{c}m}{\begin{minipage}[#1]{#2}\gmsubfloat{subfigure}}{\gmsubfloat{}\end{minipage}}
 \NewDocumentEnvironment{subtable}{O{c}m}{\begin{minipage}[#1]{#2}\gmsubfloat{subtable}}{\gmsubfloat{}\end{minipage}}
+% A table's row end that a `\centering` cell cannot spell as `\\` (array.sty); here it is the same.
+\newcommand{\tabularnewline}{\\}
 \newenvironment{center}{}{}
 \newenvironment{flushleft}{}{}
 \newenvironment{flushright}{}{}
-\newcommand{\maketitle}{}
-\newcommand{\title}[1]{}
-\newcommand{\author}[1]{}
+% The title block, as article.cls sets it (a grob has no page, so not the 2em at the top of one): \title, \author, \date
+% (default \today) are kept, \and starts the next author, \thanks is a footnote whose mark is a symbol, and
+% \maketitle sets the title in \LARGE, the authors and the date in \large, centred, and the footnote counter is 0
+% again after it. An element that was not given is left out.
+\newcommand{\@title}{}
+\newcommand{\@author}{}
+\newcommand{\@date}{\today}
+\newcommand{\title}[1]{\gdef\@title{#1}}
+\newcommand{\author}[1]{\gdef\@author{#1}}
+\newcommand{\date}[1]{\gdef\@date{#1}}
+\newcommand{\and}{\end{tabular}\hskip 1em\begin{tabular}[t]{c}}
+\newcommand{\thanks}[1]{\footnote{#1}}
+\newcommand{\maketitle}{{\def\thefootnote{\fnsymbol{footnote}}\begin{center}\ifx\@title\@empty\else{\LARGE \@title \par}\vspace{1.5em}\fi\ifx\@author\@empty\else{\large \begin{tabular}[t]{c}\@author\end{tabular}\par}\vspace{1em}\fi\ifx\@date\@empty\else{\large \@date}\fi\end{center}\par\vspace{1.5em}}\setcounter{footnote}{0}\global\let\maketitle\relax}
 \newcommand{\flushleft}{}
 \newcommand{\arraybackslash}{}
 \newcommand{\extracolsep}[1]{}
 \newcommand{\flushright}{}
-\newcommand{\smallskip}{\vspace{0.25em}}
-\newcommand{\medskip}{\vspace{0.5em}}
-\newcommand{\bigskip}{\vspace{1em}}
+\newcommand{\smallskip}{\vspace{0.3em}}
+\newcommand{\medskip}{\vspace{0.6em}}
+\newcommand{\bigskip}{\vspace{1.2em}}
 \newcommand{\hfill}{\quad}
 \newcommand{\vfill}{\vspace{1em}}
 \newcommand{\emph}[1]{\textit{#1}}

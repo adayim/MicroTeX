@@ -1386,3 +1386,133 @@ TEST(docmode_wrapfigure_is_a_figure_and_wraptable_a_table) {
   CHECK(check::sameInk(rec(w + "\\begin{wraptable}{r}{5cm}X\\caption{C}\\end{wraptable}"),
                        rec(w + "\\begin{table}X\\caption{C}\\end{table}")));
 }
+
+static std::string noSpaces(std::string s) {
+  s.erase(std::remove(s.begin(), s.end(), ' '), s.end());
+  return s;
+}
+
+// The y of the first run holding `word`.
+static float yOfWord(const std::string& tex, const std::string& word) {
+  for (const auto& r : runs(tex)) {
+    if (r.text.find(word) != std::string::npos) return r.y;
+  }
+  return -1e9f;
+}
+
+
+
+// Found probing item 12: the lines of a listing were set solid, one glyph height apart (6bp at 10pt where pdflatex has 12),
+// and a blank line took no room. Every line is a baselineskip (1.2em) from the next, a blank one included.
+TEST(docmode_the_lines_of_a_verbatim_block_are_a_baselineskip_apart_blank_lines_too) {
+  // The pitch is the document's own: two paragraphs' lines.
+  const float line = yOfWord("A\n\nB", "B") - yOfWord("A\n\nB", "A");
+  CHECK(line > 0);
+  for (const char* env : {"verbatim", "lstlisting", "Verbatim"}) {
+    const std::string b = std::string("\\begin{") + env + "}\nx\nHxg\n\ny\n\\end{" + env + "}";
+    const float x = yOfWord(b, "x"), h = yOfWord(b, "Hxg"), y = yOfWord(b, "y");
+    CHECK(close(h - x, line, 0.5f));
+    CHECK(close(y - h, 2 * line, 0.5f));   // the blank line between them
+  }
+}
+
+// listings and fancyvrb take a tab to the next multiple of 8 columns, plain verbatim as one space.
+TEST(docmode_a_tab_in_a_listing_is_spaces_to_the_next_stop_of_eight) {
+  CHECK_PAIRS_WITH((Pairs{
+    {"\\begin{lstlisting}\n\tx\n\\end{lstlisting}", "\\begin{lstlisting}\n        x\n\\end{lstlisting}"},
+    {"\\begin{lstlisting}\nab\tx\n\\end{lstlisting}", "\\begin{lstlisting}\nab      x\n\\end{lstlisting}"},
+    {"\\begin{Verbatim}\n\tx\n\\end{Verbatim}", "\\begin{Verbatim}\n        x\n\\end{Verbatim}"},
+    {"\\begin{verbatim}\n\tx\n\\end{verbatim}", "\\begin{verbatim}\n x\n\\end{verbatim}"}}),
+                   typeface(InputMode::document, 300));
+}
+
+// pdflatex: `\vspace` in the text of a paragraph is a vadjust, so its glue is below the line holding it: X, AAA BBB and CCC
+// stand where they do with the \vspace on a line of its own after that paragraph.
+TEST(docmode_a_vspace_in_a_paragraph_is_below_its_line) {
+  const std::string inside = "X\n\nAAA\\vspace{20pt} BBB\n\nCCC", after = "X\n\nAAA BBB\n\n\\vspace{20pt}\n\nCCC";
+  CHECK(close(yOfWord(inside, "AAA") - yOfWord(inside, "X"), yOfWord(after, "AAA") - yOfWord(after, "X"), 0.1f));
+  CHECK(close(yOfWord(inside, "CCC") - yOfWord(inside, "AAA"), yOfWord(after, "CCC") - yOfWord(after, "AAA BBB"), 0.1f));
+  const float line = yOfWord("A\n\nB", "B") - yOfWord("A\n\nB", "A");
+  CHECK(yOfWord(inside, "CCC") - yOfWord(inside, "AAA") > line + 19.f);   // the 20pt of glue is there, below AAA
+  CHECK(yOfWord(inside, "AAA") - yOfWord(inside, "X") < line + 1.f);      // and not above it
+  // At the start of a paragraph it is above it, as TeX puts it.
+  const std::string before = "X\n\n\\vspace{20pt}AAA\n\nCCC";
+  CHECK(yOfWord(before, "AAA") - yOfWord(before, "X") > line + 19.f);
+}
+
+// Glue is its natural length here (a grob's lines do not stretch), the amounts LaTeX names are its own, and anything else
+// that is not a length is said: `1cm plus 5pt` was 1pt, `20sp` was 65536 times too long, `abc` nothing, silently.
+TEST(docmode_vspace_reads_its_natural_length_and_says_what_is_not_a_length) {
+  const auto gap = [](const std::string& arg) {
+    const std::string t = "X\n\n\\vspace{" + arg + "}\n\nCCC";
+    return yOfWord(t, "CCC") - yOfWord(t, "X");
+  };
+  CHECK(close(gap("1cm plus 5pt"), gap("1cm"), 0.01f));
+  CHECK(close(gap("1em plus .5em minus .2em"), gap("1em"), 0.01f));
+  CHECK(close(gap("\\baselineskip plus 2pt"), gap("\\baselineskip"), 0.01f));
+  CHECK(close(gap("\\bigskipamount"), gap("12pt"), 0.01f));
+  CHECK(close(gap("\\medskipamount"), gap("6pt"), 0.01f));
+  CHECK(close(gap("20sp"), gap("0pt"), 0.01f));
+  CHECK(close(gap("65536sp"), gap("1pt"), 0.01f));
+  CHECK(check::warns(rec("X\n\n\\vspace{abc}\n\nCCC"), "\\vspace: `abc' is not a length"));
+  CHECK(!check::warns(rec("X\n\n\\vspace{1cm plus 5pt}\n\nCCC"), "not a length"));
+}
+
+// A label in the caption's own text (`\caption{Text\label{fig}}`, the usual way) names the float: the counter used to step
+// after the text was read, so the label had no number (`??`, and nothing for \autoref).
+TEST(docmode_a_label_inside_a_caption_names_its_float) {
+  const Strings inside = check::lines(rec("\\begin{figure}F\\caption{c\\label{cf}}\\end{figure}See \\ref{cf}, \\autoref{cf}."));
+  const Strings after = check::lines(rec("\\begin{figure}F\\caption{c}\\label{cf}\\end{figure}See \\ref{cf}, \\autoref{cf}."));
+  CHECK_EQ(inside, after);
+  CHECK_EQ(noSpaces(inside.back()), std::string("See1,Figure1."));
+  CHECK(!check::warns(rec("\\begin{table}T\\caption{c\\label{ct}}\\end{table}\\cref{ct}"), "undefined"));
+  CHECK_EQ(noSpaces(check::lines(rec("\\begin{table}T\\caption{c\\label{ct}}\\end{table}\\cref{ct}")).back()), std::string("table1"));
+}
+
+// A \label in an enumerated item names the item's number (\theenumi), as pdflatex's does; it waited for a row number that no
+// list ever gave, and \ref found nothing ("??"). A label in a table cell is the float's or section's, not lost either.
+TEST(docmode_a_label_in_a_list_item_or_table_cell_is_kept) {
+  const Strings items = check::lines(rec("\\begin{enumerate}\\item\\label{i1} a\\item b\\label{i2}\\end{enumerate}See \\ref{i1}, \\ref{i2}."));
+  CHECK_EQ(noSpaces(items.back()), std::string("See1,2."));
+  CHECK(!check::warns(rec("\\begin{enumerate}\\item\\label{i1} a\\end{enumerate}\\ref{i1}\\cref{i1}"), "undefined"));
+  const Strings cell = check::lines(rec("\\section{S}\\begin{tabular}{l}a\\label{c1}\\end{tabular}\n\nSee \\ref{c1}."));
+  CHECK_EQ(noSpaces(cell.back()), std::string("See1."));
+  // An equation's own label is still its number.
+  const Strings eq = check::lines(rec("\\begin{equation}a\\label{e1}\\end{equation}See \\ref{e1}."));
+  CHECK_EQ(noSpaces(eq.back()), std::string("See1."));
+  const Strings al = check::lines(rec("\\begin{align}a&=b\\label{e1}\\\\ c&=d\\label{e2}\\end{align}See \\ref{e1}, \\ref{e2}."));
+  CHECK_EQ(noSpaces(al.back()), std::string("See1,2."));
+}
+
+// `H1 & H2 \\ \endhead`: the `\\` ends the last row of the head, so the marker after it is no row of its own (pdflatex: the
+// body follows the head at once); it was a blank row, a baselineskip tall, in the head, the first head and the foot alike.
+TEST(docmode_a_longtable_endhead_after_a_row_end_makes_no_blank_row) {
+  CHECK_PAIRS_WITH((Pairs{
+    {"\\begin{longtable}{ll}H1&H2\\\\\\endhead a&b\\\\ c&d\\\\\\end{longtable}",
+     "\\begin{longtable}{ll}H1&H2\\endhead a&b\\\\ c&d\\\\\\end{longtable}"},
+    {"\\begin{longtable}{ll}H1&H2\\\\\\endfirsthead a&b\\\\ c&d\\\\\\end{longtable}",
+     "\\begin{longtable}{ll}H1&H2\\endfirsthead a&b\\\\ c&d\\\\\\end{longtable}"},
+    {"\\begin{longtable}{ll}a&b\\\\ c&d\\\\ F1&F2\\\\\\endfoot\\end{longtable}",
+     "\\begin{longtable}{ll}a&b\\\\ c&d\\\\ F1&F2\\endfoot\\end{longtable}"},
+    {"\\begin{longtable}{l}\\hline H\\\\\\hline\\endfirsthead a\\\\ c\\\\\\end{longtable}",
+     "\\begin{longtable}{l}\\hline H\\\\ \\hline a\\\\ c\\\\\\end{longtable}"}}),
+                   typeface(InputMode::document, 300));
+}
+
+// array.sty's \tabularnewline is \\ in a cell that cannot say it (it was unknown, and drawn as its name).
+TEST(docmode_tabularnewline_ends_a_row_as_a_double_backslash_does) {
+  CHECK(check::sameInk(rec("\\begin{tabular}{l}a\\tabularnewline b\\end{tabular}"), rec("\\begin{tabular}{l}a\\\\ b\\end{tabular}")));
+  CHECK(!check::warns(rec("\\begin{tabular}{l}a\\tabularnewline b\\end{tabular}"), "tabularnewline"));
+}
+
+// mdframed's title has 5pt of its own above and below (frametitleaboveskip, frametitlebelowskip), so the title is not
+// cramped against the line and the box is taller by the title line and 10pt: 1em, at 10pt.
+TEST(docmode_an_mdframed_title_has_room_above_and_below) {
+  const std::string md = "\\usepackage{mdframed}";
+  const auto height = [&](const std::string& opt) {
+    const auto rects = check::of(rec(md + "\\begin{mdframed}" + opt + "Body\\end{mdframed}", InputMode::document, 400), DrawRecord::FILL_RECT);
+    return rects.empty() ? 0.f : rects[0].height;
+  };
+  const float plain = height(""), titled = height("[frametitle=Head]");
+  CHECK(titled - plain >= 20.f + 20.f - 1.f);   // a text line (1em = 20) and 2 * 0.5em
+}

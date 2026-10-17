@@ -999,3 +999,48 @@ TEST(tikz_a_picture_holds_the_outline_of_a_node_and_not_its_outer_sep) {
     CHECK(near(width(s + ", draw, outer sep=30pt"), width(s + ", draw"), 1.5f));
   }
 }
+
+// Found probing item 16: a count that is a billion was a loop of a billion (a hang), and a size that is not a number or does
+// not fit escaped to the host as an R error. Counts are capped and said; a picture of no size is no picture.
+TEST(tikz_counts_are_capped_and_a_picture_always_has_a_size) {
+  const auto cap = [](const std::string& body) { return pic(body); };
+  CHECK_EQ(strokes(cap(R"(\node[regular polygon, regular polygon sides=1000000000, draw] {x};)"))[0].path_segments.size(),
+           std::size_t(1001));   // a move, 999 lines, the close
+  CHECK_EQ(strokes(cap(R"(\draw plot[samples=1000000000, domain=0:1000] (\x, 0);)"))[0].path_segments.size(), std::size_t(20000));
+  const auto steps = cap(R"(\draw plot[samples at={0,0.000001,...,10}] (\x, \x);)");
+  CHECK(check::warns(steps, "samples at has more than 20000 values"));
+  CHECK_EQ(strokes(steps)[0].path_segments.size(), std::size_t(20000));
+  // An arc of nothing or of a full circle has no size; a coordinate of a hundred metres has no use.
+  CHECK(check::warns(cap(R"(\node[draw, rounded rectangle, rounded rectangle arc length=360] {T};)"), "is not between 0 and 360"));
+  CHECK(check::warns(cap(R"(\node[draw, rounded rectangle, rounded rectangle arc length=0] {T};)"), "is not between 0 and 360"));
+  const auto far = cap(R"(\draw (0,0) -- (1e10,1); \draw (0,0) -- (1,1);)");
+  CHECK(check::warns(far, "more than 100 metres"));
+  CHECK(far.width > 0 && far.width < 1000000);
+  CHECK(check::warns(cap(R"(\draw plot[domain=0:1000, samples=5] (\x, {exp(\x)});)"), "not a number"));
+}
+
+// plot's expression: a unit after the variable's number, polar points, and the square root of a negative number (not a number,
+// as 1/0 is) -- found probing item 16.
+TEST(tikz_a_plot_point_may_have_units_and_polar_form) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  CHECK_PAIRS((check::Pairs{
+    {tikz(R"(\draw plot[domain=0:2, samples=3] (\x cm, 0);)"), tikz(R"(\draw (0,0) -- (1,0) -- (2,0);)")},
+    {tikz(R"(\draw plot[domain=0:20, samples=3] (\x mm, {\x mm});)"), tikz(R"(\draw (0,0) -- (1,1) -- (2,2);)")},
+    {tikz(R"(\draw plot[domain=0:2, samples=3] (\x:{1});)"), tikz(R"(\draw (0:1) -- (1:1) -- (2:1);)")},
+    {tikz(R"(\draw plot[domain=0:90, samples=3] (\x:{\x/45});)"), tikz(R"(\draw (0:0) -- (45:1) -- (90:2);)")}}));
+  const auto root = pic(R"(\draw plot[domain=-1:1, samples=3] (\x, {sqrt(\x)});)");
+  CHECK(check::warns(root, "not a number"));
+  CHECK_EQ(strokes(root)[0].path_segments.size(), std::size_t(2));
+}
+
+// A clip path the layout cannot clip to is said once, for the reason it is not: curves, a corner that turns the wrong way, or
+// several parts (TikZ clips to their union; only the first is used here).
+TEST(tikz_a_clip_path_that_is_not_one_region_is_said_for_its_own_reason) {
+  const auto concave = pic(R"(\clip (0,0) -- (4,0) -- (4,4) -- (2,1) -- (0,4) -- cycle; \draw (-1,2) -- (5,2);)");
+  CHECK(check::warns(concave, "not convex"));
+  CHECK(!check::warns(concave, "curves"));
+  CHECK(check::warns(pic(R"(\clip (0,0) .. controls (1,1) and (2,1) .. (3,0); \draw (0,0) -- (3,0);)"), "curves"));
+  const auto parts = pic(R"(\clip (0,0) rectangle (1,1) (2,0) rectangle (3,1); \fill (-1,-1) rectangle (4,2);)");
+  CHECK(check::warns(parts, "several parts"));
+  CHECK(!check::warns(pic(R"(\clip (0,0) rectangle (1,1); \fill (-1,-1) rectangle (4,2);)"), "several parts"));
+}
