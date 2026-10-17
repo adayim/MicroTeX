@@ -1,0 +1,13 @@
+\ProvidesPackage{soul}[2026/10/17 soul: \hl, \ul]
+% Written from soul's documented behaviour. \hl is the engine's background colour (soul's is a rule 2.5ex
+% high, 1.75ex above the baseline), \ul the engine's underline (ulem's, not soul's .1ex rule). \st is the
+% engine's own strike-out and needs no package. The colours of the lines (\setulcolor, \setstcolor) are read
+% and not drawn; \so, \caps and a colour expression for \sethlcolor are not done.
+\def\gm@hlcolor{yellow}
+\newcommand{\sethlcolor}[1]{\def\gm@hlcolor{#1}}
+\newcommand{\setulcolor}[1]{}
+\newcommand{\setstcolor}[1]{}
+\newcommand{\hl}[1]{\bgcolor{\gm@hlcolor}{#1}}
+\newcommand{\ul}[1]{\uline{#1}}
+\newcommand{\texthl}[1]{\hl{#1}}
+\newcommand{\textul}[1]{\uline{#1}}

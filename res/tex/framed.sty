@@ -1,0 +1,10 @@
+\ProvidesPackage{framed}[2026/10/17 framed: framed, shaded, snugshade]
+% Written from framed's documented behaviour: a frame of \FrameRule (0.4pt) with \FrameSep (3\fboxsep = 9pt)
+% round the text, as wide as the line; shaded is \colorbox{shadecolor} with the same padding and no frame
+% (define shadecolor, as framed asks); snugshade pads by \fboxsep (3pt). Over the engine's tcolorbox, so the
+% box is not broken across pages (a grob has none). Not done: leftbar, oframed, titled-frame.
+\newenvironment{framed}{\begin{tcolorbox}[colback=white, colframe=black, boxrule=0.4pt, sharp corners, boxsep=0pt, left=9pt, right=9pt, top=9pt, bottom=9pt]}{\end{tcolorbox}}
+\newenvironment{shaded}{\begin{tcolorbox}[colback=shadecolor, colframe=shadecolor, boxrule=0pt, sharp corners, boxsep=0pt, left=9pt, right=9pt, top=9pt, bottom=9pt]}{\end{tcolorbox}}
+\newenvironment{shaded*}{\begin{tcolorbox}[colback=shadecolor, colframe=shadecolor, boxrule=0pt, sharp corners, boxsep=0pt, left=9pt, right=9pt, top=9pt, bottom=9pt]}{\end{tcolorbox}}
+\newenvironment{snugshade}{\begin{tcolorbox}[colback=shadecolor, colframe=shadecolor, boxrule=0pt, sharp corners, boxsep=0pt, left=3pt, right=3pt, top=3pt, bottom=3pt]}{\end{tcolorbox}}
+\newenvironment{snugshade*}{\begin{tcolorbox}[colback=shadecolor, colframe=shadecolor, boxrule=0pt, sharp corners, boxsep=0pt, left=3pt, right=3pt, top=3pt, bottom=3pt]}{\end{tcolorbox}}

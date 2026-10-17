@@ -1,0 +1,5 @@
+\ProvidesPackage{wrapfig}[2026/10/17 wrapfig: wrapfigure and wraptable as plain floats]
+% A document here is one column of lines, so text cannot run beside a float: wrapfigure and wraptable are
+% figure and table, with the number of lines, the placement and the width read and left out.
+\NewDocumentEnvironment{wrapfigure}{o m m}{\gmfloat{figure}}{\gmfloat{}}
+\NewDocumentEnvironment{wraptable}{o m m}{\gmfloat{table}}{\gmfloat{}}

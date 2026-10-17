@@ -1318,3 +1318,71 @@ TEST(docmode_display_skips_are_texs_long_after_a_full_line_and_short_after_a_sho
   CHECK(std::fabs(d[0] - (line + em)) < 1.f);
   CHECK(std::fabs(d[1] - (line + em)) < 1.f);
 }
+
+// soul: \hl is the engine's background colour (yellow unless \sethlcolor says), \ul and \st its underline and strike-out.
+TEST(docmode_soul_highlights_underlines_and_strikes) {
+  const std::string soul = "\\usepackage{soul}";
+  const auto hl = rec(soul + "\\hl{a} b");
+  CHECK(check::drawsColour(hl, 0xFFFFFF00u));
+  CHECK(check::drawsColour(rec(soul + "\\sethlcolor{red}\\hl{a} b"), 0xFFFF0000u));
+  CHECK(check::sameInk(rec(soul + "\\ul{ab}"), rec(soul + "\\uline{ab}")));
+  CHECK(check::sameInk(rec(soul + "\\hl{ab}"), rec(soul + "\\bgcolor{yellow}{ab}")));
+  // \st is the engine's own, with or without the package.
+  CHECK(!check::warns(rec("\\st{ab}"), "st"));
+  // Without the package the name is not known.
+  CHECK(check::warns(rec("\\hl{a}"), "hl"));
+}
+
+// framed: a frame of 0.4pt with 9pt of padding (\FrameRule, \FrameSep = 3\fboxsep) as wide as the line, shaded the same in
+// shadecolor with no frame; both are the engine's tcolorbox.
+TEST(docmode_framed_and_shaded_are_boxes_as_wide_as_the_line) {
+  const std::string framed = "\\usepackage{framed}";
+  CHECK(check::sameInk(rec(framed + "\\begin{framed}Hello\\end{framed}", InputMode::document, 400),
+                       rec(framed + "\\begin{tcolorbox}[colback=white, colframe=black, boxrule=0.4pt, sharp corners, boxsep=0pt, "
+                           "left=9pt, right=9pt, top=9pt, bottom=9pt]Hello\\end{tcolorbox}",
+                           InputMode::document, 400)));
+  const auto f = rec(framed + "\\begin{framed}Hello\\end{framed}", InputMode::document, 400);
+  const auto rects = check::of(f, DrawRecord::FILL_RECT);
+  CHECK(rects.size() >= 2);
+  if (rects.size() >= 2) {
+    CHECK(close(rects[0].width, 400.f, 0.01f));
+    CHECK(close(rects[0].width - rects[1].width, 2 * 0.04f * 20, 0.01f));   // the frame, 0.4pt = 0.04em each side
+  }
+  const auto s = rec(framed + "\\definecolor{shadecolor}{rgb}{0.9,0.9,0.9}\\begin{shaded}Hello\\end{shaded}", InputMode::document, 400);
+  CHECK(check::drawsColour(s, 0xFFE6E6E6u) || check::drawsColour(s, 0xFFE5E5E5u));   // 0.9 of 255, rounded either way
+  CHECK(!check::warns(s, "undefined"));
+}
+
+// mdframed: a 0.4pt black line, white inside, 10pt at the sides and 0.4 baselineskip above and below the text, square
+// corners (mdframed.sty); its own keys are tcolorbox's that draw the same thing, and others are said.
+TEST(docmode_mdframed_is_a_box_with_its_own_keys) {
+  const std::string md = "\\usepackage{mdframed}";
+  const auto base = rec(md + "\\begin{mdframed}Hello\\end{mdframed}", InputMode::document, 400);
+  CHECK(!check::of(base, DrawRecord::FILL_RECT).empty());
+  CHECK(check::of(base, DrawRecord::FILL_ROUND_RECT).empty());
+  const float x0 = first(xsOf(runs(md + "\\begin{mdframed}Hello\\end{mdframed}", InputMode::document, 400)));
+  CHECK(close(x0, (0.04f + 1.0f) * 20, 0.05f));                       // the line and 10pt
+  const float x1 = first(xsOf(runs(md + "\\begin{mdframed}[innerleftmargin=30pt]Hello\\end{mdframed}", InputMode::document, 400)));
+  CHECK(close(x1 - x0, 2.f * 20, 0.05f));
+  const auto colours = rec(md + "\\begin{mdframed}[linecolor=red, backgroundcolor=yellow]x\\end{mdframed}", InputMode::document, 400);
+  CHECK(check::drawsColour(colours, 0xFFFF0000u));
+  CHECK(check::drawsColour(colours, 0xFFFFFF00u));
+  CHECK(!check::of(rec(md + "\\begin{mdframed}[roundcorner=5pt]x\\end{mdframed}"), DrawRecord::FILL_ROUND_RECT).empty());
+  CHECK(check::warns(rec(md + "\\begin{mdframed}[skipabove=3pt]x\\end{mdframed}"), "mdframed: the key `skipabove' is not drawn"));
+  const auto titled = rec(md + "\\begin{mdframed}[frametitle=Head]Body\\end{mdframed}", InputMode::document, 400);
+  CHECK_EQ(textsOf(runs(md + "\\begin{mdframed}[frametitle=Head]Body\\end{mdframed}")), Strings({"Head", "Body"}));
+  (void)titled;
+}
+
+
+
+// wrapfig: wrapfigure and wraptable are figure and table; the lines, placement and width are read and left out.
+TEST(docmode_wrapfigure_is_a_figure_and_wraptable_a_table) {
+  const std::string w = "\\usepackage{wrapfig}";
+  CHECK(check::sameInk(rec(w + "\\begin{wrapfigure}{r}{5cm}X\\caption{C}\\end{wrapfigure}"),
+                       rec(w + "\\begin{figure}X\\caption{C}\\end{figure}")));
+  CHECK(check::sameInk(rec(w + "\\begin{wrapfigure}[10]{l}{0.4\\textwidth}X\\caption{C}\\end{wrapfigure}"),
+                       rec(w + "\\begin{figure}X\\caption{C}\\end{figure}")));
+  CHECK(check::sameInk(rec(w + "\\begin{wraptable}{r}{5cm}X\\caption{C}\\end{wraptable}"),
+                       rec(w + "\\begin{table}X\\caption{C}\\end{table}")));
+}
