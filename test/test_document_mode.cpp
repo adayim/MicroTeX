@@ -1627,6 +1627,18 @@ TEST(docmode_verse_sets_its_lines_at_the_line_breaks_between_the_margins) {
   CHECK_EQ(textsOf(v), Strings({"aaa", "bbb", "ccc", "ddd"}));
   CHECK(ysOf(v)[1] > ysOf(v)[0] && ysOf(v)[2] > ysOf(v)[1] && ysOf(v)[3] > ysOf(v)[2]);
   CHECK(close(xsOf(v)[0], 50.f, 0.01f));
+  // pdflatex (article, 10pt, margin 72bp): the first line of each `\\` line is at 96 (2.5em) and one that wraps goes on at
+  // 111 (4em): the left margin is 4em and a paragraph starts 1.5em out of it. Every `\\` line and stanza starts out.
+  CHECK(close(xsOf(v)[1], 50.f, 0.01f));
+  CHECK(close(xsOf(v)[3], 50.f, 0.01f));
+  const Records w = runs("\\begin{verse}aaaaa bbbbb ccccc ddddd eeeee fffff ggggg\\\\ hhhhh\\end{verse}", InputMode::document, 300);
+  CHECK_EQ(textsOf(w), Strings({"aaaaa", "bbbbb", "ccccc", "ddddd", "eeeee", "fffff", "ggggg", "hhhhh"}));
+  // Three words fit the first line (200 wide: 300 less 6.5em, and the 1.5em it starts out), two the lines after it.
+  CHECK(close(xsOf(w)[0], 50.f, 0.01f));
+  CHECK(close(xsOf(w)[3], 80.f, 0.01f) && close(ysOf(w)[3], ysOf(w)[4], 0.01f));
+  CHECK(ysOf(w)[3] > ysOf(w)[0]);
+  CHECK(close(xsOf(w)[5], 80.f, 0.01f) && ysOf(w)[5] > ysOf(w)[3]);
+  CHECK(close(xsOf(w)[7], 50.f, 0.01f));   // after the `\\`
 }
 
 // The comment package: what is in its environment is not read -- an `\end{document}` or an unbalanced brace there
