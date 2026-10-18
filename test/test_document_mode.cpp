@@ -1393,8 +1393,8 @@ static std::string noSpaces(std::string s) {
 }
 
 // The y of the first run holding `word`.
-static float yOfWord(const std::string& tex, const std::string& word) {
-  for (const auto& r : runs(tex)) {
+static float yOfWord(const std::string& tex, const std::string& word, float width = 0) {
+  for (const auto& r : runs(tex, InputMode::document, width)) {
     if (r.text.find(word) != std::string::npos) return r.y;
   }
   return -1e9f;
@@ -1471,6 +1471,7 @@ TEST(docmode_a_label_inside_a_caption_names_its_float) {
 
 // A \label in an enumerated item names the item's number (\theenumi), as pdflatex's does; it waited for a row number that no
 // list ever gave, and \ref found nothing ("??"). A label in a table cell is the float's or section's, not lost either.
+
 TEST(docmode_a_label_in_a_list_item_or_table_cell_is_kept) {
   const Strings items = check::lines(rec("\\begin{enumerate}\\item\\label{i1} a\\item b\\label{i2}\\end{enumerate}See \\ref{i1}, \\ref{i2}."));
   CHECK_EQ(noSpaces(items.back()), std::string("See1,2."));
@@ -1515,4 +1516,133 @@ TEST(docmode_an_mdframed_title_has_room_above_and_below) {
   };
   const float plain = height(""), titled = height("[frametitle=Head]");
   CHECK(titled - plain >= 20.f + 20.f - 1.f);   // a text line (1em = 20) and 2 * 0.5em
+}
+
+// Found probing items 1-11 (an independent pass, 2026-10-17). A counter that is its own parent, or two that are each other's, was
+// unbounded recursion when one stepped: the R process died. LaTeX takes the loop; nothing here may crash.
+TEST(docmode_counters_that_are_each_others_parents_do_not_recurse_forever) {
+  CHECK(!check::warns(rec("\\newcounter{a}[a]\\stepcounter{a}\\arabic{a}"), "recurs"));
+  const auto mutual = rec("\\newcounter{a}[b]\\newcounter{b}[a]\\stepcounter{a}\\stepcounter{b}\\thea\\theb");
+  CHECK(mutual.width >= 0);
+}
+
+// TeX ignores the space after a command that draws nothing at the start of a line (vertical mode): `\label`, `\setlength` and
+// the rest used to leave it, a visible space (5px at 20) before the text, and an indent was not the only thing before it.
+TEST(docmode_a_space_after_a_command_that_draws_nothing_at_a_paragraph_start_is_dropped) {
+  const auto x = [](const std::string& tex, const std::string& word) {
+    for (const auto& r : runs(tex)) {
+      if (r.text.find(word) != std::string::npos) return r.x;
+    }
+    return -1e9f;
+  };
+  CHECK(close(x("\\section{S}\n\\label{sec}\nText here", "Text"), x("\\section{S}\nText here", "Text"), 0.01f));
+  CHECK(close(x("A\n\n\\label{x}\nText", "Text"), x("A\n\nText", "Text"), 0.01f));
+  CHECK(close(x("\\setlength{\\parindent}{0pt}\n\\setlength{\\parskip}{6pt}\nA", "A"), x("\\setlength{\\parindent}{0pt}A", "A"), 0.01f));
+  CHECK(close(x("\\definecolor{c}{rgb}{1,0,0}\n\\colorlet{d}{c}\nA", "A"), x("A", "A"), 0.01f));
+}
+
+// multicols with two paragraphs of several lines was one column (the body's rows were one leaf, not cut between paragraphs):
+// pdflatex puts 18 words, a blank line and 18 words into two columns of equal height.
+TEST(docmode_multicols_with_several_paragraphs_fills_its_columns) {
+  const std::string words =
+    "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen";
+  const auto two = rec("\\begin{multicols}{2}" + words + "\n\n" + words + "\\end{multicols}", InputMode::document, 300);
+  const auto one = rec(words + "\n\n" + words, InputMode::document, 140);   // the same text in one column
+  CHECK(static_cast<float>(two.height) < 0.65f * static_cast<float>(one.height));
+  CHECK(static_cast<float>(two.height) > 0.35f * static_cast<float>(one.height));
+  // Text, a display, text.
+  const auto shown = rec("\\begin{multicols}{2}" + words + "\\[x\\]" + words + "\\end{multicols}", InputMode::document, 300);
+  const auto flat = rec(words + "\\[x\\]" + words, InputMode::document, 140);
+  CHECK(static_cast<float>(shown.height) < 0.7f * static_cast<float>(flat.height));
+}
+
+// xcolor's optional model: \textcolor[rgb]{.2,.4,.6}{x} is 0.2, 0.4, 0.6 of full; pdflatex writes `.2 .4 .6 rg`. It was read as
+// the colour `[` and drew "rgb] 0.2,0.4,0.6 x" in black. rgb is 0-1, RGB 0-255, HTML six digits, gray 0-1, cmyk.
+TEST(docmode_a_colour_in_a_model_is_the_colour_it_names) {
+  const auto colour = [](const std::string& tex, unsigned argb) { return check::drawsColour(rec(tex), argb); };
+  CHECK(colour("\\textcolor[rgb]{0.2,0.4,0.6}{x}", 0xFF336699u));
+  CHECK(colour("\\textcolor[RGB]{51,102,153}{x}", 0xFF336699u));
+  CHECK(colour("\\textcolor[HTML]{336699}{x}", 0xFF336699u));
+  CHECK(colour("{\\color[HTML]{ff0000} x}", 0xFFFF0000u));
+  CHECK(colour("\\textcolor[gray]{0.5}{x}", 0xFF808080u));
+  CHECK(colour("\\textcolor[cmyk]{1,0,0,0}{x}", 0xFF00FFFFu));
+  CHECK(colour("\\textcolor[named]{red}{x}", 0xFFFF0000u));
+  CHECK(colour("\\colorbox[rgb]{1,0,0}{a}", 0xFFFF0000u));
+  CHECK(colour("\\fcolorbox[HTML]{FF0000}{00FF00}{a}", 0xFF00FF00u));
+  CHECK(colour("\\begin{tabular}{l}\\rowcolor[HTML]{EFEFEF} a\\end{tabular}", 0xFFEFEFEFu));
+  CHECK(colour("\\begin{tabular}{l}\\cellcolor[rgb]{0,0,1} a\\end{tabular}", 0xFF0000FFu));
+  CHECK(check::warns(rec("\\textcolor[foo]{1,2}{x}"), "the colour model `foo' is not known"));
+  CHECK(check::warns(rec("\\textcolor[rgb]{1,2}{x}"), "wrong number of components"));
+  CHECK(!check::warns(rec("\\textcolor{red}{x}"), "colour"));
+}
+
+// `\arrayrulecolor` in the middle of a table changes the rules after it, not all of them (a rule took the last value when it
+// was drawn): pdflatex draws the first two red and the last blue.
+TEST(docmode_arrayrulecolor_changes_the_rules_after_it) {
+  const auto l = rec("\\begin{tabular}{l}\\arrayrulecolor{red}\\hline a\\\\\\hline c\\\\\\arrayrulecolor{blue}\\hline\\end{tabular}");
+  CHECK(check::drawsColour(l, 0xFFFF0000u));
+  CHECK(check::drawsColour(l, 0xFF0000FFu));
+  // A table after it starts with the rules' own colour again.
+  const auto after = rec("\\begin{tabular}{l}\\hline a\\\\\\hline\\end{tabular}");
+  CHECK(!check::drawsColour(after, 0xFFFF0000u) && !check::drawsColour(after, 0xFF0000FFu));
+}
+
+// `equation` is an ordinary display, not an alignment: after a short line it has the short skips, as `\[ \]` does (pdflatex:
+// 12 and 30pt to the next line, where align has 22 and 44). Its number does not change that (TeX centres the formula alone).
+TEST(docmode_an_equation_after_a_short_line_has_the_short_display_skips) {
+  const auto gap = [](const std::string& display) {
+    const std::string t = "A\n" + display + "\nAfter";
+    return yOfWord(t, "After", 300) - yOfWord(t, "A", 300);
+  };
+  const float plain = gap("\\[ a=b \\]");
+  CHECK(close(gap("\\begin{equation} a=b \\end{equation}"), plain, 0.5f));
+  CHECK(close(gap("\\begin{equation*} a=b \\end{equation*}"), plain, 0.5f));
+  CHECK(close(gap("\\[ a=b \\tag{x} \\]"), plain, 0.5f));
+  CHECK(gap("\\begin{align} a&=b \\end{align}") > plain + 5.f);   // an alignment starts at the margin: the long skips
+}
+
+// LaTeX's default labels change with the level: 1., (a), i., A.; a bullet, an en dash, an asterisk, a centred dot.
+TEST(docmode_nested_lists_have_the_labels_of_their_level) {
+  // Four levels of `kind`, each opened with the options given for it.
+  const auto nest = [](const std::string& kind, const std::string& o2, const std::string& o3, const std::string& o4) {
+    const std::string end = "\\end{" + kind + "}";
+    return "\\begin{" + kind + "}\\item a\\begin{" + kind + "}" + o2 + "\\item b\\begin{" + kind + "}" + o3 + "\\item c\\begin{" + kind +
+           "}" + o4 + "\\item d" + end + end + end + end;
+  };
+  // The defaults are the labels written out: 1., (a), i., A.
+  CHECK(check::sameInk(rec(nest("enumerate", "", "", "")), rec(nest("enumerate", "[(\\alph*)]", "[\\roman*.]", "[\\Alph*.]"))));
+  // And a bullet, a bold en dash (latex.ltx: `\labelitemii` is `\normalfont\bfseries\textendash`), an asterisk, a centred dot.
+  CHECK(check::sameInk(rec(nest("itemize", "", "", "")), rec(nest("itemize", "[\\text{\\bfseries\\textendash}]", "[\\ast]", "[\\cdot]"))));
+  CHECK(!check::sameInk(rec(nest("itemize", "", "", "")), rec(nest("itemize", "[\\text{\\textendash}]", "[\\ast]", "[\\cdot]"))));
+  // The second level is not the first: with every level as the first the picture is another.
+  CHECK(!check::sameInk(rec(nest("enumerate", "", "", "")), rec(nest("enumerate", "[\\arabic*.]", "[\\arabic*.]", "[\\arabic*.]"))));
+}
+
+// makecell's cell is a tabular of `@{}c@{}`: no \tabcolsep inside it (12bp at 10pt too wide, pdflatex 44.9 against 56.9), and
+// \shortstack is the same stack with its last line on the baseline.
+TEST(docmode_makecell_and_shortstack_have_no_padding_of_their_own) {
+  CHECK_PAIRS_WITH((Pairs{
+    {"\\begin{tabular}{cc}\\makecell{a\\\\bb}&x\\end{tabular}",
+     "\\begin{tabular}{cc}\\begin{tabular}{@{}c@{}}a\\\\bb\\end{tabular}&x\\end{tabular}"},
+    {"\\begin{tabular}{cc}\\makecell[l]{a\\\\bb}&x\\end{tabular}",
+     "\\begin{tabular}{cc}\\begin{tabular}[c]{@{}l@{}}a\\\\bb\\end{tabular}&x\\end{tabular}"},
+    {"\\begin{tabular}{cc}\\shortstack{a\\\\bb}&x\\end{tabular}",
+     "\\begin{tabular}{cc}\\begin{tabular}[b]{@{}c@{}}a\\\\bb\\end{tabular}&x\\end{tabular}"}}),
+                   typeface(InputMode::document, 300));
+}
+
+
+// The figure and table counters are there to set (`\setcounter{figure}{4}` makes the next caption Figure 5), and \nocite draws
+// nothing.
+TEST(docmode_the_float_counters_exist_and_nocite_is_silent) {
+  const auto caption = [](const std::string& tex) {
+    for (const auto& line : check::lines(rec(tex))) {
+      if (line.find("Figure") != std::string::npos) return noSpaces(line);
+    }
+    return std::string();
+  };
+  CHECK_EQ(caption("\\setcounter{figure}{4}\\begin{figure}F\\caption{c}\\end{figure}"), std::string("Figure5:c"));
+  CHECK_EQ(caption("\\begin{figure}F\\caption{c}\\end{figure}"), std::string("Figure1:c"));
+  CHECK(!check::warns(rec("\\setcounter{figure}{4}\\thefigure \\thetable"), "counter"));
+  CHECK(check::of(rec("\\nocite{a}\\nocite{*}"), DrawRecord::TEXT).empty());
 }

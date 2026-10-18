@@ -536,12 +536,12 @@ TEST(tables_makecell_takes_a_vertical_and_a_horizontal_letter) {
     return check::sameInk(rec("\\begin{tabular}{l}" + cell + "\\end{tabular}", 300, 10),
                           rec("\\begin{tabular}{l}" + tabular + "\\end{tabular}", 300, 10));
   };
-  CHECK(same("\\makecell[tl]{a\\\\bb}", "\\begin{tabular}[t]{l}a\\\\bb\\end{tabular}"));
-  CHECK(same("\\makecell[br]{a\\\\bb}", "\\begin{tabular}[b]{r}a\\\\bb\\end{tabular}"));
-  CHECK(same("\\makecell[cl]{a\\\\bb}", "\\begin{tabular}[c]{l}a\\\\bb\\end{tabular}"));
-  CHECK(same("\\makecell[r]{a\\\\bb}", "\\begin{tabular}[c]{r}a\\\\bb\\end{tabular}"));
-  CHECK(same("\\makecell[t]{a\\\\bb}", "\\begin{tabular}[t]{c}a\\\\bb\\end{tabular}"));
-  CHECK(same("\\makecell{a\\\\bb}", "\\begin{tabular}[c]{c}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[tl]{a\\\\bb}", "\\begin{tabular}[t]{@{}l@{}}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[br]{a\\\\bb}", "\\begin{tabular}[b]{@{}r@{}}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[cl]{a\\\\bb}", "\\begin{tabular}[c]{@{}l@{}}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[r]{a\\\\bb}", "\\begin{tabular}[c]{@{}r@{}}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell[t]{a\\\\bb}", "\\begin{tabular}[t]{@{}c@{}}a\\\\bb\\end{tabular}"));
+  CHECK(same("\\makecell{a\\\\bb}", "\\begin{tabular}[c]{@{}c@{}}a\\\\bb\\end{tabular}"));
   CHECK(rec("\\begin{tabular}{l}\\makecell[tl]{a\\\\b}\\end{tabular}", 300, 10).warnings.empty());
   // \thead is a bold \makecell.
   CHECK(same("\\thead[l]{a\\\\bb}", "\\makecell[l]{\\bfseries a\\\\bb}"));

@@ -1044,3 +1044,126 @@ TEST(tikz_a_clip_path_that_is_not_one_region_is_said_for_its_own_reason) {
   CHECK(check::warns(parts, "several parts"));
   CHECK(!check::warns(pic(R"(\clip (0,0) rectangle (1,1); \fill (-1,-1) rectangle (4,2);)"), "several parts"));
 }
+
+// ---- found by an independent probing pass of the TikZ support (2026-10-17), compared with pdfTeX ----
+
+// `\tikzset` before a picture with options dropped the whole picture: the parser put the styles in front of the picture's text,
+// before `[scale=2]`, which then was no option list ("is not a statement"). pdflatex draws the node.
+TEST(tikz_a_tikzset_before_a_picture_with_options_does_not_drop_it) {
+  const auto l = check::render(R"(\tikzset{mystyle/.style={draw,red}}\begin{tikzpicture}[scale=2]\node[mystyle] at (1,1) {x};\end{tikzpicture})");
+  CHECK(l.warnings.empty());
+  CHECK_EQ(strokes(l).size(), std::size_t(1));
+  // The options may use the style, too.
+  const auto used = check::render(R"(\tikzset{boxy/.style={draw}}\begin{tikzpicture}[boxy]\node {x};\end{tikzpicture})");
+  CHECK(used.warnings.empty());
+  CHECK(!check::render(R"(\tikzstyle{old}=[draw]\begin{tikzpicture}[node distance=2cm]\node[old] {x};\end{tikzpicture})").records.empty());
+}
+
+// A node's own `scale` scales the node and not where it is put (pdfTeX, one x: `scale=2` 24.197bp wide, the line once;
+// `minimum width` is scaled too), and `at (2,1)` stays at (2cm,1cm). It was a step of the coordinates: the node moved to (4,2).
+TEST(tikz_a_nodes_own_scale_scales_the_node_and_not_its_place) {
+  const auto width = [](const std::string& options) {
+    return extentOf(strokes(pic("\\node[draw" + options + "] {x};"))[0]).width();
+  };
+  const float one = width(""), twice = width(", scale=2");
+  CHECK(near(twice, 2 * one, 2.f));
+  CHECK(near(width(", xscale=2"), twice, 2.f));
+  CHECK(near(width(", scale=2, minimum width=8cm"), 2 * width(", minimum width=8cm"), 3.f));
+  // Where it stands: 2cm right of and 1cm above the origin, which a short line marks.
+  const auto at = pic(R"(\node[draw, scale=2] at (2,1) {x}; \draw (0,0) -- (0.01,0);)");
+  const auto marks = strokes(at);
+  CHECK_EQ(marks.size(), std::size_t(2));
+  const Extent node = extentOf(marks[0]), origin = extentOf(marks[1]);
+  CHECK(near(0.5f * (node.x0 + node.x1) - origin.x0, cm(2), 2.f));
+  CHECK(near(std::fabs(0.5f * (node.y0 + node.y1) - origin.y0), cm(1), 2.f));
+  // Rotation is said, and the node stays where it is put.
+  CHECK(check::warns(pic(R"(\node[draw, rotate=30] at (3,1) {rot};)"), "rotating a node is not supported"));
+}
+
+// `(a |- b)` is the x of a and the y of b; `(a -| b)` the x of b and the y of a (it was "not a node", and a path left out).
+TEST(tikz_a_corner_coordinate_takes_the_x_of_one_and_the_y_of_the_other) {
+  const auto tikz = [](const std::string& body) {
+    return "\\begin{tikzpicture}\\node (a) at (1,2) {a}; \\node (b) at (3,0) {b};" + body + "\\end{tikzpicture}";
+  };
+  CHECK_PAIRS((check::Pairs{
+    {tikz(R"(\draw (a |- b) -- (b);)"), tikz(R"(\draw (1,0) -- (b);)")},
+    {tikz(R"(\draw (a -| b) -- (b);)"), tikz(R"(\draw (3,2) -- (b);)")},
+    // `|-` as a step of a path is vertical first: its corner is the x of a.south and the y of b.north.
+    {tikz(R"(\draw (a.south) -- (a.south |- b.north) -- (b.north);)"), tikz(R"(\draw (a.south) |- (b.north);)")},
+  }));
+  CHECK(!check::warns(check::render(tikz(R"(\draw (a |- b) -- (b);)")), "not a node"));
+}
+
+// A node written on a rectangle is at its centre (`rectangle node{x} (3,1)`, `rectangle (3,1) node[midway]{x}`), and one written
+// between `..` and the end of a curve is half way along it (pdfTeX); both were dropped or put at a corner.
+TEST(tikz_a_node_on_a_rectangle_or_a_curve_is_half_way_along) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  CHECK_PAIRS((check::Pairs{
+    {tikz(R"(\draw (0,0) rectangle node{m} (3,1);)"), tikz(R"(\draw (0,0) rectangle (3,1); \node at (1.5,0.5) {m};)")},
+    {tikz(R"(\draw (0,0) rectangle (3,1) node[midway]{m};)"), tikz(R"(\draw (0,0) rectangle (3,1); \node at (1.5,0.5) {m};)")},
+    // The middle of a cubic from (0,0) to (4,0) with controls (1,1) and (3,1) is (2,0.75).
+    {tikz(R"(\draw (0,0) .. controls (1,1) and (3,1) .. node[above]{z} (4,0);)"),
+     tikz(R"(\draw (0,0) .. controls (1,1) and (3,1) .. (4,0); \node[above] at (2,0.75) {z};)")},
+  }));
+}
+
+// A matrix in a shifted scope is shifted (it stood at the origin), and the names of its cells with it.
+TEST(tikz_a_matrix_in_a_shifted_scope_is_shifted) {
+  // The picture's box starts at the matrix either way, so the cells keep their place in it; what moves is the origin, which
+  // a line from (0,0) marks: it is 2cm left of the middle of the two cells.
+  const auto marked = pic(R"(\begin{scope}[xshift=2cm,yshift=1cm]\matrix (m) [matrix of nodes] {a & b \\};\end{scope}\draw (0,0) -- (0.01,0);)");
+  const auto line = strokes(marked);
+  CHECK_EQ(line.size(), std::size_t(1));
+  const auto cells = check::of(marked, DrawRecord::TEXT);
+  CHECK_EQ(cells.size(), std::size_t(2));
+  const float centre = 0.5f * (cells[0].x + cells[1].x) + 0.5f * static_cast<float>(plain("a").width);
+  CHECK(near(centre - extentOf(line[0]).x0, cm(2), 3.f));
+}
+
+// Styles a scope defines end with it: `every node/.style` in its options was still there after it.
+TEST(tikz_the_styles_of_a_scope_end_with_it) {
+  CHECK_EQ(strokes(pic(R"(\begin{scope}[every node/.style={draw}]\node {A};\end{scope}\node at (3,0) {B};)")).size(), std::size_t(1));
+  // (A style defined outside the scope is in force inside it, and after it.)
+  CHECK_EQ(strokes(pic(R"(\tikzset{boxed/.style={draw}}\begin{scope}\node[boxed] {A};\end{scope}\node[boxed] at (3,0) {B};)")).size(),
+           std::size_t(2));
+}
+
+// `shift={(x,y)}` (the most used of the keys that were unsupported) moves what follows, in a picture, a scope, a path or a node.
+TEST(tikz_shift_with_a_point_moves_what_follows) {
+  const auto tikz = [](const std::string& body) { return "\\begin{tikzpicture}" + body + "\\end{tikzpicture}"; };
+  CHECK_PAIRS((check::Pairs{
+    {tikz(R"(\begin{scope}[shift={(2,1)}]\draw (0,0) -- (1,0);\end{scope})"), tikz(R"(\draw (2,1) -- (3,1);)")},
+    {tikz(R"(\draw[shift={(1,2)}] (0,0) -- (1,0);)"), tikz(R"(\draw (1,2) -- (2,2);)")},
+    {tikz(R"(\node[shift={(1,-1)}, draw] {x};)"), tikz(R"(\node[draw] at (1,-1) {x};)")},
+  }));
+  CHECK(!check::warns(check::render(tikz(R"(\draw[shift={(1,2)}] (0,0) -- (1,0);)")), "shift"));
+}
+
+// An edge from the parent has its nodes half way along it unless `pos` says otherwise (pdfTeX); any other path puts a node
+// after its last point at that point.
+TEST(tikz_a_node_on_an_edge_from_the_parent_is_half_way) {
+  const auto tikz = [](const std::string& edge) {
+    return "\\begin{tikzpicture}\\node {p} child {node {a} edge from parent " + edge + "};\\end{tikzpicture}";
+  };
+  CHECK_PAIRS((check::Pairs{{tikz("node[left]{x}"), tikz("node[left, pos=0.5]{x}")}}));
+  CHECK(!check::sameInk(check::render(tikz("node[left]{x}")), check::render(tikz("node[left, pos=1]{x}"))));
+}
+
+// What a picture holds: a stroked path's line, half its width each side, and an arrow tip (pdfTeX: `line width=8pt` on a
+// 1cm line is 36.34 x 7.77bp); a negative width is said, not an R error at draw time.
+TEST(tikz_a_picture_holds_the_line_of_a_path_and_a_negative_width_is_said) {
+  const auto l = pic(R"(\draw[line width=10pt] (0,0) -- (1,0);)");
+  CHECK(near(static_cast<float>(l.width), cm(1) + static_cast<float>(plain("\\hspace{10pt}").width), 2.f));
+  CHECK(near(static_cast<float>(l.height), static_cast<float>(plain("\\hspace{10pt}").width), 2.f));
+  const auto neg = pic(R"(\draw[line width=-2pt] (0,1) -- (1,2);)");
+  CHECK(check::warns(neg, "negative"));
+  CHECK(strokes(neg)[0].line_width >= 0.f);
+}
+
+// An arc of a million degrees, a dash pattern of a thousandth of a point over ten centimetres and ten thousand circles are
+// not a minute's work: they are bounded (found by probing: each was more than 40 seconds).
+TEST(tikz_runaway_arcs_and_dash_patterns_are_bounded) {
+  CHECK(!strokes(pic(R"(\draw (0,0) arc (0:36000000:1);)")).empty());
+  const auto fine = pic(R"(\draw[dash pattern=on 0.001pt off 0.001pt] (0,0) -- (10,0);)");
+  CHECK_EQ(strokes(fine).size(), std::size_t(1));
+}

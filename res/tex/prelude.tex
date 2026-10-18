@@ -187,6 +187,10 @@
 % Footnotes: the counter's \thefootnote, and the commands over the engine's page notes (a document sets the notes after
 % its body, a label sets a note's text where it was written). \footnotetext numbers its note as the last mark.
 \@namedef{thefootnote}{\arabic{footnote}}
+\@namedef{thefigure}{\arabic{figure}}
+\@namedef{thetable}{\arabic{table}}
+% \nocite only adds to the bibliography a file would give: nothing to draw here (\bibliography itself is not read, and warns).
+\newcommand{\nocite}[1]{}
 \NewDocumentCommand{\footnote}{om}{\IfNoValueTF{#1}{\stepcounter{footnote}\gmfootnote{\thefootnote}{#2}}{\gmfootnote{#1}{#2}}}
 \NewDocumentCommand{\footnotemark}{o}{\IfNoValueTF{#1}{\stepcounter{footnote}\gmfootnotemark{\thefootnote}}{\gmfootnotemark{#1}}}
 \NewDocumentCommand{\footnotetext}{om}{\IfNoValueTF{#1}{\gmfootnotetext{\thefootnote}{#2}}{\gmfootnotetext{#1}{#2}}}

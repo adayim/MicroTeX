@@ -2,20 +2,25 @@
 % \makecell[vh]{a\\b}: a tabular of one column, its lines set by h (l, c or r) and
 % its baseline by v (t, c or b), as makecell.sty reads its optional argument:
 % both letters, or one of them (a horizontal letter alone sets the lines and
-% leaves the baseline in the middle; t or b alone leaves them centred).
-\@namedef{gm@mc@c}{[c]{c}}
-\@namedef{gm@mc@l}{[c]{l}}
-\@namedef{gm@mc@r}{[c]{r}}
-\@namedef{gm@mc@t}{[t]{c}}
-\@namedef{gm@mc@b}{[b]{c}}
-\@namedef{gm@mc@tc}{[t]{c}}
-\@namedef{gm@mc@tl}{[t]{l}}
-\@namedef{gm@mc@tr}{[t]{r}}
-\@namedef{gm@mc@bc}{[b]{c}}
-\@namedef{gm@mc@bl}{[b]{l}}
-\@namedef{gm@mc@br}{[b]{r}}
-\@namedef{gm@mc@cc}{[c]{c}}
-\@namedef{gm@mc@cl}{[c]{l}}
-\@namedef{gm@mc@cr}{[c]{r}}
-\newcommand{\makecell}[2][c]{\@ifundefined{gm@mc@#1}{\begin{tabular}{c}#2\end{tabular}}{\begin{tabular}\csname gm@mc@#1\endcsname#2\end{tabular}}}
+% leaves the baseline in the middle; t or b alone leaves them centred). The
+% column is `@{}c@{}`, as makecell.sty sets it: the cell has no \tabcolsep of its
+% own inside, the table it stands in has.
+\@namedef{gm@mc@c}{[c]{@{}c@{}}}
+\@namedef{gm@mc@l}{[c]{@{}l@{}}}
+\@namedef{gm@mc@r}{[c]{@{}r@{}}}
+\@namedef{gm@mc@t}{[t]{@{}c@{}}}
+\@namedef{gm@mc@b}{[b]{@{}c@{}}}
+\@namedef{gm@mc@tc}{[t]{@{}c@{}}}
+\@namedef{gm@mc@tl}{[t]{@{}l@{}}}
+\@namedef{gm@mc@tr}{[t]{@{}r@{}}}
+\@namedef{gm@mc@bc}{[b]{@{}c@{}}}
+\@namedef{gm@mc@bl}{[b]{@{}l@{}}}
+\@namedef{gm@mc@br}{[b]{@{}r@{}}}
+\@namedef{gm@mc@cc}{[c]{@{}c@{}}}
+\@namedef{gm@mc@cl}{[c]{@{}l@{}}}
+\@namedef{gm@mc@cr}{[c]{@{}r@{}}}
+\newcommand{\makecell}[2][c]{\@ifundefined{gm@mc@#1}{\begin{tabular}{@{}c@{}}#2\end{tabular}}{\begin{tabular}\csname gm@mc@#1\endcsname#2\end{tabular}}}
 \newcommand{\thead}[2][c]{\makecell[#1]{\bfseries #2}}
+% \shortstack[l]{a\\b}: lines stacked in one column, centred unless told (l, r), with no padding, the last line on the
+% baseline (it is a \vbox).
+\newcommand{\shortstack}[2][c]{\begin{tabular}[b]{@{}#1@{}}#2\end{tabular}}
