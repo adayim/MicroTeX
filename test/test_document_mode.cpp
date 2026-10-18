@@ -72,6 +72,21 @@ Records named(const Records& rs, const std::string& word) {
 
 float first(const std::vector<float>& v) { return v.empty() ? -1e9f : v.front(); }
 
+// The texts of some records, one after the other.
+std::string joinText(const Records& rs) {
+  std::string s;
+  for (const auto& r : rs) s += r.text;
+  return s;
+}
+
+// The same without the spaces.
+std::string allText(const Records& rs) {
+  std::string s;
+  for (const auto& r : rs) s += r.text;
+  s.erase(std::remove(s.begin(), s.end(), ' '), s.end());
+  return s;
+}
+
 bool close(float a, float b, float tolerance = 1e-4f) { return std::fabs(a - b) <= tolerance; }
 
 bool closeAll(const std::vector<float>& a, const std::vector<float>& b, float tolerance = 1e-4f) {
@@ -1424,6 +1439,209 @@ TEST(docmode_a_tab_in_a_listing_is_spaces_to_the_next_stop_of_eight) {
     {"\\begin{Verbatim}\n\tx\n\\end{Verbatim}", "\\begin{Verbatim}\n        x\n\\end{Verbatim}"},
     {"\\begin{verbatim}\n\tx\n\\end{verbatim}", "\\begin{verbatim}\n x\n\\end{verbatim}"}}),
                    typeface(InputMode::document, 300));
+}
+
+// fancyvrb's tabsize (and listings'): a tab goes to the next multiple of it; the default stays 8, and plain verbatim's
+// tab stays one space.
+TEST(docmode_tabsize_sets_the_stops_of_a_listing_and_of_verbatim_from_fancyvrb) {
+  CHECK_PAIRS_WITH((Pairs{
+    {"\\begin{Verbatim}[tabsize=4]\n\tx\n\\end{Verbatim}", "\\begin{Verbatim}\n    x\n\\end{Verbatim}"},
+    {"\\begin{Verbatim}[tabsize=4]\nab\tx\n\\end{Verbatim}", "\\begin{Verbatim}\nab  x\n\\end{Verbatim}"},
+    {"\\begin{Verbatim}[fontsize=\\small, tabsize=2]\nab\tx\n\\end{Verbatim}", "\\begin{Verbatim}\nab  x\n\\end{Verbatim}"},
+    {"\\begin{lstlisting}[language=R,tabsize=3]\n\tx\n\\end{lstlisting}", "\\begin{lstlisting}\n   x\n\\end{lstlisting}"},
+    {"\\begin{Verbatim}[tabsize=0]\n\tx\n\\end{Verbatim}", "\\begin{Verbatim}\n        x\n\\end{Verbatim}"},
+    {"\\begin{minted}[tabsize=4]{r}\n\tx\n\\end{minted}", "\\begin{minted}{r}\n    x\n\\end{minted}"}}),
+                   typeface(InputMode::document, 300));
+}
+
+// alltt, and fancyvrb's commandchars: the code is set as typed -- its spaces, its `#`, `%` and `_` -- but a command in it
+// acts, with the macros the input has defined. This is what knitr writes (alltt with \hl... commands) and what pandoc
+// writes (Highlighting is a Verbatim with commandchars=\\\{\}), and what a markdown code block is drawn as.
+TEST(docmode_alltt_sets_its_code_as_typed_and_its_commands_act) {
+  const std::string tex = "\\begin{alltt}\nx <- 1 # 50%   a_b\n  \\textcolor{red}{f}(\\textbf{y}) \\{ \\}\n\\end{alltt}";
+  const auto l = rec(tex, InputMode::document, 300);
+  CHECK_EQ(l.warnings, Strings{});
+  const Records r = runs(tex, InputMode::document, 300);
+  std::string text;
+  for (const auto& x : r) text += x.text;
+  CHECK_EQ(text, std::string("x <- 1 # 50%   a_b  f(y) { }"));
+  for (const auto& x : r) CHECK((x.font_style & 128) != 0);   // the typewriter face
+  const Records f = named(r, "f"), y = named(r, "y");
+  CHECK_EQ(f.size(), std::size_t(1));
+  CHECK_EQ(y.size(), std::size_t(1));
+  if (f.size() == 1 && y.size() == 1) {
+    CHECK_EQ(f[0].col, 0xFFFF0000u);
+    CHECK((y[0].font_style & 2) != 0);   // bold
+    // The second line is a baselineskip below the first, and its two spaces (the stub's 0.55 em each) come before the f.
+    CHECK(f[0].y > r.front().y);
+    CHECK(close(f[0].x, 22.f, 0.01f));
+  }
+}
+
+TEST(docmode_alltt_is_verbatim_with_the_commands_of_its_code_acting) {
+  CHECK_PAIRS_WITH((Pairs{
+    {"\\begin{alltt}\nab\n\n  cd\n\\end{alltt}", "\\begin{verbatim}\nab\n\n  cd\n\\end{verbatim}"},
+    {"\\begin{alltt}\n\tx\n\\end{alltt}", "\\begin{Verbatim}\n        x\n\\end{Verbatim}"},
+    {"\\begin{alltt}\n\\textcolor{red}{a} b\n\\end{alltt}",
+     "\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\textcolor{red}{a} b\n\\end{Verbatim}"},
+    // Another trio of characters: | starts a command, < opens and > closes a group; the backslash and braces are text.
+    {"\\begin{alltt}\n\\textcolor{red}{a} b\n\\end{alltt}",
+     "\\begin{Verbatim}[commandchars=|<>]\n|textcolor<red><a> b\n\\end{Verbatim}"}}),
+                   typeface(InputMode::document, 300));
+  const Records r = runs("\\begin{Verbatim}[commandchars=|<>]\n\\x{|textbf<b>} c\n\\end{Verbatim}", InputMode::document, 300);
+  CHECK_EQ(joinText(r), std::string("\\x{b} c"));
+  CHECK_EQ(named(r, "b").size(), std::size_t(1));
+  if (named(r, "b").size() == 1) CHECK((named(r, "b")[0].font_style & 2) != 0);
+}
+
+// The input's own macros act in the code, as they do in LaTeX: pandoc's \KeywordTok and knitr's \hlkwd are the document's
+// \newcommands.
+TEST(docmode_a_macro_the_input_defined_acts_in_alltt) {
+  const std::string tex =
+    "\\newcommand{\\KeywordTok}[1]{\\textcolor[rgb]{0,0,1}{\\textbf{#1}}}\n"
+    "\\begin{alltt}\n\\KeywordTok{if} (x) \\KeywordTok{return}\n\\end{alltt}";
+  const auto l = rec(tex, InputMode::document, 300);
+  CHECK(l.warnings.empty());
+  const Records r = runs(tex, InputMode::document, 300);
+  CHECK_EQ(joinText(r), std::string("if (x) return"));
+  CHECK_EQ(named(r, "if").size(), std::size_t(1));
+  if (named(r, "if").size() != 1) return;
+  CHECK(named(r, "if")[0].col == 0xFF0000FFu);
+  CHECK((named(r, "if")[0].font_style & 2) != 0);
+  // The same through an environment the input made of it, as pandoc's \newenvironment{Shaded} is.
+  CHECK(rec("\\newenvironment{Shaded}{}{}\\begin{Shaded}\\begin{alltt}\nx\n\\end{alltt}\\end{Shaded}", InputMode::document, 300)
+          .warnings.empty());
+}
+
+// What pandoc writes for a highlighted chunk, with its preamble: Highlighting is fancyvrb's Verbatim made over with
+// commandchars, \NormalTok and the other tokens are \newcommands, Shaded wraps it. (Texts as the pandoc template has them,
+// the colours shortened.)
+TEST(docmode_a_defined_verbatim_environment_is_a_verbatim_with_the_options_it_was_given) {
+  const std::string preamble =
+    "\\newenvironment{Shaded}{}{}\n"
+    "\\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\\\\{\\},tabsize=4}\n"
+    "\\newcommand{\\KeywordTok}[1]{\\textcolor[rgb]{0,0,1}{\\textbf{#1}}}\n"
+    "\\newcommand{\\NormalTok}[1]{#1}\n";
+  const std::string tex = preamble +
+    "\\begin{Shaded}\n\\begin{Highlighting}[]\n\\KeywordTok{if} \\NormalTok{(x }\\SpecialCharTok{\\textless{}-}\\NormalTok{ 1) \\{}\n"
+    "\\NormalTok{\t  y}\n\\NormalTok{\\}}\n\\end{Highlighting}\n\\end{Shaded}";
+  const auto l = rec(tex, InputMode::document, 300);
+  // \SpecialCharTok is not defined here: the only warning is for it.
+  CHECK_EQ(l.warnings.size(), std::size_t(1));
+  CHECK(check::warns(l, "SpecialCharTok"));
+  const Records r = runs(tex, InputMode::document, 300);
+  CHECK_EQ(named(r, "if").size(), std::size_t(1));
+  if (named(r, "if").size() == 1) {
+    CHECK_EQ(named(r, "if")[0].col, 0xFF0000FFu);
+    CHECK((named(r, "if")[0].font_style & 2) != 0);
+  }
+  for (const auto& x : r) CHECK((x.font_style & 128) != 0);
+  // Without the unknown command the code is quiet, its tab goes to the stop of 4 given by the definition, and it is set
+  // as the Verbatim it is made of.
+  const std::string clean = preamble +
+    "\\begin{Highlighting}[]\n\\KeywordTok{if} \\NormalTok{x}\n\t  y\n\\end{Highlighting}";
+  CHECK(rec(clean, InputMode::document, 300).warnings.empty());
+  CHECK_PAIRS_WITH((Pairs{
+    {clean, "\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\textcolor[rgb]{0,0,1}{\\textbf{if}} x\n      y\n\\end{Verbatim}"}}),
+                   typeface(InputMode::document, 300));
+  // \RecustomVerbatimEnvironment changes an environment that is already there.
+  CHECK_PAIRS_WITH((Pairs{
+    {"\\RecustomVerbatimEnvironment{Verbatim}{Verbatim}{tabsize=2}\\begin{Verbatim}\n\tx\n\\end{Verbatim}",
+     "\\begin{Verbatim}\n  x\n\\end{Verbatim}"}}),
+                   typeface(InputMode::document, 300));
+  CHECK(check::warns(rec("\\DefineVerbatimEnvironment{Foo}{tabular}{}x", InputMode::document, 300), "can be made over"));
+}
+
+// A group left open on a line is closed at its end, with one warning; a closing brace with nothing open is a character;
+// `Verbatim*` shows its spaces; three characters are needed; and nothing here reads past its own \end.
+TEST(docmode_the_code_of_alltt_recovers_from_unbalanced_groups) {
+  const auto open = rec("\\begin{alltt}\n\\textbf{a\nb\n\\end{alltt}", InputMode::document, 300);
+  CHECK(check::warns(open, "left open"));
+  CHECK_EQ(open.warnings.size(), std::size_t(1));
+  CHECK_EQ(joinText(runs("\\begin{alltt}\n\\textbf{a\nb\n\\end{alltt}", InputMode::document, 300)), std::string("ab"));
+  CHECK_EQ(joinText(runs("\\begin{alltt}\na } b\n\\end{alltt}", InputMode::document, 300)), std::string("a } b"));
+  CHECK_EQ(joinText(runs("\\begin{Verbatim*}[commandchars=\\\\\\{\\}]\na \\textbf{b c}\n\\end{Verbatim*}", InputMode::document, 300)),
+           std::string("a\xe2\x90\xa3" "b\xe2\x90\xa3" "c"));
+  CHECK(check::warns(rec("\\begin{Verbatim}[commandchars=ab]\nx\n\\end{Verbatim}", InputMode::document, 300), "three characters"));
+  // The body ends at its own \end, and what follows it is read as usual.
+  CHECK_EQ(joinText(runs("\\begin{alltt}\nx\n\\end{alltt}\nafter", InputMode::document, 300)), std::string("xafter"));
+  CHECK(rec("\\begin{alltt}\\end{alltt}", InputMode::document, 300).warnings.empty());
+  CHECK(check::warns(rec("\\begin{alltt}\nx", InputMode::document, 300), "missing \\end{alltt}"));
+}
+
+// Found probing the above: the text the parser puts back for the code of an alltt was recorded with the argument it stood
+// in (a footnote's, which is read again from its text), so the note was the code followed by `\gmcodeline{..}\end{alltt}`
+// drawn red, one glyph a letter. And a tabsize past the range of an int was undefined.
+TEST(docmode_alltt_in_an_argument_that_is_read_again_is_the_code_as_typed) {
+  const std::string tex = "text\\footnote{\\begin{alltt}x \\textbf{y}\\end{alltt}} more";
+  const auto l = rec(tex, InputMode::document, 300);
+  CHECK_EQ(l.warnings, Strings{});
+  const Records r = runs(tex, InputMode::document, 300);
+  CHECK_EQ(joinText(r), std::string("1textmore1x y"));   // the raised mark first; the note at the foot, with its mark
+  CHECK_EQ(check::of(l, DrawRecord::TEXT).size(), r.size());
+  CHECK(rec("\\fbox{\\begin{alltt}x \\textbf{y}\\end{alltt}}", InputMode::document, 300).warnings.empty());
+  CHECK(rec("\\newcommand{\\code}[1]{\\begin{alltt}#1\\end{alltt}}\\code{x}", InputMode::document, 300).warnings.empty());
+  const float wide = rec("\\begin{Verbatim}\n" + std::string(64, ' ') + "x\n\\end{Verbatim}", InputMode::document, 300).width;
+  CHECK(close(rec("\\begin{Verbatim}[tabsize=99999999999999999999]\n\tx\n\\end{Verbatim}", InputMode::document, 300).width, wide, 0.01f));
+}
+
+// article's quote and quotation are lists with no label whose margins are \leftmargin, 2.5em at the first level, on both
+// sides (pdflatex: the text of a quote at 25pt from the margin, 10pt type); a quotation also sets in the first line of
+// each paragraph by 1.5em (\listparindent). A verse sets its lines at `\\`. Text here is 20 units a size and a stub
+// character 11 wide, so 2.5em is 50 and 1.5em 30.
+TEST(docmode_quote_and_quotation_are_set_between_margins_of_two_and_a_half_em) {
+  const Records plain = runs("\\noindent aaaaa", InputMode::document, 300);
+  CHECK_EQ(plain.size(), std::size_t(1));
+  const float margin = first(xsOf(runs("\\begin{quote}aaaaa\\end{quote}", InputMode::document, 300)));
+  CHECK(close(margin - first(xsOf(plain)), 50.f, 0.01f));
+  CHECK(close(first(xsOf(runs("\\begin{quotation}\\noindent aaaaa\\end{quotation}", InputMode::document, 300))) - first(xsOf(plain)),
+              50.f, 0.01f));
+  // Narrower by 2.5em a side: 200 units, so three five-letter words (3 * 55 + 2 * 11 = 187) and no fourth.
+  const Records wrapped =
+    runs("\\begin{quote}aaaaa bbbbb ccccc ddddd eeeee\\end{quote}", InputMode::document, 300);
+  CHECK_EQ(textsOf(wrapped), Strings({"aaaaa", "bbbbb", "ccccc", "ddddd", "eeeee"}));
+  CHECK(ysOf(wrapped)[3] > ysOf(wrapped)[0]);
+  CHECK(close(ysOf(wrapped)[0], ysOf(wrapped)[2], 0.01f));
+  CHECK(close(xsOf(wrapped)[3], margin, 0.01f));
+  // A quote's paragraphs are flush; a quotation's first lines are in by 1.5em, the first one too.
+  const Records quote = runs("\\begin{quote}aaa\n\nbbb\\end{quote}", InputMode::document, 300);
+  CHECK(close(xsOf(quote)[0], xsOf(quote)[1], 0.01f));
+  const Records quotation = runs("\\begin{quotation}aaa\n\nbbb\\end{quotation}", InputMode::document, 300);
+  CHECK(close(xsOf(quotation)[0], margin + 30.f, 0.01f));
+  CHECK(close(xsOf(quotation)[1], margin + 30.f, 0.01f));
+  // Set apart from the paragraphs around it, with the text after it on a line of its own.
+  const Records around = runs("before\n\n\\begin{quote}in\\end{quote}\n\nafter", InputMode::document, 300);
+  CHECK_EQ(textsOf(around), Strings({"before", "in", "after"}));
+  CHECK(ysOf(around)[1] > ysOf(around)[0] && ysOf(around)[2] > ysOf(around)[1]);
+  // pdflatex (article, 10pt): the baselines either side of a quote are 22pt from it, 12 in a paragraph: \topsep 8pt and
+  // \partopsep 2pt, which is 1em; it is 1em here too, above and below.
+  const float pitch = ysOf(runs("A\n\nB", InputMode::document, 300))[1] - ysOf(runs("A\n\nB", InputMode::document, 300))[0];
+  CHECK(close(ysOf(around)[1] - ysOf(around)[0], pitch + 20.f, 0.05f));
+  CHECK(close(ysOf(around)[2] - ysOf(around)[1], pitch + 20.f, 0.05f));
+  CHECK(rec("\\begin{quote}x\\end{quote}\\begin{quotation}y\\end{quotation}\\begin{verse}z\\end{verse}", InputMode::document, 300)
+          .warnings.empty());
+}
+
+TEST(docmode_verse_sets_its_lines_at_the_line_breaks_between_the_margins) {
+  const Records v = runs("\\begin{verse}aaa \\\\ bbb \\\\ ccc\n\nddd\\end{verse}", InputMode::document, 300);
+  CHECK_EQ(textsOf(v), Strings({"aaa", "bbb", "ccc", "ddd"}));
+  CHECK(ysOf(v)[1] > ysOf(v)[0] && ysOf(v)[2] > ysOf(v)[1] && ysOf(v)[3] > ysOf(v)[2]);
+  CHECK(close(xsOf(v)[0], 50.f, 0.01f));
+}
+
+// The comment package: what is in its environment is not read -- an `\end{document}` or an unbalanced brace there
+// is no more than text -- and draws nothing.
+TEST(docmode_a_comment_environment_is_skipped_whatever_it_holds) {
+  const std::string tex = "a\\begin{comment}\n\\end{document} { \\undefined $\n\\end{comment}b";
+  CHECK(rec(tex, InputMode::document, 300).warnings.empty());
+  CHECK_EQ(allText(runs(tex, InputMode::document, 300)), std::string("ab"));
+  const std::string whole =
+    "\\documentclass{article}\\begin{document}x\\begin{comment}\\end{document}\\end{comment}y\\end{document}z";
+  CHECK_EQ(allText(runs(whole, InputMode::document, 300)), std::string("xy"));
+  CHECK(check::warns(rec("\\begin{comment}\nabc", InputMode::document, 300), "missing \\end{comment}"));
+  CHECK_EQ(allText(runs("\\begin{titlepage}\\begin{center}T\\end{center}\\end{titlepage}after", InputMode::document, 300)),
+           std::string("Tafter"));
+  CHECK(rec("\\begin{titlepage}\\begin{center}T\\end{center}\\end{titlepage}", InputMode::document, 300).warnings.empty());
 }
 
 // pdflatex: `\vspace` in the text of a paragraph is a vadjust, so its glue is below the line holding it: X, AAA BBB and CCC

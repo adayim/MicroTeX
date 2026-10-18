@@ -60,9 +60,9 @@ After.)";
 }
 
 TEST(diagnostics_an_unknown_environment_draws_its_body_with_a_warning) {
-  const std::string tex = R"(\begin{quote}hello\end{quote})";
+  const std::string tex = R"(\begin{sidewaysfigure}hello\end{sidewaysfigure})";
   const auto l = check::render(tex);
-  CHECK(check::warns(l, "unknown environment quote"));
+  CHECK(check::warns(l, "unknown environment sidewaysfigure"));
   CHECK(!check::drawsColour(l, check::kRed));
   CHECK_PAIRS((Pairs{{tex, R"(\begin{matrix}hello\end{matrix})"}}));
 }
@@ -71,7 +71,7 @@ TEST(diagnostics_an_unknown_environment_met_in_text_is_text_as_in_latex) {
   // As LaTeX recovers: the body is text in a group.
   for (const InputMode mode : {InputMode::document, InputMode::mixed}) {
     const Options opt(mode);
-    CHECK(warnsAbout(R"(\begin{quote}One two.\end{quote})", "unknown environment quote: its body is set as text",
+    CHECK(warnsAbout(R"(\begin{sidewaysfigure}One two.\end{sidewaysfigure})", "unknown environment sidewaysfigure: its body is set as text",
                      opt));
     const std::string body = R"(a \begin{foo}\bf b c\end{foo} d)";
     CHECK_PAIRS_WITH((Pairs{{body, R"(a {\bf b c} d)"}}), opt);

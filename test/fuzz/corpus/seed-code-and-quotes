@@ -1,0 +1,25 @@
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0,0,1}{\textbf{#1}}}
+\newenvironment{Shaded}{}{}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\},tabsize=4}
+\begin{Shaded}
+\begin{Highlighting}[]
+\KeywordTok{if} \{ x \textless{}-} 1 \}
+	\textcolor{red}{a}  b \\ \x{
+\end{Highlighting}
+\end{Shaded}
+\begin{alltt}
+\textcolor{red}{x} <- 1 # 50%   a_b {c} } \{ \% \$ \\
+  \textbf{y}
+\end{alltt}
+\begin{Verbatim}[commandchars=|<>,tabsize=0]
+|textcolor<red><a> \x{ |emph<b
+\end{Verbatim}
+\RecustomVerbatimEnvironment{Verbatim}{Verbatim}{commandchars=\\\{\}}
+\begin{Verbatim*}
+\textbf{a b}
+\end{Verbatim*}
+\begin{quote}One\end{quote}
+\begin{quotation}Two\par Three\end{quotation}
+\begin{verse}a \\ b\\ c\end{verse}
+\begin{comment}\end{document} { \undefined\end{comment}
+\begin{titlepage}\begin{center}T\end{center}\end{titlepage}

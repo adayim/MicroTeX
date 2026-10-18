@@ -184,7 +184,7 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
   // these draws as it did there.
   CHECK_EQ(minus(specCommands, engineAll),
            sorted({"(", "[", "\\", "above", "addtocounter", "addtolength", "alph", "Alph", "arabic", "fnsymbol", "gmcurrentlabel",
-                   "gmnewcounter", "stepcounter", "value", "abovewithdelims", "atop", "atopwithdelims",
+                   "gmcodeline", "gmlit", "gmnewcounter", "stepcounter", "value", "abovewithdelims", "atop", "atopwithdelims",
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
