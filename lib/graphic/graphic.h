@@ -249,6 +249,15 @@ public:
   virtual void fillPath(i32 id) = 0;
 
   /**
+   * Stroke the path built since beginPath() with the current colour and
+   * stroke (width, cap and join), the path left open where it was not
+   * closed. A backend that cannot draw a stroked path draws nothing.
+   *
+   * @param id the path id. If the path is not cacheable, it always is -1.
+   */
+  virtual void strokePath(i32 id) { (void)id; }
+
+  /**
    * Set glyph info for the next path to be drawn. Called before beginPath()
    * to associate a glyph ID and codepoint with the upcoming path record.
    * Default implementation is a no-op.

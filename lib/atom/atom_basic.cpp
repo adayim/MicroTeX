@@ -69,6 +69,9 @@ sptr<Box> HlineAtom::createBox(Env& env) {
                      ? Units::fsize(_thicknessUnit, _thickness, env)
                      : env.ruleThickness() * _thicknessScale;
   auto vb = new VBox();
+  const float above = _above.isValid() ? Units::fsize(_above, env) : 0.f;
+  const float below = _below.isValid() ? Units::fsize(_below, env) : 0.f;
+  if (above > 0.f) vb->add(sptrOf<StrutBox>(0.f, above, 0.f, 0.f));
   if (_blank) {
     vb->add(sptrOf<StrutBox>(0.f, drt, 0.f, 0.f));
   } else {
@@ -76,6 +79,7 @@ sptr<Box> HlineAtom::createBox(Env& env) {
     if (_dashed) rule->setDash(Units::fsize(UnitType::em, 0.35f, env));
     vb->add(rule);
   }
+  if (below > 0.f) vb->add(sptrOf<StrutBox>(0.f, below, 0.f, 0.f));
   vb->_type = AtomType::hline;
   return sptr<Box>(vb);
 }

@@ -113,6 +113,9 @@ private:
   MatrixType _matType;
   bool _isPartial;
   bool _spaceAround;
+  // The room between two columns when it is not the engine's 1em: 2\tabcolsep
+  // in a tabular, 2\arraycolsep in an array.
+  Dimen _colSep;
   RowSpacing _spacing = RowSpacing::content;
   // TeX's row spacing applies (it does not in a script), and the em it counts
   // in: that of the text around the matrix, not of the style its cells are in.
@@ -160,6 +163,9 @@ private:
 
   sptr<Box> createBoxInner(Env& env);
 
+  /** createBox() in the style the cells are set in. */
+  sptr<Box> createBoxStyled(Env& env);
+
 public:
   // The color to draw the rule of the matrix
   static color LINE_COLOR;
@@ -193,10 +199,17 @@ public:
 
   /** The width of `tabular*` (`spread`: its columns take up what the text
    *  leaves of it) or `tabularx` (its X columns do). */
+  /** The room between two columns; half of it stands at either edge of a
+   *  table with space around it. */
+  void setColumnSep(const Dimen& between) { _colSep = between; }
+
   void setTableWidth(const Dimen& width, bool spread) {
     _tableWidth = width;
     _spread = spread;
   }
+
+  /** A list's rows are items a column of multicols may break between: its box is marked (`VBox::_flow`). */
+  bool _flow = false;
 
   static void defineColumnSpecifier(const std::string& rep, const std::string& spe);
 };

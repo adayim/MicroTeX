@@ -54,6 +54,11 @@ public:
    * returned.
    */
   static Dimen getDimen(const std::string& lgth);
+
+  /** Asked for the value of a length (`\tabcolsep`) found in a dimension's
+   *  text, by its name without the backslash. The lowering installs it. */
+  using LengthResolver = bool (*)(const std::string& name, Dimen& out);
+  static void setLengthResolver(LengthResolver resolver);
 };
 
 }  // namespace microtex

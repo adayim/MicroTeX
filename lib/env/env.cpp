@@ -1,5 +1,7 @@
 #include "env/env.h"
 
+#include <algorithm>
+
 #include "env/units.h"
 
 using namespace std;
@@ -35,6 +37,15 @@ const MathConsts& Env::mathConsts() const {
 
 float Env::upem() const {
   return _fctx->mathFont().otf().em();
+}
+
+float Env::baselineSkip() const {
+  return em() * (1.f + _lineSpace / upem());
+}
+
+float Env::interline(float prevDepth, float nextHeight) const {
+  const float skip = baselineSkip();
+  return std::max(skip / 12.f, skip - prevDepth - nextHeight);
 }
 
 float Env::em() const {

@@ -12,8 +12,16 @@ float OvalAtom::_diameter = 0.f;
 
 sptr<Box> FBoxAtom::createBox(Env& env) {
   auto base = _base->createBox(env);
-  auto t = env.mathConsts().fractionRuleThickness() * env.scale();
-  auto space = Units::fsize(0.5_em, env);
+  // LaTeX's \fbox: \fboxsep of room inside a frame of \fboxrule.
+  auto t = Units::fsize(_rule, env);
+  auto space = Units::fsize(_sep, env);
+  if (!_frame) {
+    // \colorbox: the room and the colour, with no frame.
+    auto padded = sptrOf<WrapperBox>(base, base->_width, base->_height, base->_depth, Alignment::left);
+    padded->addInsets(space, space, space, space);
+    padded->setBackground(_bg);
+    return padded;
+  }
   if (isTransparent(_bg)) return sptrOf<FramedBox>(base, t, space);
   return sptrOf<FramedBox>(base, t, space, _line, _bg);
 }

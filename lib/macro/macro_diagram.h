@@ -267,19 +267,23 @@ inline void arrowOptions(CommandArgs& args, Warned& warned, const std::string& o
       continue;
     }
     if (name == "color" || name == "draw") {
+      color ink = 0;
       if (given == "none") {
         arrow.phantom = true;
-      } else if (ColorAtom::hasName(given) || (!given.empty() && given[0] == '#')) {
+      } else if (ColorAtom::parseColor(given, ink)) {
         arrow.hasColor = true;
-        arrow.ink = ColorAtom::getColor(given);
+        arrow.ink = ink;
       } else {
         warned.once("\\arrow: " + key + " is not a colour that is defined; it is ignored");
       }
       continue;
     }
-    if (ColorAtom::hasName(key)) {
+    // A key alone is a colour when it is a defined name or an xcolor mix; a
+    // word of hex digits or a number is a key, not a colour.
+    if (color ink = 0; (ColorAtom::hasName(key) || key.find('!') != std::string::npos) &&
+                       ColorAtom::parseColor(key, ink)) {
       arrow.hasColor = true;
-      arrow.ink = ColorAtom::getColor(key);
+      arrow.ink = ink;
       continue;
     }
     LabelSpec probe;

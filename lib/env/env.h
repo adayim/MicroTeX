@@ -87,6 +87,15 @@ public:
   /** The fixed scale */
   inline float fixedScale() const { return _fixedScale; }
 
+  /** TeX's baselineskip here: the distance between the baselines of two lines that are not too tall. It is the
+   *  em of the current size times the grid's `lineheight` (1 + the line space over the em of the text size), so 1.2em at
+   *  the default, 12pt on a 10pt font. */
+  float baselineSkip() const;
+
+  /** What goes between two lines whose first has depth `prevDepth` and whose next has height `nextHeight`: the
+   *  baselineskip glue, or ineskip (a twelfth of it, 1pt at 10pt) where that would leave less. */
+  float interline(float prevDepth, float nextHeight) const;
+
   /** The line space to layout boxes vertically */
   inline float lineSpace() const { return _lineSpace; }
 

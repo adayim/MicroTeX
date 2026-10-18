@@ -1,6 +1,9 @@
 #include "front/expander.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <iterator>
@@ -231,6 +234,14 @@ struct Expander::Impl {
   std::unordered_map<std::string, std::string> theoremWithin;
   // Set after runaway expansion in recover mode: the input ends there.
   bool halted = false;
+  // Between `\foreach` and the `in` after it: the names it loops over are its own, even where the
+  // format has a macro of that name (`\i`, `\j`), as pgf takes them.
+  bool inForeach = false;
+  std::unordered_set<std::string> foreachNames;  // the names some \foreach loops over, read as written from then on
+  // `\tikzset` and `\tikzstyle` so far, as the statements the pictures after them begin with.
+  std::string tikzStyles;
+  // fancyvrb's \DefineVerbatimEnvironment{name}{Verbatim}{options}: name -> (the environment it is, its options).
+  std::unordered_map<std::string, std::pair<std::string, std::string>> verbatimEnvironments;
   // Where the input ends for now (Expander::endInputAt()), and the first
   // token past that, read and held back until the end moves on.
   std::uint32_t limit = UINT32_MAX;
@@ -1387,6 +1398,36 @@ struct Expander::Impl {
     store(*name, std::move(def), true);
   }
 
+  /** `\tikzset{keys}` and `\tikzstyle{name} = [keys]`: kept as text, for the tikzpictures after it,
+   *  which read them first (Expander::tikzStyles()); nothing is drawn. */
+  void tikzStyleCommand(const ExpToken& e) {
+    if (e.tok.text == "tikzset") {
+      tikzStyles += "\\tikzset{" + readArg("\\tikzset") + "}";
+      return;
+    }
+    const std::string name = readArg("\\tikzstyle");
+    ExpToken t = nextNonSpace();
+    if (!isChar(t, '=')) unread(std::move(t));
+    const auto keys = readOptional();
+    tikzStyles += "\\tikzset{" + trim(name) + "/.style={" + (keys ? *keys : std::string()) + "}}";
+  }
+
+  /** fancyvrb's \DefineVerbatimEnvironment{name}{Verbatim}{options} (and \RecustomVerbatimEnvironment): `name` is that
+   *  environment with those options from here on, which the parser reads (Expander::verbatimEnvironment()). Pandoc's
+   *  Highlighting is one. Only the environments of this engine's own can be made over. */
+  void defineVerbatimEnvironment(const ExpToken& e) {
+    const std::string who = "\\" + e.tok.text;
+    const std::string name = trim(readArg(who));
+    const std::string base = trim(readArg(who));
+    const std::string options = readArg(who);
+    if (name.empty()) return;
+    if (base != "Verbatim" && base != "Verbatim*" && base != "alltt") {
+      diags.warn(e.tok.span, who + ": `" + base + "' is not an environment that can be made over (Verbatim is)");
+      return;
+    }
+    verbatimEnvironments[name] = {base, options};
+  }
+
   /** \ce and \pu, a subset of mhchem (front/mhchem.h): the text is read and what
    *  it makes is read in its place. */
   void chemCommand(const ExpToken& e) {
@@ -1397,6 +1438,80 @@ struct Expander::Impl {
       name == "ce" ? mhchem::ce(arg, problem) : mhchem::pu(arg, siUnits, problem);
     if (!problem.empty()) diags.warn(e.tok.span, "\\" + name + ": " + problem);
     pushExpansion("\\ensuremath{" + out + "}", e.tok.span);
+  }
+
+  /** The commands that take xcolor's optional colour model (`\textcolor[rgb]{.2,.4,.6}{x}`, colortbl's `\rowcolor[HTML]{EFEFEF}`). */
+  static bool isModelColourCommand(const std::string& n) {
+    static const std::unordered_set<std::string> names = {"textcolor", "color",  "colorbox",   "fcolorbox",
+                                                           "rowcolor",  "cellcolor", "columncolor", "pagecolor",
+                                                           "arrayrulecolor"};
+    return names.count(n) != 0;
+  }
+
+  /** A colour written in xcolor's model as the `#RRGGBB` every colour argument reads. Anything else is `spec` as it was. */
+  static std::string colourInModel(const std::string& model, const std::string& spec, std::string& problem) {
+    const std::string m = trim(model);
+    if (m == "named" || m.empty()) return spec;
+    std::string text = trim(spec);
+    if (m == "HTML") {
+      if (text.size() != 6 || text.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+        problem = "HTML colour `" + text + "' is not six hexadecimal digits";
+        return spec;
+      }
+      for (char& c : text) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      return "#" + text;
+    }
+    std::vector<double> v;
+    for (std::size_t from = 0; from <= text.size();) {
+      const std::size_t cut = text.find_first_of(",:", from);
+      const std::string part = trim(text.substr(from, cut == std::string::npos ? std::string::npos : cut - from));
+      char* end = nullptr;
+      const double x = std::strtod(part.c_str(), &end);
+      if (part.empty() || end != part.c_str() + part.size()) {
+        problem = "`" + text + "' is not a colour in the " + m + " model";
+        return spec;
+      }
+      v.push_back(x);
+      if (cut == std::string::npos) break;
+      from = cut + 1;
+    }
+    double r = 0, g = 0, b = 0;
+    if (m == "rgb" && v.size() == 3) {
+      r = v[0], g = v[1], b = v[2];
+    } else if (m == "RGB" && v.size() == 3) {
+      r = v[0] / 255.0, g = v[1] / 255.0, b = v[2] / 255.0;
+    } else if (m == "gray" && v.size() == 1) {
+      r = g = b = v[0];
+    } else if (m == "Gray" && v.size() == 1) {
+      r = g = b = v[0] / 15.0;
+    } else if (m == "cmyk" && v.size() == 4) {
+      r = (1 - v[0]) * (1 - v[3]), g = (1 - v[1]) * (1 - v[3]), b = (1 - v[2]) * (1 - v[3]);
+    } else {
+      problem = (m == "rgb" || m == "RGB" || m == "gray" || m == "Gray" || m == "cmyk")
+                  ? "`" + text + "' has the wrong number of components for the " + m + " model"
+                  : "the colour model `" + m + "' is not known";
+      return spec;
+    }
+    const auto byte = [](double x) { return static_cast<int>(std::lround(std::min(1.0, std::max(0.0, x)) * 255.0)); };
+    char buf[16];
+    std::snprintf(buf, sizeof buf, "#%02X%02X%02X", byte(r), byte(g), byte(b));
+    return buf;
+  }
+
+  /** `\textcolor[model]{spec}{text}` and kin: with a model, the colour is passed on as `#RRGGBB`; without, the command goes
+   *  through as it is. */
+  std::optional<bool> colourModelCommand(const ExpToken& e) {
+    ExpToken t = nextNonSpace();
+    const bool bracket = isChar(t, '[');
+    unread(std::move(t));
+    if (!bracket) return false;
+    const std::string model = readOptional().value_or(std::string());
+    const std::string name = e.tok.text, who = "\\" + name;
+    std::string problem, out = who;
+    for (int k = 0; k < (name == "fcolorbox" ? 2 : 1); k++) out += "{" + colourInModel(model, readArg(who), problem) + "}";
+    if (!problem.empty()) diags.warn(e.tok.span, who + ": " + problem);
+    pushExpansion(out, e.tok.span);
+    return true;
   }
 
   static bool isSiunitx(const std::string& n) {
@@ -1415,6 +1530,7 @@ struct Expander::Impl {
     static const std::unordered_set<std::string> names = {
       "newcommand", "renewcommand", "providecommand", "DeclareRobustCommand", "DeclareMathOperator",
       "DeclarePairedDelimiter", "ce", "pu", "newtheorem", "newfontfamily", "newfontface",
+      "tikzset", "tikzstyle", "DefineVerbatimEnvironment", "RecustomVerbatimEnvironment",
       "theoremstyle", "def", "gdef", "edef", "xdef", "@ifstar", "@ifnextchar", "global",
       "expandafter", "noexpand", "futurelet", "let", "newenvironment", "renewenvironment",
       "makeatletter", "makeatother", "begingroup", "endgroup", "begin", "end", "usepackage",
@@ -1424,7 +1540,7 @@ struct Expander::Impl {
       "@ifpackageloaded", "NewDocumentCommand", "RenewDocumentCommand", "ProvideDocumentCommand",
       "DeclareDocumentCommand", "NewDocumentEnvironment", "RenewDocumentEnvironment",
       "ProvideDocumentEnvironment", "DeclareDocumentEnvironment"};
-    return names.count(n) != 0 || isSiunitx(n);
+    return names.count(n) != 0 || isSiunitx(n) || isModelColourCommand(n);
   }
 
   /** The conditionals: each reads a test and then one of two branches. */
@@ -2263,8 +2379,17 @@ struct Expander::Impl {
       siunitxCommand(e);
       return true;
     }
+    if (isModelColourCommand(name) && unshadowed()) return colourModelCommand(e);
     if (name == "newtheorem") {
       declareTheorem(e);
+      return true;
+    }
+    if ((name == "tikzset" || name == "tikzstyle") && unshadowed()) {
+      tikzStyleCommand(e);
+      return true;
+    }
+    if ((name == "DefineVerbatimEnvironment" || name == "RecustomVerbatimEnvironment") && unshadowed()) {
+      defineVerbatimEnvironment(e);
       return true;
     }
     if ((name == "newfontfamily" || name == "newfontface") && unshadowed()) {
@@ -2476,6 +2601,18 @@ struct Expander::Impl {
     while (true) {
       ExpToken e = raw();
       endGlobalAt(e);
+      if (inForeach && e.tok.kind != TokKind::end) {
+        if (e.tok.isControl()) {
+          foreachNames.insert(e.tok.text);
+        } else if (e.tok.isChar(Cat::letter)) {
+          inForeach = false;
+        }
+      } else if (e.tok.isCs("foreach")) {
+        inForeach = true;
+      }
+      if (!foreachNames.empty() && e.tok.isControl() && foreachNames.count(e.tok.text) != 0) {
+        e.tok.noexpand = true;
+      }
       if (e.tok.kind != TokKind::end && e.tok.isControl() && !e.tok.noexpand && consume(e)) {
         carry += e.lead;
         continue;
@@ -2576,12 +2713,28 @@ ExpandedToken Expander::next() {
   return {std::move(e.tok), std::move(e.lead), std::string(e.text)};
 }
 
+const std::string& Expander::tikzStyles() const {
+  return _impl->tikzStyles;
+}
+
+bool Expander::verbatimEnvironment(const std::string& name, std::string& base, std::string& options) const {
+  const auto it = _impl->verbatimEnvironments.find(name);
+  if (it == _impl->verbatimEnvironments.end()) return false;
+  base = it->second.first;
+  options = it->second.second;
+  return true;
+}
+
 void Expander::endInputAt(std::uint32_t offset) {
   _impl->endInputAt(offset);
 }
 
 void Expander::setCatcode(c32 ch, Cat cat) {
   _impl->cats.set(ch, cat);
+}
+
+void Expander::pushText(const std::string& text, const SourceSpan& at) {
+  _impl->pushExpansion(text, at);
 }
 
 Cat Expander::catcode(c32 ch) const {

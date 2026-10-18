@@ -165,6 +165,17 @@ public:
   /** Change a catcode from the next token on, for every source being read
    *  (the parser reads a URL with `%` as a character this way). */
   void setCatcode(c32 ch, Cat cat);
+
+  /** `text` is read next, as if it stood in the input here: its macros are expanded, with the definitions the input
+   *  has made so far. The parser puts the code of an `alltt` back this way. */
+  void pushText(const std::string& text, const SourceSpan& at);
+
+  /** Whether `name` was made a verbatim environment by \DefineVerbatimEnvironment, and if so the environment it is
+   *  and the options it has. */
+  bool verbatimEnvironment(const std::string& name, std::string& base, std::string& options) const;
+
+  /** The `\tikzset` and `\tikzstyle` read so far, as statements: what a tikzpicture begins with. */
+  const std::string& tikzStyles() const;
   Cat catcode(c32 ch) const;
 
 private:

@@ -165,7 +165,11 @@ private:
                       std::vector<NodeId>& items, bool& consumedRest);
   NodeId parseArgument(const ArgSpec& spec, Mode mode, const std::string& who);
   NodeId parseRawArgument(const ArgSpec& spec, const std::string& who);
-  NodeId parseVerb();
+  NodeId parseVerb(bool braces = false);
+  /** An argument of a listing -- `[options]`, minted's `{language}` -- on the line of its \begin, read as the
+   *  characters it is: the body that follows is not LaTeX, and the expander must not meet its first token
+   *  (`\end{document}`) in looking for a `[`. */
+  NodeId parseVerbatimArgument(bool optional);
   std::string readVerbatim(const std::string& name, const SourceSpan& at);
   NodeId parseTokens(std::vector<ExpandedToken> tokens, Mode mode, SourceSpan at, std::size_t origin);
   NodeId parseGroupAfterOpen(const ExpandedToken& open, Mode mode);

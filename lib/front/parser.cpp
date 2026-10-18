@@ -1,6 +1,9 @@
 #include "front/parser.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <utility>
 
 #include "utils/utf.h"
@@ -691,34 +694,28 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
     if (name == "caption") {
       // A line of text, ended as the prelude used to end it, with a line
       // break. A document also starts it on a line of its own (lower.cpp).
-      // Its star (no number, and a table has none to give) is read and
-      // means nothing here.
-      if (isOther(peek().tok, '*')) next();
+      // Its star is a caption with no label and no number, as in LaTeX.
+      if (isOther(peek().tok, '*')) {
+        next();
+        n.star = true;
+      }
       std::vector<NodeId> args;
       for (const ArgSpec& a : spec->args) args.push_back(parseArgument(a, Mode::text, who));
       items.push_back(_ast.add(std::move(n), args));
       return lineBreak(at, mode);
     }
-    if (name == "ref" || name == "pageref" || name == "eqref" || isCitation(name) ||
-        name == "footnote") {
+    if (name == "ref" || name == "pageref" || name == "eqref" || isCitation(name) || isCrossReference(name)) {
       std::vector<NodeId> args;
       for (const ArgSpec& a : spec->args) args.push_back(parseArgument(a, mode, who));
       const Node& last = _ast.node(args.back());
       const std::string key = trim(last.raw);
       if (!last.flag) {
         // No argument at all: parseArgument() has said so.
-      } else if (name == "footnote") {
-        _diags.warn(at, "\\footnote has no page to put a note on: its text is drawn here");
-      } else if (isCitation(name)) {
-        // What natbib draws for its own: \citet names an author it does
-        // not have, \citealp drops the brackets.
-        const std::string drawn = name == "citet" ? "(author?) [?]" : name == "citealp" ? "?" : "[?]";
-        _diags.warn(at, "citation `" + key + "' is undefined: drawn as " + drawn);
       } else if (name == "pageref") {
         _diags.warn(at, "reference `" + key + "' is undefined: drawn as ??");
       }
-      // \ref and \eqref name a label, which may come after them: the
-      // lowering, which sees them all, says which are undefined.
+      // \ref, \eqref and \cite name a label or a \bibitem, which may come
+      // after them: the lowering, which sees them all, says which are undefined.
       return _ast.add(std::move(n), args);
     }
     if (name == "par") {
@@ -742,7 +739,7 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
       return _ast.add(std::move(n), args);
     }
     if (name == "cmidrule") {
-      // booktabs' \cmidrule[width](trim){a-b}: the rule of \cline{a-b};
+      // booktabs' \cmidrule[width](trim){a-b}: a light rule across the columns a to b;
       // its width and trims have nothing to act on here.
       if (isOther(peekNonSpace().tok, '[')) {
         nextNonSpace();
@@ -759,7 +756,6 @@ NodeId Parser::parseCommand(ExpandedToken t, Mode mode, const Stop& stop,
           if (isOther(u.tok, ')')) break;
         }
       }
-      n.text = "cline";
     }
     if (isRule(n.text) || name == "intertext") {
       std::vector<NodeId> args;
@@ -951,7 +947,8 @@ NodeId Parser::parseArgument(const ArgSpec& spec, Mode mode, const std::string& 
 }
 
 NodeId Parser::parseRawArgument(const ArgSpec& spec, const std::string& who) {
-  if (spec.kind == ArgKind::verb) return parseVerb();
+  // listings' \lstinline and minted's \mintinline also take their code in braces.
+  if (spec.kind == ArgKind::verb) return parseVerb(who == "\\lstinline" || who == "\\mintinline");
   Node arg;
   arg.kind = NodeKind::argument;
   arg.mode = Mode::text;
@@ -1026,9 +1023,131 @@ namespace {
  *  comment, a space to collapse or a line end to join. */
 const std::string kVerbatimChars = "\\%#_^~&${} \t\r\n";
 
+/** `text` with its tabs as spaces: to the next multiple of `width` columns, as listings and fancyvrb set them, or one
+ *  space each when `width` is 0, as LaTeX's own `verbatim` does. */
+std::string withoutTabs(const std::string& text, std::size_t width) {
+  if (text.find('\t') == std::string::npos) return text;
+  std::string out;
+  std::size_t column = 0;
+  for (const char c : text) {
+    if (c == '\n') {
+      column = 0;
+      out += c;
+    } else if (c == '\t') {
+      const std::size_t n = width == 0 ? 1 : width - column % width;
+      out.append(n, ' ');
+      column += n;
+    } else {
+      out += c;
+      if ((static_cast<unsigned char>(c) & 0xC0) != 0x80) column++;   // a UTF-8 continuation byte is no column
+    }
+  }
+  return out;
+}
+
+/** The `key=value` items of fancyvrb's and listings' options, split at the commas that are not in braces. A backslash
+ *  makes the next character a unit of its own (`commandchars=\\\{\}` has no braces to count). */
+std::vector<std::pair<std::string, std::string>> optionItems(const std::string& options) {
+  std::vector<std::string> items{""};
+  int depth = 0;
+  for (std::size_t i = 0; i < options.size(); i++) {
+    const char c = options[i];
+    if (c == '\\' && i + 1 < options.size()) {
+      items.back() += c;
+      items.back() += options[++i];
+      continue;
+    }
+    if (c == '{') depth++;
+    if (c == '}') depth--;
+    if (c == ',' && depth <= 0) {
+      items.emplace_back();
+    } else {
+      items.back() += c;
+    }
+  }
+  std::vector<std::pair<std::string, std::string>> out;
+  for (const std::string& item : items) {
+    const std::size_t eq = item.find('=');
+    if (eq == std::string::npos) continue;
+    std::string value = trim(item.substr(eq + 1));
+    if (value.size() > 2 && value.front() == '{' && value.back() == '}') value = value.substr(1, value.size() - 2);
+    out.emplace_back(trim(item.substr(0, eq)), value);
+  }
+  return out;
+}
+
+/** The three characters fancyvrb's `commandchars` names -- the one that starts a command, the one that opens a group,
+ *  the one that closes it -- each written as itself or after a backslash (`\\\{\}` is `\`, `{`, `}`). */
+bool commandCharacters(const std::string& value, char (&chars)[3]) {
+  std::string found;
+  for (std::size_t i = 0; i < value.size() && found.size() < 3; i++) {
+    if (value[i] == '\\' && i + 1 < value.size()) i++;
+    found += value[i];
+  }
+  if (found.size() != 3) return false;
+  for (int i = 0; i < 3; i++) chars[i] = found[static_cast<std::size_t>(i)];
+  return true;
+}
+
+std::string hexOf(const std::string& text) {
+  static const char digits[] = "0123456789abcdef";
+  std::string out;
+  for (const char c : text) {
+    out += digits[(static_cast<unsigned char>(c) >> 4) & 0xF];
+    out += digits[static_cast<unsigned char>(c) & 0xF];
+  }
+  return out;
+}
+
+/** One line of code whose commands act, as LaTeX for the expander and the parser to read, which they do with the
+ *  characters that are special in text (`% # _ ^ ~ & $`, the space) plain, as alltt and fancyvrb make them. The escape
+ *  character starts a command, the opening and closing characters make groups, and every other character stands for
+ *  itself: a command's arguments are what was typed, `\textcolor{red}{x}` has the colour red. What cannot stand for
+ *  itself -- a backslash or a brace that is not a command's (`\{`, or one the commandchars leave alone), and the
+ *  characters escaped with a backslash -- is `\gmlit{hex}`, set as typed. A group left open is closed (`unclosed`), a
+ *  closing character with nothing open is text. */
+std::string commandsLine(const std::string& line, const char (&chars)[3], bool visibleSpaces, bool& unclosed) {
+  std::string out;
+  int depth = 0;
+  const auto literal = [&](const char c) { out += "\\gmlit{" + hexOf(std::string(1, c)) + "}"; };
+  for (std::size_t i = 0; i < line.size(); i++) {
+    const char c = line[i];
+    if (c == chars[0] && i + 1 < line.size()) {
+      const char n = line[i + 1];
+      if (chars[0] == '\\' && n != '\0' && std::strchr("{}%#_$&", n) != nullptr) {
+        literal(n);
+        i++;
+        continue;
+      }
+      out += '\\';
+      if (std::isalpha(static_cast<unsigned char>(n)) != 0) {
+        while (i + 1 < line.size() && std::isalpha(static_cast<unsigned char>(line[i + 1])) != 0) out += line[++i];
+      } else {
+        out += line[++i];
+        while (i + 1 < line.size() && (static_cast<unsigned char>(line[i + 1]) & 0xC0) == 0x80) out += line[++i];
+      }
+    } else if (c == chars[1]) {
+      out += '{';
+      depth++;
+    } else if (c == chars[2] && depth > 0) {
+      out += '}';
+      depth--;
+    } else if (c == '\\' || c == '{' || c == '}') {
+      literal(c);
+    } else if (c == ' ' && visibleSpaces) {
+      out += "\xe2\x90\xa3";
+    } else {
+      out += c;
+    }
+  }
+  unclosed = depth > 0;
+  out.append(static_cast<std::size_t>(depth), '}');
+  return out;
+}
+
 }  // namespace
 
-NodeId Parser::parseVerb() {
+NodeId Parser::parseVerb(bool braces) {
   Node arg;
   arg.kind = NodeKind::argument;
   arg.mode = Mode::text;
@@ -1048,15 +1167,63 @@ NodeId Parser::parseVerb() {
   if (noDelimiter) {
     _diags.warn(arg.span, "\\verb needs a delimiter: an empty text is used");
   } else {
-    const std::string delimiter = d.text;
+    // `{code}`: the braces pair, so a brace inside the code (`{a{b}c}`) does not end it.
+    const bool paired = braces && d.text == "{";
+    const std::string delimiter = paired ? "}" : d.text;
+    int depth = 0;
     while (true) {
       ExpandedToken u = next();
       if (u.tok.kind == TokKind::end || u.text == "\n" || u.text == "\r") {
         _diags.warn(arg.span, "\\verb is not closed on its line: " + delimiter + " inserted");
         break;
       }
-      if (u.text == delimiter) break;
+      if (paired && u.text == "{") depth++;
+      if (u.text == delimiter) {
+        if (depth == 0) break;
+        depth--;
+      }
       arg.raw += u.text;
+    }
+  }
+  return _ast.add(std::move(arg), {});
+}
+
+NodeId Parser::parseVerbatimArgument(bool optional) {
+  Node arg;
+  arg.kind = NodeKind::argument;
+  arg.mode = Mode::text;
+  arg.text = optional ? "R" : "r";
+  const CatcodesAsOther verbatim(_in, kVerbatimChars);
+  const std::string open = optional ? "[" : "{", close = optional ? "]" : "}";
+  // Spaces before it are skipped, a line end is not: it is the body's first.
+  std::vector<ExpandedToken> held;
+  ExpandedToken t = next();
+  while (t.tok.kind == TokKind::character && (t.text == " " || t.text == "\t")) {
+    held.push_back(std::move(t));
+    t = next();
+  }
+  arg.span = t.tok.span;
+  if (t.tok.kind == TokKind::character && t.text == open) {
+    arg.flag = true;
+    int braces = 0;
+    while (true) {
+      ExpandedToken u = next();
+      if (u.tok.kind == TokKind::end || u.text == "\n" || u.text == "\r") {
+        _diags.warn(arg.span, "the argument in " + open + close + " is not closed on its line: " + close + " inserted");
+        unread(std::move(u));
+        break;
+      }
+      if (u.text == "{") braces++;
+      if (u.text == "}") braces--;
+      if (u.text == close && (optional ? braces <= 0 : braces < 0)) break;
+      arg.raw += u.text;
+    }
+  } else {
+    if (!optional) _diags.warn(arg.span, "a required argument in { } is missing");
+    unread(std::move(t));
+    while (!held.empty()) {
+      unread(std::move(held.back()));
+      held.pop_back();
     }
   }
   return _ast.add(std::move(arg), {});
@@ -1081,7 +1248,12 @@ std::string Parser::readVerbatim(const std::string& name, const SourceSpan& at) 
     }
   }
   if (!closed) _diags.warn(at, "missing \\end{" + name + "} inserted");
-  // The line end after \begin{verbatim} and the one before \end are not text.
+  // The line end after \begin{verbatim} and the one before \end are not text. A listing also drops the spaces left
+  // on its \begin line after the options, as listings does.
+  if (name != "verbatim" && name != "verbatim*") {
+    const std::size_t blank = body.find_first_not_of(" \t");
+    if (blank != std::string::npos && body[blank] == '\n') body.erase(0, blank);
+  }
   if (!body.empty() && body.front() == '\n') body.erase(0, 1);
   if (!body.empty() && body.back() == '\n') body.pop_back();
   return body;
@@ -1280,6 +1452,15 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
   n.mode = mode;
   n.span = at;
   n.text = name;
+  // fancyvrb's \DefineVerbatimEnvironment made `name` a Verbatim with options of its own (pandoc's Highlighting).
+  std::string defined;
+  {
+    std::string base;
+    if (_in.verbatimEnvironment(name, base, defined)) {
+      spec = findEnvironment(base);
+      n.text = base;
+    }
+  }
   if (spec == nullptr && name.size() > 1 && name.back() == '*') {
     // A starred environment is its plain form; amsmath's star turns off
     // its numbering, which the lowering reads from the node.
@@ -1314,7 +1495,10 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
   const Mode cellMode = n.flag ? Mode::text : Mode::math;
   std::vector<NodeId> kids;
   if (spec != nullptr) {
-    for (const ArgSpec& a : spec->args) kids.push_back(parseArgument(a, mode, "\\begin{" + name + "}"));
+    for (const ArgSpec& a : spec->args) {
+      kids.push_back(spec->body == EnvBody::verbatim ? parseVerbatimArgument(a.optional)
+                                                     : parseArgument(a, mode, "\\begin{" + name + "}"));
+    }
   }
   if (spec != nullptr && spec->body == EnvBody::text) {
     // Paragraphs, in text whatever the mode around it: a blank line in a
@@ -1325,7 +1509,57 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
   }
 
   if (spec != nullptr && spec->body == EnvBody::verbatim) {
-    n.raw = readVerbatim(name, at);
+    // The options (`[tabsize=4, commandchars=\\\{\}]`) are fancyvrb's, listings' and minted's.
+    std::string options = defined;
+    if (!spec->args.empty() && spec->args.front().optional && !kids.empty()) options += "," + _ast.node(kids.front()).raw;
+    // A tab goes to the next multiple of 8 columns in listings and fancyvrb, and is one space in plain verbatim.
+    const std::string& kind = n.text;
+    std::size_t tabs = kind == "verbatim" || kind == "verbatim*" ? 0 : 8;
+    char chars[3] = {'\\', '{', '}'};
+    bool commands = kind == "alltt";
+    for (const auto& option : optionItems(options)) {
+      if (option.first == "tabsize") {
+        const long width = std::strtol(option.second.c_str(), nullptr, 10);   // out of range: LONG_MAX, capped below
+        if (width > 0 && tabs != 0) tabs = static_cast<std::size_t>(std::min(width, 64L));
+      }
+      if (option.first == "commandchars" && (kind == "Verbatim" || kind == "Verbatim*")) {
+        commands = commandCharacters(option.second, chars);
+        if (!commands) _diags.warn(at, "commandchars needs three characters: `" + option.second + "' is ignored");
+      }
+    }
+    n.raw = withoutTabs(readVerbatim(name, at), tabs);
+    // The commands in the code act, with the macros the input has defined, so the code goes back to the expander as
+    // LaTeX (commandsLine()) and is read as the body of the environment. (Not when a token is waiting to be read first:
+    // it would stand before the code.)
+    if (commands && _ahead.empty()) {
+      std::string lines;
+      bool warned = false;
+      std::size_t from = 0;
+      while (true) {
+        const std::size_t to = n.raw.find('\n', from);
+        const std::string line = n.raw.substr(from, to == std::string::npos ? std::string::npos : to - from);
+        bool open = false;
+        const std::string tex = commandsLine(line, chars, kind.back() == '*', open);
+        if (open && !warned) {
+          _diags.warn(at, "a group is left open on a line of the code: closed at its end");
+          warned = true;
+        }
+        lines += "\\gmcodeline{" + (tex.empty() ? "\\gmlit{20}" : tex) + "}";
+        if (to == std::string::npos) break;
+        from = to + 1;
+      }
+      _in.pushText(lines + "\\end{" + name + "}", at);
+      n.aux = 1;
+      // The code is read with its specials plain, and set as typed: no dashes or quotes made of its hyphens and quotes.
+      const CatcodesAsOther plain(_in, "%#_^~&$ \t");
+      const Scoped typed(_monospace, true);
+      const Scoped text(_prose, false);
+      const std::size_t put = _consumed;
+      kids.push_back(parseTextBody(name, at));
+      // What was put back is not in the source an enclosing argument is recorded as (a footnote's text is read again
+      // from it): the code as typed is, which readVerbatim() read. The arguments of the commands in it have their text.
+      while (!_log.empty() && _log.back().index >= put) _log.pop_back();
+    }
     return _ast.add(std::move(n), kids);
   }
   const std::size_t mark = startRecording();
@@ -1375,6 +1609,8 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
       }
       // The body is everything before this \end.
       n.raw = stopRecording(mark, used);
+      // A picture starts from the styles set before it.
+      if (name == "tikzpicture" && !_in.tikzStyles().empty()) n.raw = _in.tikzStyles() + n.raw;
       return _ast.add(std::move(n), kids);
     }
   }

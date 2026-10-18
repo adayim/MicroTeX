@@ -1,6 +1,7 @@
 #include "front/front.h"
 
 #include <cctype>
+#include <cstring>
 #include <utility>
 
 #include "core/formula.h"
@@ -67,15 +68,24 @@ using BodyRange = std::pair<std::uint32_t, std::uint32_t>;
 // starts there. An unclosed one runs to the end of the input; a \verb to the
 // end of its line.
 std::size_t verbatimEnd(const std::string& s, std::size_t i) {
-  static const std::string names[] = {"\\begin{verbatim}", "\\begin{verbatim*}"};
+  static const std::string names[] = {"\\begin{verbatim}", "\\begin{verbatim*}", "\\begin{lstlisting}",
+                                      "\\begin{minted}", "\\begin{Verbatim}", "\\begin{Verbatim*}", "\\begin{comment}"};
   for (const std::string& open : names) {
     if (s.compare(i, open.size(), open) != 0) continue;
     const std::string close = "\\end{" + open.substr(7);
     const std::size_t at = s.find(close, i + open.size());
     return at == std::string::npos ? s.size() : at + close.size();
   }
-  if (s.compare(i, 5, "\\verb") != 0) return i;
-  std::size_t j = i + 5;
+  // \verb, and fancyvrb's and listings' inline forms (without options before the delimiter).
+  std::size_t j = i;
+  for (const char* name : {"\\verb", "\\Verb", "\\lstinline"}) {
+    const std::size_t n = std::strlen(name);
+    if (s.compare(i, n, name) == 0) {
+      j = i + n;
+      break;
+    }
+  }
+  if (j == i) return i;
   if (j < s.size() && std::isalpha(static_cast<unsigned char>(s[j])) != 0) return i;  // \verbatim
   if (j < s.size() && s[j] == '*') j++;
   while (j < s.size() && s[j] == ' ') j++;

@@ -98,6 +98,8 @@ public:
    *  breaker breaks each one that is too wide. Any other VBox -- a
    *  fraction, \underline, an accent -- is one box to it, as in TeX. */
   bool _rows = false;
+  /** A list's items: one box, but a column of multicols may break between its rows. */
+  bool _flow = false;
 
   VBox() : _leftMostPos(F_MAX), _rightMostPos(F_MIN) {}
 

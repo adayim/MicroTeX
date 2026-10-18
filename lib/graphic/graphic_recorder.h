@@ -25,7 +25,8 @@ public:
 // One recorded draw operation
 struct DrawRecord {
     enum Type {
-        GLYPH, LINE, RECT, FILL_RECT, ROUND_RECT, FILL_ROUND_RECT, PATH, TEXT, MARK, IMAGE
+        GLYPH, LINE, RECT, FILL_RECT, ROUND_RECT, FILL_ROUND_RECT, PATH, TEXT, MARK, IMAGE,
+        STROKE_PATH
     };
     Type type = GLYPH;
 
@@ -59,6 +60,8 @@ struct DrawRecord {
     float width = 0, height = 0;
     float rx = 0, ry = 0;
     float line_width = 1.0f;
+    // For STROKE_PATH: the stroke's cap and join, as the Cap and Join enums.
+    int cap = 0, join = 0;
 
     // For PATH: stored as a list of segments
     struct PathSegment {
@@ -110,6 +113,7 @@ public:
     void quadTo(float x1, float y1, float x2, float y2) override;
     void closePath() override;
     void fillPath(i32 id) override;
+    void strokePath(i32 id) override;
     void setPathGlyphInfo(i32 glyphId, c32 codepoint) override;
 
     void drawLine(float x1, float y1, float x2, float y2) override;

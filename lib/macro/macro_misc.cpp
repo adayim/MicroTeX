@@ -23,7 +23,17 @@ cmdmacro(longdiv) {
 }
 
 cmdmacro(hvspace) {
-  auto [value, unit] = Units::getDimen(args.text(1));
+  // Glue: `1cm plus 5pt minus 2pt` is the natural 1cm here, where a trailing word made the unit unknown.
+  std::string natural = args.text(1);
+  for (const char* word : {"plus", "minus"}) {
+    for (std::size_t p = natural.find(word); p != std::string::npos; p = natural.find(word, p + 1)) {
+      if (p > 0 && std::isspace(static_cast<unsigned char>(natural[p - 1])) != 0) {
+        natural.erase(p);
+        break;
+      }
+    }
+  }
+  auto [value, unit] = Units::getDimen(natural);
   return args.text(0)[0] == 'h' ? sptrOf<SpaceAtom>(unit, value, 0.f, 0.f)
                            : sptrOf<SpaceAtom>(unit, 0.f, value, 0.f);
 }

@@ -7,6 +7,7 @@
 #include "atom/atom_basic.h"
 #include "atom/atom_font.h"
 #include "atom/atom_row.h"
+#include "atom/atom_vrow.h"
 #include "core/formula.h"
 #include "core/glue.h"
 #include "core/split.h"
@@ -39,6 +40,7 @@ void MatrixAtom::defineColumnSpecifier(const string& rep, const string& spe) {
 void MatrixAtom::resetDefinitions() {
   _colspeReplacement.clear();
   LINE_COLOR = transparent;
+  gArrayRuleColor = transparent;
 }
 
 namespace {
@@ -335,7 +337,7 @@ vector<float> MatrixAtom::getColumnSep(Env& env, float width) {
   switch (_matType) {
     case MatrixType::array: {
       // Array: (hsep_col/2 or 0) elem hsep_col elem hsep_col ... hsep_col elem (hsep_col/2 or 0)
-      Hsep = _hsep.createBox(env);
+      Hsep = (_colSep.isValid() ? SpaceAtom(_colSep.unit, _colSep.val, 0.f, 0.f) : _hsep).createBox(env);
       for (int i = 0; i < cols; i++) {
         if (_position[i] == Alignment::none) {
           arr[i] = arr[i + 1] = 0;
@@ -670,7 +672,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
         const float w = Units::fsize(pw->second, env);
         if (w > 0) {
           auto cell = boxarr[i][j];
-          auto [wasSplit, splitBox] = BoxSplitter::split(cell, w, env.lineSpace());
+          auto [wasSplit, splitBox] = BoxSplitter::split(cell, w, env.baselineSkip());
           (void)wasSplit;
           boxarr[i][j] = alignedCell(splitBox, w, lineAlign(j));
         }
@@ -763,7 +765,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
             MergeTextGuard guard(true);
             cell = env.withTextWidth(xw, [&](Env& e) { return cellBox(atom, j, e); });
           }
-          const auto [wasSplit, splitBox] = BoxSplitter::split(cell, xw, env.lineSpace());
+          const auto [wasSplit, splitBox] = BoxSplitter::split(cell, xw, env.baselineSkip());
           (void)wasSplit;
           boxarr[i][j] = alignedCell(splitBox, xw, lineAlign(j));
           made = true;
@@ -793,6 +795,31 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       const float strut = 1.2f * _baseEm * _matrix->_stretch;
       for (int i = 0; i < rows; i++) {
         if (isRule(i)) continue;
+        // A paragraph in a cell (p{}, X) ends in a strut of the row's, as array's \@finalstrut makes it: the last
+        // line is at least 0.3 of a baselineskip deep, so the rule under it stands that far below its text.
+        for (int j = 0; j < cols; j++) {
+          const auto& cell = boxarr[i][j];
+          if (cell == nullptr || cell->_type == AtomType::multiRow) continue;
+          // The paragraph is the one box with size in what wraps it (an HBox of it and a strut).
+          const sptr<Box>* inner = &cell;
+          while (const auto* h = dynamic_cast<const HBox*>(inner->get())) {
+            const sptr<Box>* only = nullptr;
+            int sized = 0;
+            for (const auto& child : h->_children) {
+              if (child->_height + child->_depth <= 0.f) continue;
+              only = &child;
+              sized++;
+            }
+            if (sized != 1) break;
+            inner = only;
+          }
+          const auto* lines = dynamic_cast<const VBox*>(inner->get());
+          // A paragraph (the lines a p{} or X cell was broken into), not a fraction or a stack.
+          if (lines == nullptr || !(lines->_lines || lines->_rows) || lines->_children.size() < 2) continue;
+          const float extra = std::max(0.f, 0.3f * strut - lines->_children.back()->_depth);
+          cell->_depth += extra;
+          lineDepth[i] = max(lineDepth[i], cell->_depth);
+        }
         lineHeight[i] = max(lineHeight[i], 0.7f * strut);
         lineDepth[i] = max(lineDepth[i], 0.3f * strut);
       }
@@ -835,6 +862,12 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   _tagReserve = tagWidth > 0 ? tagWidth + tagGap : 0.f;
   const bool centred = _matType == MatrixType::align || _matType == MatrixType::alignAt;
   const float leftShift = centred && env.textWidth() != POS_INF ? _tagReserve : 0.f;
+  // A display of align's kind (`equation` is one row of align): what TeX centres is the formula, the number apart; the
+  // matrix is as wide as the line, spread across it, and the formula is not.
+  if (centred) {
+    gDisplayFormulaWidth = matW;
+    gDisplayNumberWidth = tagWidth;
+  }
 
   // The horizontal separator's width
   vector<float> Hsep = getColumnSep(env, matW);
@@ -894,6 +927,8 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
   auto vb = sptrOf<VBox>();
   float totalHeight = 0;
+  float firstBaseline = 0, lastBaseline = 0;
+  bool seenRow = false;
 
   for (int i = 0; i < rows; i++) {
     auto hb = sptrOf<HBox>();
@@ -961,7 +996,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
         case AtomType::hline: {
           auto* at = (HlineAtom*)_matrix->_array[i][j].get();
-          at->setColor(LINE_COLOR);
+          if (isTransparent(at->ruleColor())) at->setColor(LINE_COLOR);   // its own colour, from when it was made
           if (i >= 1 && dynamic_cast<HlineAtom*>(_matrix->_array[i - 1][j].get()) != nullptr) {
             hb->add(sptrOf<StrutBox>(0.f, 2 * drt, 0.f, 0.f));
           }
@@ -1009,12 +1044,26 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       hb->_height = lineHeight[i] + padTop[i];
       hb->_depth = lineDepth[i] + padBot[i];
     }
+    // Where the baseline of the first and of the last row stand, from the top.
+    if (boxarr[i][0]->_type != AtomType::hline) {
+      const float at = vb->_height + vb->_depth + hb->_height;
+      if (!seenRow) firstBaseline = at;
+      lastBaseline = at;
+      seenRow = true;
+    }
     vb->add(hb);
   }
 
   totalHeight = vb->_height + vb->_depth;
 
   const auto axis = env.axisHeight();
+  if (_matrix->_vpos != 'c' && seenRow) {
+    // tabular[t] and [b]: the baseline of the first row or of the last.
+    const float baseline = _matrix->_vpos == 't' ? firstBaseline : lastBaseline;
+    vb->_height = baseline;
+    vb->_depth = totalHeight - baseline;
+    return vb;
+  }
   vb->_height = totalHeight / 2 + axis;
   vb->_depth = totalHeight / 2 - axis;
 
@@ -1022,6 +1071,14 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 }
 
 sptr<Box> MatrixAtom::createBox(Env& env) {
+  sptr<Box> box = createBoxStyled(env);
+  if (_flow) {
+    if (const auto rows = std::dynamic_pointer_cast<VBox>(box)) rows->_flow = true;
+  }
+  return box;
+}
+
+sptr<Box> MatrixAtom::createBoxStyled(Env& env) {
   _baseEm = env.em();
   _texRows = _spacing == RowSpacing::sub ||
              (_spacing != RowSpacing::content && env.style() < TexStyle::script);
@@ -1183,10 +1240,14 @@ sptr<Box> MultlineAtom::createBox(Env& env) {
   // A line of the measure's width, with the row's number or \tag flush at
   // its right end.
   const auto line = [&](size_t row, const sptr<Atom>& a, Alignment al) -> sptr<Box> {
-    auto box = sptrOf<HBox>(a->createBox(env), tw, al);
+    const sptr<Box> formula = a->createBox(env);
+    auto box = sptrOf<HBox>(formula, tw, al);
     const auto tag = _column->_rowTags.find(static_cast<int>(row));
     if (tag == _column->_rowTags.end() || tag->second == nullptr) return box;
     auto number = tag->second->createBox(env);
+    // (The number, and the formula it belongs to, for the display skips: see DisplayAtom.)
+    gDisplayFormulaWidth = formula->_width;
+    gDisplayNumberWidth = number->_width;
     auto both = sptrOf<HBox>();
     both->add(box);
     both->add(sptrOf<StrutBox>(-number->_width, 0.f, 0.f, 0.f));

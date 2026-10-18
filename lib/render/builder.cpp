@@ -53,8 +53,7 @@ Render* RenderBuilder::build(const sptr<Atom>& fc) {
     HBox* hb;
     bool isBoxSplit = false;
     if (!_lineSpace.isEmpty()) {
-      auto space = Units::fsize(_lineSpace, env);
-      auto [isSplit, split] = BoxSplitter::split(box, env.textWidth(), space);
+      auto [isSplit, split] = BoxSplitter::split(box, env.textWidth(), env.baselineSkip());
       isBoxSplit = isSplit;
       hb = new HBox(split, _fillWidth ? env.textWidth() : split->_width, _align);
     } else {

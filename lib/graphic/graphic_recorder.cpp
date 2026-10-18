@@ -187,6 +187,18 @@ void Graphics2D_Recorder::fillPath(i32) {
     _records.push_back(std::move(rec));
 }
 
+void Graphics2D_Recorder::strokePath(i32) {
+    DrawRecord rec;
+    rec.type = DrawRecord::STROKE_PATH;
+    rec.col = _currentColor;
+    rec.path_segments = std::move(_currentPath);
+    rec.line_width = _currentStroke.lineWidth * 0.5f * (this->sx() + this->sy());
+    rec.cap = static_cast<int>(_currentStroke.cap);
+    rec.join = static_cast<int>(_currentStroke.join);
+    _currentPath.clear();
+    _records.push_back(std::move(rec));
+}
+
 void Graphics2D_Recorder::setPathGlyphInfo(i32 glyphId, c32 codepoint) {
     _pendingPathGlyphId = glyphId;
     _pendingPathCodepoint = codepoint;

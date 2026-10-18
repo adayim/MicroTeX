@@ -6,9 +6,17 @@
 
 #include "atom/atom.h"
 #include "atom/atom_space.h"
+#include "box/box_group.h"
 #include "env/units.h"
+#include "graphic/graphic_basic.h"
 
 namespace microtex {
+
+/** The width of the formula of a numbered display, and of its number, as the layout of the display finds them: where the number
+ *  is laid out (a matrix or a multline with a tag) these are set, and DisplayAtom reads them right after, so that TeX's choice
+ *  of display skips -- by where the formula starts, not by the measure the number makes the row -- can be made. */
+inline thread_local float gDisplayFormulaWidth = -1.f;
+inline thread_local float gDisplayNumberWidth = 0.f;
 
 /** An atom representing a vertical row of other atoms. */
 class VRowAtom : public Atom {
@@ -58,6 +66,8 @@ class DisplayAtom : public Atom {
 private:
   sptr<Atom> _base;
   Alignment _align;
+  bool _equation = false, _interrupts = false, _fullWidth = false;
+  float _innerWidth = 0;
 
 public:
   /** `align`: centred (a display, \centering) or to the right
@@ -66,6 +76,21 @@ public:
       : _base(base), _align(align) {}
 
   Alignment alignment() const { return _align; }
+
+  /** A display equation, which TeX sets off from the lines round it by the display skips (VRowAtom decides which);
+   *  `interrupts`: text of its paragraph stands before it, so the width of that line chooses between the long skips
+   *  and the short ones. */
+  void asEquation(bool interrupts, bool fullWidth = false) {
+    _fullWidth = fullWidth;
+    _equation = true;
+    _interrupts = interrupts;
+  }
+  bool isEquation() const { return _equation; }
+  bool interrupts() const { return _interrupts; }
+  /** An alignment fills the line, so it starts at its left edge, and its skips are the long ones after any text. */
+  bool fullWidth() const { return _fullWidth; }
+  /** The width of what the display holds (known once it has its box): where it starts in the line follows from it. */
+  float innerWidth() const { return _innerWidth; }
 
   sptr<Box> createBox(Env& env) override;
 };
@@ -89,6 +114,78 @@ public:
   MinipageAtom(const sptr<Atom>& body, const Dimen& width, char position, const Dimen& height,
                char inner)
       : _body(body), _width(width), _position(position), _height(height), _inner(inner) {}
+
+  sptr<Box> createBox(Env& env) override;
+};
+
+/** A body set between margins, as LaTeX's quote, quotation and verse set theirs (lists whose margins are \leftmargin
+ *  of 2.5em): narrower than the line by `left` and `right` em of the text around, and `left` in from its left edge. */
+class IndentAtom : public Atom {
+private:
+  sptr<Atom> _body;
+  float _left, _right;
+
+public:
+  IndentAtom(const sptr<Atom>& body, float left, float right) : _body(body), _left(left), _right(right) {}
+
+  sptr<Box> createBox(Env& env) override;
+};
+
+/** What a tcolorbox looks like: the keys of the package that are drawn, with its defaults (tcolorbox.sty, `size=normal`).
+ *  Lengths are in em of the text around, a millimetre being 0.2845em as at LaTeX's 10pt, so that a grob's size scales the
+ *  box with its text. A transparent `backTitle` is a title on the colour of the frame. */
+struct TcolorboxStyle {
+  color back = 0xFFF2F2F2, frame = 0xFF404040, backTitle = transparent, titleText = 0xFFFFFFFF;
+  /** `sharp corners`: no arc, inside or out. */
+  bool sharp = false;
+  float rule = 0.142264f, arc = 0.284528f, left = 1.138112f, right = 1.138112f, top = 0.569056f, bottom = 0.569056f,
+        boxsep = 0.284528f;
+};
+
+/** `\begin{tcolorbox}[title=..]`: the body set to the width left by the frame and its padding, in a frame of
+ *  `boxrule` whose inner corners have radius `arc` and outer ones `boxrule + arc` (auto outer arc), and above it, when
+ *  there is a title, a band of the frame's colour (or `colbacktitle`) with the title in `coltitle`, set off from the
+ *  body by a rule. It is as wide as the line, as tcolorbox is. */
+class TcolorboxAtom : public Atom {
+private:
+  sptr<Atom> _body, _title;
+  TcolorboxStyle _style;
+
+public:
+  TcolorboxAtom(const sptr<Atom>& body, const sptr<Atom>& title, const TcolorboxStyle& style)
+      : _body(body), _title(title), _style(style) {}
+
+  sptr<Box> createBox(Env& env) override;
+};
+
+/** The box of a multicols: its header and its row of columns, set as TeX sets a run of lines -- the line above is spaced
+ *  to its first line, the one below from its last line's depth `_lastDepth`, not from the whole box's. */
+class ColumnsBox : public VBox {
+public:
+  float _lastDepth = 0.f;
+
+  boxname(ColumnsBox);
+};
+
+/** `\columnbreak`: a box with no size that the columns of a multicols are cut at, and which anywhere else draws nothing. */
+class ColumnBreakAtom : public Atom {
+public:
+  sptr<Box> createBox(Env& env) override;
+};
+
+/** `\begin{multicols}{n}[header]`: the body set to the width of one column, `(width - (n-1)\columnsep) / n`, and its
+ *  lines cut into `n` columns as even as they can be -- the shortest height they fit `n` columns in, each column filled
+ *  from the top, as multicol balances them -- with the header above, over the whole width, and a `\multicolsep` (12pt)
+ *  between it and the columns. A \columnbreak ends a column early. With no width to divide, the body is one column. */
+class MulticolsAtom : public Atom {
+private:
+  sptr<Atom> _body, _header;
+  int _count;
+  Dimen _sep;
+
+public:
+  MulticolsAtom(const sptr<Atom>& body, const sptr<Atom>& header, int count, const Dimen& sep)
+      : _body(body), _header(header), _count(count), _sep(sep) {}
 
   sptr<Box> createBox(Env& env) override;
 };

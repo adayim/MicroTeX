@@ -4,6 +4,7 @@
 #include "macro/macro_colors.h"
 #include "macro/macro_delims.h"
 #include "macro/macro_diagram.h"
+#include "macro/macro_tikz.h"
 #include "macro/macro_env.h"
 #include "macro/macro_fonts.h"
 #include "macro/macro_frac.h"
@@ -99,7 +100,9 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_itemizeATATenv, "itemize@@env"),
   mac(1, macro_enumerateATATenv, "enumerate@@env"),
   mac(1, macro_descriptionATATenv, "description@@env"),
+  mac(1, macro_tablenotesATATenv, "tablenotes@@env"),
   mac(1, macro_tikzcdATATenv, "tikzcd@@env"),
+  mac(1, macro_tikzpictureATATenv, "tikzpicture@@env"),
   mac(1, macro_CDATATenv, "CD@@env"),
   mac(3, macro_multicolumn, "multicolumn"),
   mac(0, macro_hline, "hline"),
@@ -107,6 +110,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(0, macro_hdashline, "hdashline"),
   mac(3, macro_specialrule, "specialrule"),
   mac(1, macro_cline, "cline"),
+  mac(1, macro_cmidrule, "cmidrule"),
   mac(3, macro_multirow, "multirow"),
   mac(1, macro_rowcolor, "rowcolor"),
   mac(1, macro_columnbg, "columncolor"),
@@ -259,6 +263,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   // endregion
   // region colors
   mac(3, macro_definecolor, "definecolor"),
+  mac(2, macro_colorlet, "colorlet"),
   mac(2, macro_fgcolor, "fgcolor"),
   mac(2, macro_bgcolor, "bgcolor"),
   mac(2, macro_textcolor, "textcolor"),

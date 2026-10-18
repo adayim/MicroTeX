@@ -4,11 +4,13 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,7 @@
 #include "env/units.h"
 #include "front/front.h"
 #include "front/hooks.h"
+#include "front/lengths.h"
 #include "front/spec.h"
 #include "front/tblr.h"
 #include "graphic/graphic.h"
@@ -40,6 +43,7 @@
 #include "macro/macro_args.h"
 #include "macro/macro_styles.h"
 #include "unimath/uni_font.h"
+#include "utils/counter_format.h"
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
 #include "utils/utf.h"
@@ -129,24 +133,82 @@ struct Numbering {
    *  letter: 3a, 3b. */
   bool sub = false;
   int subIndex = 0;
-  /** A theorem counter, and the section it was last stepped in: it starts
-   *  again from 1 in the next. */
+  /** A counter: a theorem's, with the section it was last stepped in (it
+   *  starts again from 1 in the next), or one \newcounter made, with the
+   *  counter it is `parent` of (\newcounter{c}[parent]), which sets it to
+   *  zero when it steps. */
   struct Counter {
     int value = 0;
     std::string where;
+    std::string parent;
   };
-  std::map<std::string, Counter> counters;
+  std::map<std::string, Counter> counters{{"footnote", Counter()}, {"figure", Counter()}, {"table", Counter()}};
+  /** The page notes so far, (mark, text as written): a document sets them after its body (finishNotes()). */
+  std::vector<std::pair<std::string, std::string>> notes;
   /** What a \label names now, as \@currentlabel: the number of the last
    *  equation or heading. */
   std::string current;
+  /** What kind of thing `current` numbers, for \cref and \autoref: equation, figure, table, section, subsection,
+   *  subsubsection, paragraph, `thm:` and the environment's title, or "" for a number of no kind. */
+  std::string currentKind;
+  /** label -> the kind of what it names. Shared with the references, as `labels` is. */
+  std::shared_ptr<std::map<std::string, std::string>> kinds =
+    std::make_shared<std::map<std::string, std::string>>();
+  /** \cref, \Cref, \autoref and the range forms of the whole input, checked once it is read. */
+  struct CrossRef {
+    std::vector<std::string> keys;
+    SourceSpan at;
+  };
+  std::vector<CrossRef> crossrefs;
   /** label -> the text a reference to it draws, as LaTeX source. Shared
    *  with the references, which draw only when the whole input has been
    *  read: one may come before its label. */
   std::shared_ptr<std::map<std::string, std::string>> labels =
     std::make_shared<std::map<std::string, std::string>>();
+  /** What `\subref` draws for a label: the letter of its subfigure or subtable, "" where it is neither. */
+  std::shared_ptr<std::map<std::string, std::string>> sublabels =
+    std::make_shared<std::map<std::string, std::string>>();
+  std::string subCurrent;
+  /** thebibliography's items: key -> what \cite draws for it, its label or
+   *  its number. Shared, as `labels` is, with the citations, which draw only
+   *  when the whole input has been read. */
+  std::shared_ptr<std::map<std::string, std::string>> bibitems =
+    std::make_shared<std::map<std::string, std::string>>();
+  /** The unlabelled items so far, which number them. */
+  int bibcount = 0;
+  /** The citations of the whole input, checked once it is read. A table cell
+   *  or a list item is lowered by a Lowerer of its own, so they are kept here
+   *  and not in the Lowerer. */
+  struct Citation {
+    std::vector<std::string> keys;
+    SourceSpan at;
+    std::string form;
+  };
+  std::vector<Citation> cites;
+  /** \parindent, \tabcolsep and the lengths the input makes. */
+  Lengths lengths;
 };
 
 Numbering* numbering = nullptr;
+
+/** What Units::getDimen() asks for a length named in a dimension. */
+bool resolveLength(const std::string& name, Dimen& out) {
+  return numbering != nullptr && numbering->lengths.get(name, out);
+}
+
+/** Lengths set inside a group are what they were once it ends. */
+class LengthScope {
+public:
+  LengthScope() : _mark(numbering != nullptr ? numbering->lengths.mark() : 0) {}
+  ~LengthScope() {
+    if (numbering != nullptr) numbering->lengths.release(_mark);
+  }
+  LengthScope(const LengthScope&) = delete;
+  LengthScope& operator=(const LengthScope&) = delete;
+
+private:
+  std::size_t _mark;
+};
 
 /** Where the next input starts counting (setStartNumbering()), and where the
  *  last one ended (lastNumbering()). */
@@ -163,7 +225,10 @@ NumberingState& finalNumbering() {
 class NumberingScope {
 public:
   NumberingScope() : _outer(numbering) {
-    if (_outer == nullptr) numbering = &_own;
+    if (_outer == nullptr) {
+      numbering = &_own;
+      Units::setLengthResolver(&resolveLength);
+    }
   }
   ~NumberingScope() { numbering = _outer; }
   NumberingScope(const NumberingScope&) = delete;
@@ -205,6 +270,26 @@ private:
   FontDefaults _own;
 };
 
+/** A float's caption with `\abovecaptionskip` over it: TeX puts the glue in the vertical list, so no baselineskip
+ *  follows it and the distance from the line above is its depth, the skip and the caption's height. The box takes the
+ *  skip as height, less the line skip the stacking adds when the two are too close for the baselineskip. */
+class SkipAboveAtom : public Atom {
+public:
+  /** `ems` of the text around: LaTeX's 10pt and 6pt are 1em and 0.6em of its 10pt class, and a grob's size varies. */
+  SkipAboveAtom(sptr<Atom> base, float ems) : _base(std::move(base)), _ems(ems) {}
+
+  sptr<Box> createBox(Env& env) override {
+    sptr<Box> box = _base->createBox(env);
+    const float skip = _ems * env.em() - env.baselineSkip() / 12.f;
+    if (skip > 0.f) box->_height += skip;
+    return box;
+  }
+
+private:
+  sptr<Atom> _base;
+  float _ems;
+};
+
 /** \ref and \eqref: the text of the label they name, looked up when the
  *  atom is built into a box -- the whole input has been read by then -- and
  *  a bold ?? where there is none. */
@@ -233,6 +318,237 @@ private:
   std::shared_ptr<std::map<std::string, std::string>> _labels;
   std::string _key;
   bool _parentheses;
+};
+
+/** \cref, \Cref, \autoref and \crefrange: the kind of each label named and its number, as cleveref and hyperref set
+ *  them -- "eq. (1)", "Figure 2", "eqs. (1) to (3) and (5)", "eq. (1), fig. 1, and table 2" -- looked up when the atom
+ *  is built into a box, the labels being known by then, and a bold ?? for one that is not. Read against pdflatex's
+ *  output (scratchpad/col/rc.tex, c.tex): the names are cleveref's defaults in English (abbreviated by \cref, full
+ *  and capitalised by \Cref), the labels of one kind are joined by "," and "and" and a run of three or more
+ *  consecutive numbers is "a to c", and groups of different kinds are joined by "and", or "," and ", and". */
+class CrossRefAtom : public Atom {
+public:
+  enum class Form { cref, Cref, autoref };
+
+  CrossRefAtom(std::shared_ptr<std::map<std::string, std::string>> labels,
+               std::shared_ptr<std::map<std::string, std::string>> kinds, std::vector<std::string> keys, Form form,
+               bool range)
+      : _labels(std::move(labels)), _kinds(std::move(kinds)), _keys(std::move(keys)), _form(form), _range(range) {}
+
+  sptr<Box> createBox(Env& env) override {
+    sptr<Atom> text = buildFragment(compose(), false);
+    if (text == nullptr) text = sptrOf<EmptyAtom>();
+    return text->createBox(env);
+  }
+
+private:
+  struct Item {
+    std::string key, kind, number;
+    bool defined = false;
+  };
+
+  /** How a kind is named: cleveref's abbreviations for \cref, its full names capitalised for \Cref, hyperref's for
+   *  \autoref. A theorem's is its title (`thm:Title`). */
+  struct Names {
+    std::string one, many;
+    bool parentheses = false;
+  };
+
+  static std::string lower(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+  }
+
+  Names namesOf(const std::string& kind) const {
+    struct Row {
+      const char *abbr, *abbrMany, *full, *fullMany, *autoName;
+      bool parentheses;
+    };
+    static const std::map<std::string, Row> table = {
+      {"equation", {"eq.", "eqs.", "Equation", "Equations", "Equation", true}},
+      {"figure", {"fig.", "figs.", "Figure", "Figures", "Figure", false}},
+      {"table", {"table", "tables", "Table", "Tables", "Table", false}},
+      {"section", {"section", "sections", "Section", "Sections", "section", false}},
+      {"subsection", {"section", "sections", "Section", "Sections", "subsection", false}},
+      {"subsubsection", {"section", "sections", "Section", "Sections", "subsubsection", false}},
+      {"paragraph", {"paragraph", "paragraphs", "Paragraph", "Paragraphs", "paragraph", false}},
+      {"subparagraph", {"paragraph", "paragraphs", "Paragraph", "Paragraphs", "subparagraph", false}}};
+    Names n;
+    const auto it = table.find(kind);
+    if (it != table.end()) {
+      const Row& r = it->second;
+      n.parentheses = r.parentheses && _form != Form::autoref;  // hyperref prints "Equation 1", cleveref "equation (1)"
+      if (_form == Form::cref) {
+        n.one = r.abbr;
+        n.many = r.abbrMany;
+      } else if (_form == Form::Cref) {
+        n.one = r.full;
+        n.many = r.fullMany;
+      } else {
+        n.one = n.many = r.autoName;
+      }
+    } else if (kind.compare(0, 4, "thm:") == 0) {
+      // \newtheorem{lem}{Lemma}: "lemma 1" and "lemmas 1 and 2"; \Cref and \autoref keep the title as it is.
+      const std::string title = kind.substr(4);
+      n.one = _form == Form::cref ? lower(title) : title;
+      n.many = n.one + "s";
+    }
+    return n;
+  }
+
+  /** The digits at the end of a number and what stands before them: `2.3` is `2.` and 3. */
+  static bool split(const std::string& number, std::string& prefix, long& last) {
+    std::size_t i = number.size();
+    while (i > 0 && std::isdigit(static_cast<unsigned char>(number[i - 1])) != 0) i--;
+    if (i == number.size() || number.size() - i > 9) return false;
+    prefix = number.substr(0, i);
+    last = std::stol(number.substr(i));
+    return true;
+  }
+
+  static bool follows(const Item& a, const Item& b) {
+    std::string pa, pb;
+    long la = 0, lb = 0;
+    return split(a.number, pa, la) && split(b.number, pb, lb) && pa == pb && lb == la + 1;
+  }
+
+  /** Numbers in the order they are numbered: by their parts, numerically where both are numbers. */
+  static bool before(const Item& a, const Item& b) {
+    std::size_t i = 0, j = 0;
+    while (i < a.number.size() && j < b.number.size()) {
+      if (std::isdigit(static_cast<unsigned char>(a.number[i])) != 0 &&
+          std::isdigit(static_cast<unsigned char>(b.number[j])) != 0) {
+        std::size_t ie = i, je = j;
+        while (ie < a.number.size() && std::isdigit(static_cast<unsigned char>(a.number[ie])) != 0) ie++;
+        while (je < b.number.size() && std::isdigit(static_cast<unsigned char>(b.number[je])) != 0) je++;
+        const long x = std::atol(a.number.substr(i, ie - i).c_str()), y = std::atol(b.number.substr(j, je - j).c_str());
+        if (x != y) return x < y;
+        i = ie;
+        j = je;
+      } else {
+        if (a.number[i] != b.number[j]) return a.number[i] < b.number[j];
+        i++;
+        j++;
+      }
+    }
+    return a.number.size() < b.number.size();
+  }
+
+  static std::string join(const std::vector<std::string>& parts, const std::string& last) {
+    std::string out;
+    for (std::size_t i = 0; i < parts.size(); i++) {
+      if (i > 0) out += i + 1 == parts.size() ? last : ", ";
+      out += parts[i];
+    }
+    return out;
+  }
+
+  std::string compose() const {
+    std::vector<Item> items;
+    for (const std::string& key : _keys) {
+      Item it;
+      it.key = key;
+      const auto n = _labels->find(key);
+      const auto k = _kinds->find(key);
+      it.defined = n != _labels->end();
+      if (it.defined) it.number = n->second;
+      if (k != _kinds->end()) it.kind = k->second;
+      items.push_back(std::move(it));
+    }
+    // \crefrange{a}{b}: "eqs. (1) to (5)", the name of the first.
+    if (_range && items.size() == 2 && items[0].defined && items[1].defined &&
+        namesOf(items[0].kind).one == namesOf(items[1].kind).one) {
+      const Names names = namesOf(items[0].kind);
+      const auto shown = [&](const Item& i) { return names.parentheses ? "(" + i.number + ")" : i.number; };
+      std::string out = names.many.empty() ? "" : names.many + "~";
+      return out + shown(items[0]) + " to " + shown(items[1]);
+    }
+    // Groups: consecutive labels of one kind.
+    std::vector<std::string> groups;
+    for (std::size_t from = 0; from < items.size();) {
+      std::size_t to = from + 1;
+      // One group while the name is the same: cleveref calls a subsection "section" too, so they are "sections 1 and 1.1".
+      while (to < items.size() && items[from].defined && items[to].defined &&
+             namesOf(items[to].kind).one == namesOf(items[from].kind).one) {
+        to++;
+      }
+      std::vector<Item> group(items.begin() + static_cast<std::ptrdiff_t>(from),
+                              items.begin() + static_cast<std::ptrdiff_t>(to));
+      from = to;
+      if (!group[0].defined) {
+        groups.push_back("\\textbf{??}");
+        continue;
+      }
+      std::sort(group.begin(), group.end(), before);
+      const Names names = namesOf(group[0].kind);
+      const auto shown = [&](const Item& i) { return names.parentheses ? "(" + i.number + ")" : i.number; };
+      // Three or more in a row are "a to c".
+      std::vector<std::string> parts;
+      for (std::size_t i = 0; i < group.size();) {
+        std::size_t j = i;
+        while (j + 1 < group.size() && follows(group[j], group[j + 1])) j++;
+        if (j - i >= 2) {
+          parts.push_back(shown(group[i]) + " to " + shown(group[j]));
+        } else {
+          for (std::size_t k = i; k <= j; k++) parts.push_back(shown(group[k]));
+        }
+        i = j + 1;
+      }
+      const std::string name = group.size() > 1 ? names.many : names.one;
+      groups.push_back((name.empty() ? "" : name + "~") + join(parts, " and "));
+    }
+    return join(groups, groups.size() <= 2 ? " and " : ", and ");
+  }
+
+  std::shared_ptr<std::map<std::string, std::string>> _labels, _kinds;
+  std::vector<std::string> _keys;
+  Form _form;
+  bool _range;
+};
+
+/** \cite and natbib's kin: each key's \bibitem label, looked up when the atom
+ *  is built into a box -- the bibliography is usually after the citation --
+ *  and a bold ? where there is none. */
+class CitationAtom : public Atom {
+public:
+  CitationAtom(std::shared_ptr<std::map<std::string, std::string>> items, std::vector<std::string> keys,
+               std::string form, sptr<Atom> pre, sptr<Atom> post)
+      : _items(std::move(items)),
+        _keys(std::move(keys)),
+        _form(std::move(form)),
+        _pre(std::move(pre)),
+        _post(std::move(post)) {}
+
+  sptr<Box> createBox(Env& env) override {
+    const auto text = [](const std::string& s) { return sptrOf<TextAtom>(s, false); };
+    auto row = sptrOf<RowAtom>();
+    // natbib: \citet names the author it does not have, \citealp has no brackets.
+    if (_form == "citet") row->add(text("(author?) "));
+    const bool brackets = _form != "citealp";
+    if (brackets) row->add(text("["));
+    if (_pre != nullptr) {
+      row->add(_pre);
+      row->add(text(" "));
+    }
+    for (std::size_t i = 0; i < _keys.size(); i++) {
+      if (i > 0) row->add(text(", "));
+      const auto it = _items->find(_keys[i]);
+      sptr<Atom> label = it == _items->end() ? nullptr : buildFragment(it->second, false);
+      row->add(label != nullptr ? label : sptrOf<FontStyleAtom>(FontStyle::bf, false, text("?")));
+    }
+    if (_post != nullptr) {
+      row->add(text(", "));
+      row->add(_post);
+    }
+    if (brackets) row->add(text("]"));
+    return row->createBox(env);
+  }
+
+private:
+  std::shared_ptr<std::map<std::string, std::string>> _items;
+  std::vector<std::string> _keys;
+  std::string _form;
+  sptr<Atom> _pre, _post;
 };
 
 class Lowerer {
@@ -286,6 +602,13 @@ private:
   /** Whether the preamble of a document is being lowered, where a font
    *  role is set for the whole body. */
   bool _inPreamble = false;
+  /** The document of the whole input is being lowered, so a \footnote has a note to leave for its foot. */
+  bool _pageNotes = false;
+  /** The float being lowered, `figure` or `table`, and the sub-float in it, `subfigure` or `subtable` (the prelude's
+   *  environments say so with \gmfloat and \gmsubfloat): what a \caption numbers, and by which counter. */
+  std::string _floatKind, _subKind;
+  /** A document's caption is a line of its own, which is what \abovecaptionskip is a skip above; in a label it shares one. */
+  bool _captionOwnLine = false;
 
   /** What an alignment's row, or a display, says about its own number:
    *  \notag, \tag, and the labels written in it. */
@@ -305,6 +628,8 @@ private:
   /** How many alignment rows or displays are being lowered: a \label in
    *  one names its number, which is known when it ends. */
   int _inRow = 0;
+  /** Rows or displays whose number a abel waits for (align, gather, equation, a display): inside one, labels are kept. */
+  int _inFamilyRow = 0;
   struct Reference {
     std::string key;
     SourceSpan at;
@@ -400,6 +725,7 @@ private:
         spaces(x, f);
         return;
       case NodeKind::group: {
+        LengthScope scope;
         auto atom = groupAtom(build(child(id, 0)), f);
         if (atom != nullptr) atom->_type = AtomType::ordinary;
         f.add(atom);
@@ -424,6 +750,7 @@ private:
         return;
       }
       case NodeKind::environment: {
+        LengthScope scope;
         auto atom = groupAtom(environment(id), f);
         if (atom != nullptr) atom->_type = AtomType::ordinary;
         f.add(atom);
@@ -593,11 +920,91 @@ private:
       nums().sub = false;
       return nullptr;
     }
-    if (name == "setcounter") {
-      if (trimmed(rawOf(child(id, 0))) == "equation") {
-        nums().equation = std::atoi(trimmed(rawOf(child(id, 1))).c_str());
-      }
+    // thebibliography's \bibitem, which the prelude writes as an \item and
+    // this: the key's label, or the next number when it has none (LaTeX's
+    // \@lbibitem does not step the counter), which \cite draws.
+    if (name == "gmbibitem") {
+      std::string label = trimmed(rawOf(child(id, 1)));
+      if (label.empty()) label = std::to_string(++nums().bibcount);
+      (*nums().bibitems)[trimmed(rawOf(child(id, 0)))] = label;
       return nullptr;
+    }
+    if (name == "gmnewcounter") {
+      const std::string key = trimmed(rawOf(child(id, 0)));
+      if (counterIsKnown(key)) {
+        _diags.warn(node(id).span, "counter `" + key + "' is already defined");
+        return nullptr;
+      }
+      Numbering::Counter c;
+      c.parent = trimmed(rawOf(child(id, 1)));
+      nums().counters[key] = c;
+      return nullptr;
+    }
+    if (name == "setcounter" || name == "addtocounter") {
+      int* v = counterOf(id, trimmed(rawOf(child(id, 0))));
+      int n = 0;
+      if (v != nullptr && counterNumber(id, rawOf(child(id, 1)), n)) *v = name == "setcounter" ? n : *v + n;
+      return nullptr;
+    }
+    if (name == "newlength") {
+      const std::string key = lengthName(id, 0, false);
+      if (!key.empty()) nums().lengths.define(key);
+      return nullptr;
+    }
+    if (name == "setlength" || name == "addtolength") {
+      const std::string key = lengthName(id, 0, true);
+      if (key.empty()) return nullptr;
+      const std::string given = trimmed(rawOf(child(id, 1)));
+      std::string text = given;
+      // TeX's glue: the natural length, less `plus` and `minus`.
+      for (const char* word : {" plus", " minus"}) {
+        const auto cut = text.find(word);
+        if (cut != std::string::npos) text.erase(cut);
+      }
+      Dimen v = Units::getDimen(text);
+      if (!v.isValid() || !isLengthText(text)) {
+        _diags.warn(node(id).span, "`" + given + "' is not a length");
+        return nullptr;
+      }
+      if (name == "addtolength") {
+        Dimen now;
+        nums().lengths.get(key, now);
+        if (now.val != 0.f && now.unit != v.unit) {
+          _diags.warn(node(id).span, "cannot add " + given + " to " + describe(now) +
+                                       ": a length is one unit; \\setlength it instead");
+          return nullptr;
+        }
+        v.val += now.val;
+      }
+      nums().lengths.set(key, v);
+      return nullptr;
+    }
+    if (name == "stepcounter") {
+      const std::string key = trimmed(rawOf(child(id, 0)));
+      if (counterOf(id, key) != nullptr) stepCounter(key);
+      return nullptr;
+    }
+    // \refstepcounter{c} in the prelude is \stepcounter{c}\gmcurrentlabel{\thec}.
+    if (name == "gmcurrentlabel") {
+      nums().current = withCounterValues(id, rawOf(child(id, 0)));
+      nums().currentKind.clear();
+      return nullptr;
+    }
+    if (name == "value") {
+      const int* v = counterOf(id, trimmed(rawOf(child(id, 0))));
+      return v == nullptr ? nullptr : literalText(std::to_string(*v));
+    }
+    // A counter's name or, for `\roman{12}`, which has always been the number
+    // itself, a number; anything else (enumitem's `\roman*`) is not for this.
+    if (isCounterStyle(name)) {
+      const std::string given = trimmed(rawOf(child(id, 0)));
+      const bool number = !given.empty() && given.find_first_not_of("0123456789") == std::string::npos;
+      const bool word = !given.empty() && std::isalpha(static_cast<unsigned char>(given[0])) != 0;
+      if (number) return literalText(formatCounter(name, std::atoi(given.c_str())));
+      if (word) {
+        const int* v = counterOf(id, given);
+        return v == nullptr ? nullptr : literalText(formatCounter(name, *v));
+      }
     }
     if (name == "ref" || name == "eqref") return reference(id, name == "eqref");
     // What LaTeX draws for a reference it cannot resolve: a bold ??. A grob
@@ -606,49 +1013,115 @@ private:
       return sptrOf<FontStyleAtom>(FontStyle::bf, false, literalText(s));
     };
     if (name == "pageref") return bold("??");
+    if (isCrossReference(name)) {
+      // \cref{a,b}, \autoref{a}, \crefrange{a}{b}: the kind of each label and its number, drawn once the whole input
+      // is read; a key no \label names is ?? and said then.
+      const bool range = name == "crefrange" || name == "Crefrange";
+      std::vector<std::string> keys;
+      if (range) {
+        keys = {trimmed(rawOf(child(id, 0))), trimmed(rawOf(child(id, 1)))};
+      } else if (name == "autoref") {
+        keys = {trimmed(rawOf(child(id, 0)))};
+      } else {
+        std::stringstream in(rawOf(child(id, 0)));
+        for (std::string k; std::getline(in, k, ',');) keys.push_back(trimmed(k));
+        if (keys.empty()) keys.emplace_back();
+      }
+      nums().crossrefs.push_back({keys, node(id).span});
+      const auto form = name == "autoref"                          ? CrossRefAtom::Form::autoref
+                        : (name == "Cref" || name == "Crefrange") ? CrossRefAtom::Form::Cref
+                                                                   : CrossRefAtom::Form::cref;
+      return sptrOf<CrossRefAtom>(nums().labels, nums().kinds, std::move(keys), form, range);
+    }
     if (isCitation(name)) {
-      // What LaTeX draws for citations it cannot resolve: a bold ? for each
-      // key, then the note, in brackets -- `\cite[p.~3]{a,b}` is [?, ?, p. 3].
-      // natbib's take a note before as well, `\citep[see][p.~3]{a}`, or one
-      // after alone; \citet names the author it does not have, and
-      // \citealp has no brackets.
+      // `\cite[p.~3]{a,b}`: the label of each key's \bibitem, then the note,
+      // in brackets. natbib's take a note before as well,
+      // `\citep[see][p.~3]{a}`, or one after alone; \citet names the author
+      // it does not have, and \citealp has no brackets. A key no \bibitem
+      // names is what LaTeX draws for one it cannot resolve, a bold ?
+      // (CitationAtom), and said once the whole input is read.
       const std::string keys = rawOf(child(id, count(id) - 1));
       std::string pre, post = rawOf(child(id, 0));
       if (name != "cite" && node(child(id, 1)).flag) {
         pre = post;
         post = rawOf(child(id, 1));
       }
-      auto row = sptrOf<RowAtom>();
-      if (name == "citet") row->add(literalText("(author?) "));
-      const bool brackets = name != "citealp";
-      if (brackets) row->add(literalText("["));
-      if (!pre.empty()) {
-        row->add(fragment(pre, false));
-        row->add(literalText(" "));
-      }
-      const auto n = std::count(keys.begin(), keys.end(), ',') + 1;
-      for (std::ptrdiff_t i = 0; i < n; i++) {
-        if (i > 0) row->add(literalText(", "));
-        row->add(bold("?"));
-      }
-      if (!post.empty()) {
-        row->add(literalText(", "));
-        row->add(fragment(post, false));
-      }
-      if (brackets) row->add(literalText("]"));
-      return row;
+      std::vector<std::string> list;
+      std::stringstream in(keys);
+      for (std::string k; std::getline(in, k, ',');) list.push_back(trimmed(k));
+      if (list.empty()) list.emplace_back();
+      nums().cites.push_back({list, node(id).span, name});
+      return sptrOf<CitationAtom>(nums().bibitems, std::move(list), name,
+                                  pre.empty() ? nullptr : fragment(pre, false),
+                                  post.empty() ? nullptr : fragment(post, false));
     }
-    // No page to put the note on, so its text is set where it was written.
-    // Its optional number has no note to number.
-    if (name == "footnote") {
-      const NodeId text = child(id, count(id) - 1);
+    // \footnote and kin are the prelude's, over these three: the mark as the counter has it by now, and the note.
+    // A document has the notes set after its body (finishNotes()); a label has no page to put them on, so a
+    // note's text is set where it was written.
+    if (name == "gmfootnote" || name == "gmfootnotetext" || name == "gmfootnotemark") {
+      const std::string mark = trimmed(withCounterValues(id, rawOf(child(id, 0))));
+      const sptr<Atom> sign = fragment("\\textsuperscript{" + mark + "}", false);
+      if (name == "gmfootnotemark") return sign;
+      const NodeId text = child(id, 1);
+      if (_pageNotes) {
+        nums().notes.emplace_back(mark, rawOf(text));
+        return name == "gmfootnote" ? sign : nullptr;
+      }
+      _diags.warn(node(id).span, "\\footnote has no page to put a note on: its text is drawn here");
       return argumentFormula(text, rawOf(text), false);
     }
     // A caption is a line of text, as \text{} sets one; the parser put the
     // break that ends its line after it.
     if (name == "caption") {
+      // The number first: a \label in the caption's own text (`\caption{Text\label{fig}}`, as it is mostly written) names
+      // the float it is in, so the counter has stepped by the time that label is read.
+      const std::string label = node(id).star ? std::string() : captionLabel();
       const NodeId text = child(id, count(id) - 1);
-      return sptrOf<FontStyleAtom>(FontStyle::rm, false, argumentFormula(text, rawOf(text), false));
+      const sptr<Atom> body = argumentFormula(text, rawOf(text), false);
+      sptr<Atom> line = body;
+      if (!label.empty()) {
+        // "Figure 1: text", "Table 1: text", or in a sub-float "(a) text", as LaTeX and subcaption set them.
+        auto row = sptrOf<RowAtom>();
+        row->add(fragment(label, false));
+        row->add(body);
+        line = row;
+      }
+      if (_floatKind.empty() || !_captionOwnLine) return sptrOf<FontStyleAtom>(FontStyle::rm, false, line);
+      // In a float: \abovecaptionskip (10pt, 1em of LaTeX's 10pt) above it, as \@makecaption sets one; a subcaption
+      // is \small with 6pt (subcaption.sty).
+      const bool sub = !_subKind.empty();
+      if (sub) line = sized(line, 0.9f);
+      return sptrOf<SkipAboveAtom>(sptrOf<FontStyleAtom>(FontStyle::rm, false, line), sub ? 0.6f : 1.f);
+    }
+    if (name == "columnbreak") return sptrOf<ColumnBreakAtom>();
+    if (name == "today") {
+      static const char* months[] = {"January", "February", "March",     "April",   "May",      "June",
+                                     "July",    "August",   "September", "October", "November", "December"};
+      const std::time_t now = std::time(nullptr);
+      std::tm local{};
+#ifdef _WIN32
+      localtime_s(&local, &now);
+#else
+      localtime_r(&now, &local);
+#endif
+      // One run of text, as \text{} sets it, not a glyph a digit.
+      return literalText(std::string(months[local.tm_mon % 12]) + " " + std::to_string(local.tm_mday) + ", " +
+                         std::to_string(local.tm_year + 1900));
+    }
+    if (name == "gmfloat") {
+      _floatKind = trimmed(rawOf(child(id, 0)));
+      _subKind.clear();
+      if (!_floatKind.empty()) nums().counters["sub" + _floatKind].value = 0;
+      return nullptr;
+    }
+    if (name == "gmsubfloat") {
+      _subKind = trimmed(rawOf(child(id, 0)));
+      return nullptr;
+    }
+    if (name == "subref") {
+      const std::string key = trimmed(rawOf(child(id, 0)));
+      if (_numbering.outermost()) _refs.push_back({key, node(id).span, false});
+      return sptrOf<RefAtom>(nums().sublabels, key, false);
     }
     if (name == "url" || name == "href") return link(id, f);
     if (name == "textsc") {
@@ -657,8 +1130,11 @@ private:
       return node(id).mode == Mode::math ? sptrOf<FontStyleAtom>(FontStyle::rm, false, caps) : caps;
     }
     if (name == "gmtheorem") return fragment(theoremHead(id), false);
-    if (name == "verb") {
-      const NodeId text = child(id, 0);
+    // A run of the code of an alltt, as typed (the parser wrote its characters in hex).
+    if (name == "gmlit") return typewriter(unhex(rawOf(child(id, 0))), false);
+    if (name == "verb" || name == "lstinline" || name == "mintinline" || name == "Verb") {
+      // The code is the last argument; listings', minted's and fancyvrb's options and language are not drawn.
+      const NodeId text = child(id, count(id) - 1);
       return typewriter(rawOf(text), node(text).star);
     }
     if (name == "includegraphics") return image(id);
@@ -682,7 +1158,9 @@ private:
     }
     // At the top of a cell, \color colours the cell rather than what follows.
     if (name == "color" && f.isArrayMode()) {
-      return sptrOf<CellForegroundAtom>(ColorAtom::getColor(stripComments(rawOf(child(id, 0)))));
+      const color c = colourOf(id, stripComments(rawOf(child(id, 0))));
+      if (isTransparent(c)) return nullptr;
+      return sptrOf<CellForegroundAtom>(c);
     }
     // A longtable's marker ends its row, and draws nothing.
     if (isLongtableMarker(name)) return nullptr;
@@ -829,6 +1307,7 @@ private:
       c.where = where;
       number = (where.empty() ? "" : where + ".") + std::to_string(++c.value);
       nums().current = number;
+      nums().currentKind = "thm:" + title;
     }
     const std::string name = title + (number.empty() ? "" : "\\ " + number);
     const bool italic = style == "remark";
@@ -837,20 +1316,57 @@ private:
     return head + (italic ? "." : "\\textbf{.}");
   }
 
-  /** The text of a verbatim environment: a line to a row, flush left. */
-  sptr<Atom> verbatimBlock(const Node& x) {
+  /** The text of a verbatim environment: a line to a row, flush left, a baselineskip apart (a blank line is a row too, as
+   *  in LaTeX: without the glue between rows they stood as close as their glyphs, and blank lines were no taller than
+   *  nothing). The parser has set its tabs as spaces. An `alltt`, or a `Verbatim` with `commandchars`, has its commands
+   *  read: the parser put them back as a `\gmcodeline` for each line, whose text between commands is `\gmlit`. */
+  sptr<Atom> verbatimBlock(NodeId id) {
+    const Node& x = node(id);
     auto lines = sptrOf<VRowAtom>();
     lines->_halign = Alignment::left;
+    lines->setAddInterline(true);
+    if (x.aux == 1 && count(id) > 0) {
+      const NodeId body = child(id, count(id) - 1);
+      for (std::uint32_t i = 0; i < count(body); i++) {
+        const NodeId item = child(body, i);
+        if (node(item).kind != NodeKind::command || node(item).text != "gmcodeline" || count(item) == 0) continue;
+        const NodeId arg = child(item, 0);
+        Formula g;
+        if (count(arg) > 0) lowerList(child(arg, 0), g, 0);
+        // In the typewriter face, nested as \texttt is: added to the roman the line is in.
+        lines->append(sptrOf<FontStyleAtom>(FontStyle::tt, false, g._root != nullptr ? g._root : literalText(" "), true));
+      }
+      return lines;
+    }
     std::size_t from = 0;
     while (true) {
       const std::size_t to = x.raw.find('\n', from);
-      const std::string line =
-        x.raw.substr(from, to == std::string::npos ? std::string::npos : to - from);
-      lines->append(typewriter(line.empty() ? " " : line, x.text == "verbatim*"));
+      const std::string line = x.raw.substr(from, to == std::string::npos ? std::string::npos : to - from);
+      lines->append(typewriter(line.empty() ? " " : line, x.text.back() == '*'));
       if (to == std::string::npos) break;
       from = to + 1;
     }
     return lines;
+  }
+
+  /** The text `hex` stands for, two digits a byte (`\gmlit`); what is not a digit is left out. */
+  static std::string unhex(const std::string& hex) {
+    std::string out;
+    int high = -1;
+    for (const char c : hex) {
+      int v = -1;
+      if (c >= '0' && c <= '9') v = c - '0';
+      if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+      if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+      if (v < 0) continue;
+      if (high < 0) {
+        high = v;
+      } else {
+        out += static_cast<char>(high * 16 + v);
+        high = -1;
+      }
+    }
+    return out;
   }
 
   /** \url and \href. A grob has no links, so only their look, LaTeX's
@@ -1057,6 +1573,7 @@ private:
     // the old parser only (definitions, \over and kin, ...).
     if (cm == nullptr) return unknownAtom(name);
     TreeArgs a(*this, node(id).mode == Mode::math, std::move(args), std::move(nodes), &f);
+    a.reportAt(node(id).span, "\\" + name);
     try {
       return cm->call(a);
     } catch (const std::exception& e) {
@@ -1254,7 +1771,7 @@ private:
         return sized(a == nullptr ? sptrOf<EmptyAtom>() : a, sizeFactor(name));
       }
       if (name == "color") {
-        const color c = ColorAtom::getColor(rawOf(child(id, 0)));
+        const color c = colourOf(id, rawOf(child(id, 0)));
         return sptrOf<ColorAtom>(body(), TRANSPARENT, c);
       }
       if (name == "fontsize") {
@@ -1663,6 +2180,12 @@ private:
     bool broken = false;
     /** The `[len]` of that break: space below the line it ends. */
     std::string gap;
+    /** What `\vspace` has asked for since: TeX's glue between this line and the next, added to the baselineskip glue.
+     *  It lands before the next line that starts. */
+    Dimen skip;
+    /** What a `\vspace` in the text of a line not yet started asked for: the glue goes after that line (it is a vadjust,
+     *  which TeX puts below the line holding it), so it becomes `skip` when the line starts. */
+    Dimen skipAfter;
     /** Nothing placed since a line break: a space here goes with it. */
     bool afterBreak = false;
     /** Anything drawn at all: a break before that is none. */
@@ -1671,10 +2194,15 @@ private:
     bool indentNext = false;
     /** Paragraphs are indented at all: a minipage sets \parindent to 0. */
     bool indents = true;
+    /** A verse: each `\\` starts a paragraph of its own. */
+    bool verse = false;
     /** Nothing has been set since a heading. LaTeX leaves the paragraph
      *  that follows one unindented, whether it comes straight after the
      *  heading or after a blank line. */
     bool afterHeading = false;
+    // Text of the paragraph stands on the line before: a display after it interrupts the paragraph, and TeX chooses its
+    // skips by how far that line reaches. A paragraph break, a heading or another block ends it.
+    bool textBefore = false;
     /** A document, not a label: its displays go on lines of their own. */
     bool document = false;
     /** How lines set now are aligned, in a document: centred (center,
@@ -1691,7 +2219,9 @@ private:
    *  size a grob is drawn at. There is no \parskip: LaTeX separates
    *  paragraphs by this indent, not by space between them. */
   static sptr<Atom> parIndent() {
-    return sptrOf<SpaceAtom>(UnitType::em, 1.5f, 0.f, 0.f);
+    const Dimen d = Units::getDimen("\\parindent");
+    if (!d.isValid() || d.val == 0.f) return nullptr;
+    return sptrOf<SpaceAtom>(d.unit, d.val, 0.f, 0.f);
   }
 
   // --- headings --------------------------------------------------------------
@@ -1726,7 +2256,11 @@ private:
     const Node& x = node(id);
     const int level = headingLevel(x.text);
     const std::string number = headingNumber(level, x.star);
-    if (!number.empty()) nums().current = number;
+    if (!number.empty()) {
+      nums().current = number;
+      static const char* kinds[] = {"section", "subsection", "subsubsection", "paragraph", "subparagraph"};
+      nums().currentKind = kinds[std::min(std::max(level, 0), 4)];
+    }
     // The number and the quad after it, and the title: the last argument
     // (the first is the short one). Each is made once -- the title's
     // warnings are said once -- and shared by both settings below.
@@ -1762,7 +2296,9 @@ private:
     if (!l.indentNext) return;
     l.indentNext = false;
     // \centering and \raggedleft set \parindent to 0, as LaTeX's do.
-    if (l.align == Alignment::left && l.indents) l.line->add(parIndent());
+    if (l.align == Alignment::left && l.indents) {
+      if (const auto indent = parIndent()) l.line->add(indent);
+    }
   }
 
   /** The current line is done: centred or put to the right, if it was set
@@ -1791,9 +2327,67 @@ private:
       l.rows->add(l.top->_root);
       l.line = l.rows.get();
     }
-    if (!l.gap.empty()) l.rows->addRowGap(Units::getDimen(l.gap));
+    Dimen gap = l.gap.empty() ? Dimen() : Units::getDimen(l.gap);
+    if (l.skip.isValid()) {
+      gap = gap.isValid() ? addSkips(gap, l.skip) : l.skip;
+      l.skip = Dimen();
+    }
+    if (gap.isValid()) l.rows->addRowGap(gap);
     l.gap.clear();
     l.rows->addRow();
+    // A \vspace written in this line's own text lies below it, before the next.
+    if (l.skipAfter.isValid()) {
+      l.skip = l.skipAfter;
+      l.skipAfter = Dimen();
+    }
+  }
+
+  /** The natural length of the glue `\vspace` is given. A grob's lines do not stretch, so `1cm plus 5pt minus 2pt` is 1cm;
+   *  `\smallskipamount`, `\medskipamount` and `\bigskipamount` are LaTeX's 3, 6 and 12pt. What is not a length warns and
+   *  is no space (it was read as a number of pixels, and `20sp` as 65536 times too much). */
+  Dimen glueNatural(std::string text, NodeId id) {
+    for (const char* word : {"plus", "minus"}) {
+      for (std::size_t p = text.find(word); p != std::string::npos; p = text.find(word, p + 1)) {
+        if (p > 0 && std::isspace(static_cast<unsigned char>(text[p - 1])) != 0) {
+          text.erase(p);
+          break;
+        }
+      }
+    }
+    text = trimmed(text);
+    static const std::map<std::string, std::string> amounts = {
+      {"\\smallskipamount", "3pt"}, {"\\medskipamount", "6pt"}, {"\\bigskipamount", "12pt"}};
+    const auto named = amounts.find(text);
+    if (named != amounts.end()) text = named->second;
+    const Dimen d = Units::getDimen(text);
+    const bool known = d.isValid() && (d.unit != UnitType::pixel || text.find("px") != std::string::npos) &&
+                       (d.unit != UnitType::none || d.val == 0.f);
+    if (!known) {
+      _diags.warn(node(id).span, "\\vspace: `" + text + "' is not a length: no space is added");
+      return Dimen();
+    }
+    return d;
+  }
+
+  /** Two skips added: in one unit when they have it, else in points when both are lengths of the page; two skips of
+   *  different kinds (an `em` and a `pt`) cannot be added here, and the later one stands. */
+  static Dimen addSkips(const Dimen& a, const Dimen& b) {
+    if (a.unit == b.unit) return {a.val + b.val, a.unit};
+    const auto points = [](UnitType u) {
+      switch (u) {
+        case UnitType::pt: return 1.0;
+        case UnitType::point: return 72.27 / 72.0;
+        case UnitType::pica: return 12.0;
+        case UnitType::cm: return 72.27 / 2.54;
+        case UnitType::mm: return 72.27 / 25.4;
+        case UnitType::in: return 72.27;
+        default: return 0.0;
+      }
+    };
+    if (points(a.unit) > 0 && points(b.unit) > 0) {
+      return {static_cast<float>(a.val * points(a.unit) + b.val * points(b.unit)), UnitType::pt};
+    }
+    return b;
   }
 
   /** The prose so far, as one \text{} on its line. */
@@ -1807,6 +2401,7 @@ private:
       l.line->add(wrap(l, sptrOf<FontStyleAtom>(FontStyle::rm, false, styled), true, false));
       l.drawn = true;
       l.afterHeading = false;
+      l.textBefore = true;
       if (l.align != Alignment::left) l.lineAlign = l.align;
     }
     l.prose.reset();
@@ -1844,6 +2439,12 @@ private:
     if (brk != kNoNode && node(brk).aux == 1) {
       l.indentNext = !l.afterHeading;
       l.afterHeading = false;
+      l.textBefore = false;
+      // \parskip, when the input made it more than the nothing article has.
+      if (l.drawn && l.gap.empty() && !Units::getDimen("\\parskip").isEmpty()) l.gap = "\\parskip";
+    } else if (l.verse && brk != kNoNode) {
+      // A verse's `\\` ends its paragraph (\@centercr is \par), so the next line is the first of one: outdented.
+      l.indentNext = l.indents;
     }
     l.afterBreak = true;
   }
@@ -1871,12 +2472,13 @@ private:
     return x.kind == NodeKind::group && (x.aux == 2 || (x.aux >= 4 && x.aux <= 7));
   }
 
-  /** A list or verbatim text, which a document sets apart from its text. */
+  /** A list, verbatim text or tcolorbox, which a document sets apart from its text. */
   bool isList(NodeId id) const {
     const Node& x = node(id);
     return x.kind == NodeKind::environment &&
-           (x.text == "itemize" || x.text == "enumerate" || x.text == "description" ||
-            x.text == "verbatim" || x.text == "verbatim*");
+           (x.text == "itemize" || x.text == "enumerate" || x.text == "description" || x.text == "tablenotes" ||
+            isVerbatimEnvironment(x.text) || x.text == "tcolorbox" || x.text == "mdframed" || x.text == "multicols" ||
+            x.text == "quote" || x.text == "quotation" || x.text == "verse");
   }
 
   /** A space a break takes with it: not `~`, which TeX never drops. */
@@ -1895,8 +2497,34 @@ private:
     // starts, as TeX does, between paragraphs, where a space is nothing.
     l.indentNext = paragraphs;
     l.afterBreak = paragraphs;
+    _pageNotes = paragraphs && _numbering.outermost();
     feedBody(l);
+    if (_pageNotes) finishNotes(l);
+    _pageNotes = false;
     finishLabel(l, f);
+  }
+
+  /** The notes of the page, set after the body of a document, as LaTeX sets them at the foot of a page: \skip\footins (9pt) below the
+   *  text, \footnoterule (0.4 of the line, 0.4pt), then each note in \footnotesize, its first line indented 1em and the mark
+   *  in a box of 1.8em, right-aligned, before the text; the notes a \footnotesep (6.65pt) strut apart. */
+  void finishNotes(Label& l) {
+    if (nums().notes.empty()) return;
+    lineBreak(l);
+    l.gap = "0.9em";
+    l.indentNext = false;
+    beforeLine(l);
+    l.line->add(fragment("\\rule{0.4\\linewidth}{0.4pt}", false));
+    lineBreak(l);
+    bool first = true;
+    for (const auto& note : nums().notes) {
+      l.gap = first ? "0.2em" : "0.05em";
+      first = false;
+      l.indentNext = false;
+      beforeLine(l);
+      l.line->add(fragment("{\\footnotesize \\hspace{2.8em}\\llap{\\textsuperscript{" + note.first + "}}" + note.second + "}", false));
+      lineBreak(l);
+    }
+    nums().notes.clear();
   }
 
   /** Everything fed: the label's last line set, and its lines made the
@@ -1928,6 +2556,7 @@ private:
     l.gap = "1.15em";
     l.indentNext = false;
     l.afterHeading = true;
+    l.textBefore = false;
   }
 
   /** Something a document sets on a line of its own, `skip` above and
@@ -1935,9 +2564,12 @@ private:
    *  \belowdisplayskip (1em at a 10pt font); or a list, with \topsep's
    *  8pt. It interrupts a paragraph without ending it, so what follows
    *  goes on unindented, as in TeX. */
-  void blockLine(Label& l, NodeId id, bool display, const char* skip) {
+  void blockLine(Label& l, NodeId id, bool display, const char* skip, const char* above = nullptr) {
     lineBreak(l);
-    if (l.drawn) l.gap = skip;
+    // The text before it, if any, is ended by now.
+    const bool interrupts = l.textBefore;
+    // A display is set off by TeX's display skips, which VRowAtom chooses once it knows the width of the line before.
+    if (l.drawn && !display) l.gap = above != nullptr ? above : skip;
     l.indentNext = false;
     beforeLine(l);
     Formula g;
@@ -1948,13 +2580,24 @@ private:
       lowerItem(id, g);
     }
     auto atom = g._root == nullptr ? sptrOf<EmptyAtom>() : g._root;
-    // An equation or align is in display style, as `\[...\]` is.
+    // An equation or align is in display style, as a display is.
     if (display && node(id).kind != NodeKind::math) atom = sptrOf<StyleAtom>(TexStyle::display, atom);
     atom = wrap(l, atom);
-    l.line->add(display ? sptrOf<DisplayAtom>(atom) : atom);
+    if (display) {
+      auto shown = sptrOf<DisplayAtom>(atom);
+      // amsmath's alignments are `\halign to \displaywidth`: they start at the left margin, so the long skips apply.
+      static const std::set<std::string> wide = {"align", "alignat", "flalign", "gather", "multline", "eqnarray"};
+      std::string name = node(id).kind == NodeKind::environment ? node(id).text : std::string();
+      if (!name.empty() && name.back() == '*') name.pop_back();
+      shown->asEquation(interrupts, wide.count(name) > 0);
+      l.line->add(shown);
+    } else {
+      l.line->add(atom);
+    }
     lineBreak(l);
-    l.gap = skip;
+    if (!display) l.gap = skip;
     l.indentNext = false;
+    l.textBefore = false;
   }
 
   /** The content of a group a document sets apart from its paragraphs,
@@ -1963,6 +2606,7 @@ private:
    *  flushleft or flushright, their lines aligned so, with \topsep's 8pt.
    *  A \centering in any of them lasts to its end. */
   void blockLines(Label& l, NodeId id, Alignment align, const char* skip) {
+    LengthScope scope;  // an environment is a group
     lineBreak(l);
     if (l.drawn) l.gap = skip;
     l.indentNext = false;
@@ -1973,6 +2617,7 @@ private:
     l.align = was;
     l.gap = skip;
     l.indentNext = false;
+    l.textBefore = false;
   }
 
   /** `atom` under the declarations whose bodies a document is reading line
@@ -2045,6 +2690,9 @@ private:
   void blockGroup(Label& l, NodeId id) {
     const Node& x = node(id);
     const bool declaration = x.kind == NodeKind::declaration;
+    // A group ends what a length was set to in it; a declaration is not one.
+    std::unique_ptr<LengthScope> scope;
+    if (!declaration) scope = std::make_unique<LengthScope>();
     // What came before is set without the declaration.
     beforeProse(l);
     endProse(l);
@@ -2097,6 +2745,7 @@ private:
         blockLines(l, id, align, x.aux == 4 ? "1.2em" : "0.8em");
       } else if (isTransparentGroup(id)) {
         // \centering lasts to the end of the group it is in.
+        LengthScope scope;
         const Alignment was = l.align;
         feedLines(l, child(id, 0));
         l.align = was;
@@ -2106,13 +2755,24 @@ private:
       } else if (l.document && isDisplay(id)) {
         blockLine(l, id, true, "1em");
       } else if (l.document && isList(id)) {
-        blockLine(l, id, false, "0.8em");
+        // A list is set off by \topsep's 8pt, a tcolorbox by 0.5\baselineskip, multicols by \multicolsep (12pt), which
+        // with a header is below it only: pdflatex puts none between the text before and the header.
+        if (x.text == "multicols") {
+          blockLine(l, id, false, "1.2em", child(id, 1) != kNoNode && !trimmed(rawOf(child(id, 1))).empty() ? "0em" : nullptr);
+        } else {
+          // A quote is set off by \topsep and, after a blank line, \partopsep: 10pt (pdflatex: 22 between the baselines
+          // either side of it against 12 in a paragraph).
+          const bool quoted = x.text == "quote" || x.text == "quotation" || x.text == "verse";
+          blockLine(l, id, false, x.text == "tcolorbox" || x.text == "mdframed" ? "0.6em" : quoted ? "1em" : "0.8em");
+        }
       } else if (l.document && x.kind == NodeKind::command && !x.flag && x.text == "caption") {
         // On a line of its own, unindented; the parser ended its line.
         lineBreak(l);
         l.indentNext = false;
         beforeProse(l);
+        _captionOwnLine = true;
         lowerItem(id, prose(l));
+        _captionOwnLine = false;
       } else if (l.document && x.kind == NodeKind::command && !x.flag && x.text == "paragraph") {
         // \paragraph starts a paragraph of its own, flush left with LaTeX's
         // 3.25ex above it, and runs into it.
@@ -2121,6 +2781,16 @@ private:
         l.indentNext = false;
         beforeProse(l);
         lowerItem(id, prose(l));
+      } else if (l.document && l.drawn && x.kind == NodeKind::command && !x.flag && x.text == "vspace") {
+        // Glue between this line and the next, as TeX adds it: on top of the baselineskip glue, not instead of it.
+        // Before anything is drawn (the top of a page, which TeX would drop) it stays what it was, a height.
+        const Dimen d = glueNatural(rawOf(child(id, 0)), id);
+        if (d.isValid()) {
+          // In the text of a line that has not started (words of the paragraph are waiting), the glue is below that line.
+          const bool inText = l.broken && l.prose != nullptr && l.prose->_root != nullptr;
+          Dimen& into = inText ? l.skipAfter : l.skip;
+          into = into.isValid() ? addSkips(into, d) : d;
+        }
       } else if (isBreakNode(x)) {
         lineBreak(l, id);
       } else if (x.kind == NodeKind::command && !x.flag && x.text == "noindent") {
@@ -2135,6 +2805,10 @@ private:
                                              : Alignment::left;
           if (!l.broken) l.lineAlign = l.align;
         }
+      } else if (x.kind == NodeKind::command && !x.flag && (x.text == "gmfloat" || x.text == "gmsubfloat")) {
+        // What a float is: state of the lowering, not text, so the spaces round it stay as they were.
+        Formula state;
+        lowerItem(id, state);
       } else if (x.kind == NodeKind::command && !x.flag && isHeadingLine(x.text)) {
         headingLine(l, id);
       } else if (isSpace(x)) {
@@ -2173,8 +2847,13 @@ private:
       } else if (x.kind == NodeKind::environment || isEnvironmentGroup(id)) {
         placeOnLine(l, id);
       } else if (!hasBreak(id)) {
+        const bool atLineStart = l.afterBreak;
         beforeProse(l);
         lowerItem(id, prose(l));
+        // `\label`, `\setlength`, `\definecolor` and the rest that draw nothing leave the line as it was: a space after
+        // one at the start of a paragraph is still the space after a break, which TeX ignores (it was drawn, and the
+        // text after `\section{S}\n\label{x}\n` stood a space in).
+        if (atLineStart && l.prose != nullptr && l.prose->_root == nullptr) l.afterBreak = true;
       } else {
         const auto pieces = piecesOf(id);
         for (std::size_t k = 0; k < pieces.size(); k++) {
@@ -2194,15 +2873,31 @@ private:
    *  LaTeX's minipage sets \parindent to 0. It starts between paragraphs,
    *  as a document does, so the line end after `\begin{minipage}{..}` is
    *  nothing, and its last paragraph drops the spaces that end it. */
-  sptr<Atom> subDocument(NodeId list) {
+  sptr<Atom> subDocument(NodeId list, bool indents = false, bool verse = false) {
     Formula f;
     Label l(f);
     l.document = true;
-    l.indents = false;
+    l.indents = indents;
+    l.indentNext = indents;
+    l.verse = verse;
     l.afterBreak = true;
+    // A verse's paragraphs start 1.5em out of its margin (\itemindent = \listparindent = -1.5em).
+    LengthScope scope;
+    if (verse) nums().lengths.set("parindent", Dimen{-1.5f, UnitType::em});
     feedLines(l, list);
     finishLabel(l, f);
     return f._root;
+  }
+
+  /** \begin{quote}, quotation and verse: article's lists with no label, whose margins are \leftmargin (2.5em at the first
+   *  level) on both sides. A quotation indents the first line of each paragraph by \listparindent, 1.5em; a verse has a
+   *  left margin 1.5em deeper and its paragraphs -- each `\\` line, a blank line's stanza -- start 1.5em out of it, so a
+   *  line that wraps is set in against the first (pdflatex: 96bp, 111bp from a margin at 72). */
+  sptr<Atom> quotation(NodeId id) {
+    const bool verse = node(id).text == "verse";
+    sptr<Atom> body = subDocument(child(id, count(id) - 1), node(id).text == "quotation" || verse, verse);
+    if (body == nullptr) return nullptr;
+    return sptrOf<IndentAtom>(body, verse ? 4.f : 2.5f, 2.5f);
   }
 
   /** \begin{minipage}[position][height][inner position]{width}: its
@@ -2225,12 +2920,161 @@ private:
     return sptrOf<MinipageAtom>(subDocument(child(id, count(id) - 1)), width, p, height, inner);
   }
 
+  /** A tcolorbox length in em of the text around, as 0.2845em is a millimetre at LaTeX's 10pt; false when `value` is
+   *  not a length. */
+  bool tcolorboxLength(const std::string& value, float& em) {
+    const Dimen d = Units::getDimen(value);
+    if (!d.isValid()) return false;
+    switch (d.unit) {
+      case UnitType::em: em = d.val; return true;
+      case UnitType::mm: em = d.val * 0.284528f; return true;
+      case UnitType::cm: em = d.val * 2.84528f; return true;
+      case UnitType::pt: em = d.val * 0.1f; return true;
+      case UnitType::point: em = d.val * 0.100375f; return true;
+      case UnitType::in: em = d.val * 7.227f; return true;
+      case UnitType::pica: em = d.val * 1.2f; return true;
+      default: return false;
+    }
+  }
+
+  /** \begin{tcolorbox}[keys]: tcolorbox's default box -- a frame of `boxrule`, rounded by `arc`, `colback` inside,
+   *  padded by `boxsep` and `left`, `right`, `top`, `bottom` -- with the keys that change how it is drawn
+   *  (`title`, the colours, the lengths); another key warns and is ignored. */
+  sptr<Atom> tcolorbox(NodeId id) {
+    // mdframed is the same box with its own keys and defaults (mdframed.sty: a 0.4pt black line, white inside, 10pt at the
+    // sides and 0.4 baselineskip above and below the text, square corners, a title that is not on a band of its own).
+    const bool md = node(id).text == "mdframed";
+    const std::string name = md ? "mdframed" : "tcolorbox";
+    TcolorboxStyle style;
+    bool titleBack = false;
+    if (md) {
+      style.back = 0xFFFFFFFF;
+      style.frame = 0xFF000000;
+      style.titleText = 0xFF000000;
+      style.rule = 0.04f;
+      style.arc = 0.f;
+      style.boxsep = 0.f;
+      style.left = style.right = 1.f;
+      style.top = style.bottom = 0.48f;
+      style.sharp = true;
+    }
+    std::string title, fonttitle;
+    std::vector<std::string> keys{""};
+    int depth = 0;
+    for (const char c : rawOf(child(id, 0))) {
+      if (c == '{') depth++;
+      if (c == '}') depth--;
+      if (c == ',' && depth == 0) {
+        keys.emplace_back();
+      } else {
+        keys.back() += c;
+      }
+    }
+    for (const std::string& item : keys) {
+      const std::size_t eq = item.find('=');
+      std::string key = trimmed(item.substr(0, eq));
+      std::string value = eq == std::string::npos ? std::string() : trimmed(item.substr(eq + 1));
+      if (value.size() >= 2 && value.front() == '{' && value.back() == '}') value = value.substr(1, value.size() - 2);
+      if (key.empty()) continue;
+      if (md) {
+        // mdframed's keys, as the tcolorbox keys that draw the same thing.
+        static const std::map<std::string, std::string> names = {
+          {"linecolor", "colframe"},       {"linewidth", "boxrule"},         {"backgroundcolor", "colback"},
+          {"roundcorner", "arc"},          {"innerleftmargin", "left"},      {"innerrightmargin", "right"},
+          {"innertopmargin", "top"},       {"innerbottommargin", "bottom"},  {"frametitle", "title"},
+          {"frametitlefont", "fonttitle"}, {"frametitlefontcolor", "coltitle"},
+          {"frametitlebackgroundcolor", "colbacktitle"}};
+        const auto named = names.find(key);
+        if (named != names.end()) key = named->second;
+        if (key == "hidealllines") {
+          if (value == "true" || value.empty()) style.rule = 0.f;
+          continue;
+        }
+        if (key == "colbacktitle") titleBack = true;
+        if (key == "arc") style.sharp = false;
+      }
+      const auto colour = [&](color& into) {
+        const color c = colourOf(id, value);
+        if (!isTransparent(c)) into = c;
+      };
+      const auto length = [&](float& into) {
+        float em = 0.f;
+        if (!tcolorboxLength(value, em) || em < 0.f) {
+          _diags.warn(node(id).span, name + ": `" + key + "=" + value + "' is not a length of zero or more: ignored");
+        } else {
+          into = em;
+        }
+      };
+      if (key == "title") title = value;
+      else if (key == "fonttitle") fonttitle = value;
+      else if (key == "colback") colour(style.back);
+      else if (key == "colframe") colour(style.frame);
+      else if (key == "colbacktitle") colour(style.backTitle);
+      else if (key == "coltitle") colour(style.titleText);
+      else if (key == "boxrule") length(style.rule);
+      else if (key == "arc") length(style.arc);
+      else if (key == "boxsep") length(style.boxsep);
+      else if (key == "left") length(style.left);
+      else if (key == "right") length(style.right);
+      else if (key == "top") length(style.top);
+      else if (key == "bottom") length(style.bottom);
+      else if (key == "sharp corners") style.sharp = true;
+      else _diags.warn(node(id).span, name + ": the key `" + key + "' is not drawn: ignored");
+    }
+    // mdframed's title stands on the box's own colour unless it has one.
+    if (md && !titleBack) style.backTitle = style.back;
+    if (md && style.arc <= 0.f) style.sharp = true;
+    if (md && !title.empty()) {
+      // A title has 5pt of its own above and below (frametitleaboveskip, frametitlebelowskip): tcolorbox's band is its
+      // `boxsep` above and below, which the margins give up so that the text stands where they say.
+      const float sep = 0.5f;
+      style.boxsep = sep;
+      style.left = std::max(0.f, style.left - sep);
+      style.right = std::max(0.f, style.right - sep);
+      style.top = std::max(0.f, style.top - sep);
+      style.bottom = std::max(0.f, style.bottom - sep);
+    }
+    sptr<Atom> head;
+    if (!title.empty()) {
+      head = fragment(fonttitle.empty() ? title : "{" + fonttitle + " " + title + "}", false);
+      head = sptrOf<ColorAtom>(head, TRANSPARENT, style.titleText);
+    }
+    sptr<Atom> body = subDocument(child(id, count(id) - 1));
+    if (body == nullptr) body = sptrOf<EmptyAtom>();
+    return sptrOf<TcolorboxAtom>(body, head, style);
+  }
+
+  /** \begin{multicols}{n}[header]: the body in `n` balanced columns, a column of `\columnsep` between. */
+  sptr<Atom> multicols(NodeId id) {
+    const std::string columns = trimmed(rawOf(child(id, 0)));
+    int n = 0;
+    try {
+      n = std::stoi(columns);
+    } catch (const std::exception&) {
+    }
+    if (n < 1) {
+      _diags.warn(node(id).span, "multicols: `" + columns + "' is not a number of columns: one is used");
+      n = 1;
+    }
+    const std::string head = trimmed(rawOf(child(id, 1)));
+    Dimen sep = Units::getDimen("\\columnsep");
+    if (!sep.isValid()) sep = {1.f, UnitType::em};
+    sptr<Atom> body = subDocument(child(id, count(id) - 1));
+    if (body == nullptr) body = sptrOf<EmptyAtom>();
+    return sptrOf<MulticolsAtom>(body, head.empty() ? nullptr : fragment(head, false), n, sep);
+  }
+
   /** Built by the engine's environment handler from its source text, as
    *  the old parser's `\name@@env{...}{body}` did. */
   sptr<Atom> environment(NodeId id) {
     const Node& x = node(id);
     if (x.text == "minipage") return minipage(id);
-    if (x.text == "verbatim" || x.text == "verbatim*") return verbatimBlock(x);
+    if (x.text == "multicols") return multicols(id);
+    if (x.text == "tcolorbox" || x.text == "mdframed") return tcolorbox(id);
+    if (x.text == "quote" || x.text == "quotation" || x.text == "verse") return quotation(id);
+    // The comment package's: what is between its markers is not read.
+    if (x.text == "comment") return nullptr;
+    if (isVerbatimEnvironment(x.text)) return verbatimBlock(id);
     const EnvSpec* spec = findEnvironment(x.text);
     const std::string macName = (spec != nullptr ? x.text : std::string("matrix")) + "@@env";
     MacroInfo* mac = MacroInfo::get(macName);
@@ -2246,6 +3090,9 @@ private:
       if (spec != nullptr && i < spec->args.size() && spec->args[i].optional) continue;
       if (k < args.size()) args[k++] = rawOf(c);
     }
+    // siunitx's S columns are set as right-aligned ones, their numbers padded
+    // to line up (alignmentOf()).
+    if (isTextTable(x.text) && k > 1 && k <= args.size()) args[k - 1] = plainColumns(args[k - 1], nullptr);
     // The old template put the body between spaces.
     if (k < args.size()) args[k] = " " + stripComments(x.raw) + " ";
     Node at = x;
@@ -2276,6 +3123,11 @@ private:
     _rows.clear();
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
     if (isTblrEnvironment(node(env).text)) return tblrAlignmentOf(env);
+    // tabular[t], array[b]: LaTeX's vertical position, the first optional argument.
+    if ((node(env).text == "tabular" || node(env).text == "array") && count(env) > 0) {
+      const std::string where = trimmed(rawOf(child(env, 0)));
+      if (!where.empty() && (where[0] == 't' || where[0] == 'b')) arr->_vpos = where[0];
+    }
     const bool text = node(env).flag;
     // The rows of align, gather, ... are numbered, unless the environment is
     // starred; a multline has one number, on its last line.
@@ -2292,6 +3144,7 @@ private:
     RowNote outer = std::move(_note);
     _note = RowNote();
     _inRow++;
+    if (family) _inFamilyRow++;
     int lastRow = -1;
     std::vector<NodeId> rows;
     for (std::uint32_t r = 0; r < count(env); r++) {
@@ -2300,6 +3153,30 @@ private:
     // A longtable's head and foot rows are set once: first and last.
     const bool longtable = node(env).text == "longtable";
     if (longtable) rows = longtableOrder(rows);
+    // siunitx's S columns: a number's digits after the marker are padded, with
+    // phantoms, to the most any cell of the column has, so that the markers
+    // line up in a column set flush right.
+    std::vector<int> sColumns;
+    std::map<int, int> sDecimals;
+    std::map<int, char> sMark;
+    if (text && isTextTable(node(env).text)) {
+      for (std::uint32_t a = 0; a < count(env); a++) {
+        const Node& arg = node(child(env, a));
+        if (arg.kind == NodeKind::argument && arg.flag && !arg.raw.empty()) {
+          sColumns.clear();
+          plainColumns(arg.raw, &sColumns);
+        }
+      }
+      for (const NodeId row : rows) {
+        for (std::uint32_t c = 0; c < count(row); c++) {
+          if (std::find(sColumns.begin(), sColumns.end(), static_cast<int>(c)) == sColumns.end()) continue;
+          const SNumber n = sNumber(cellText(child(row, c)));
+          if (!n.numeric) continue;
+          sDecimals[static_cast<int>(c)] = std::max(sDecimals[static_cast<int>(c)], n.decimals);
+          if (n.marker) sMark[static_cast<int>(c)] = n.mark;
+        }
+      }
+    }
     for (std::size_t k = 0; k < rows.size(); k++) {
       const NodeId row = rows[k];
       if (longtable && k == 0 && captionRow(env, row, *arr)) {
@@ -2310,6 +3187,14 @@ private:
         if (c > 0) arr->addCol();
         if (text || (cases && c > 0)) {
           textCell(child(child(row, c), 0), *arr);
+          const auto padded = sDecimals.find(static_cast<int>(c));
+          if (padded != sDecimals.end() && padded->second > 0) {
+            const SNumber n = sNumber(cellText(child(row, c)));
+            std::string pad;
+            if (n.numeric && !n.marker) pad += "\\phantom{" + std::string(1, sMark.count(static_cast<int>(c)) > 0 ? sMark[static_cast<int>(c)] : '.') + "}";
+            for (int d = n.decimals; n.numeric && d < padded->second; d++) pad += "\\phantom{0}";
+            if (!pad.empty()) arr->add(fragment(pad, false));
+          }
         } else {
           lowerList(child(child(row, c), 0), *arr, 0);
         }
@@ -2330,6 +3215,7 @@ private:
     if (family && once && lastRow >= 0) finishRow(*arr, lastRow, automatic);
     if (lettered) nums().sub = false;
     _inRow--;
+    if (family) _inFamilyRow--;
     RowNote inner = std::move(_note);
     _note = std::move(outer);
     if (!family) {
@@ -2351,14 +3237,28 @@ private:
            name == "endlastfoot";
   }
 
+  /** Whether a row holds nothing but spaces and the command `name` that ends it. */
+  bool holdsOnly(NodeId row, const std::string& name) const {
+    for (std::uint32_t c = 0; c < count(row); c++) {
+      const NodeId list = child(child(row, c), 0);
+      for (std::uint32_t i = 0; i < count(list); i++) {
+        const Node& x = node(child(list, i));
+        if (!isSpace(x) && !(x.kind == NodeKind::command && x.text == name)) return false;
+      }
+    }
+    return true;
+  }
+
   /** A longtable's rows, in the order a single page sets them: the first
    *  head (the head, where there is no first one), the rows, and the last
    *  foot (the foot). A group ends at the row that has its marker. */
   std::vector<NodeId> longtableOrder(const std::vector<NodeId>& rows) const {
     std::vector<NodeId> firstHead, head, foot, lastFoot, group;
     for (const NodeId row : rows) {
-      group.push_back(row);
       const std::string& end = node(row).text;
+      // `H1 & H2 \\ \endhead`: the `\\` ended the last row of the head, so the row that only carries `\endhead` is no
+      // row at all (it was a blank row of its own, a baselineskip tall).
+      if (!(isLongtableMarker(end) && holdsOnly(row, end))) group.push_back(row);
       std::vector<NodeId>* to = end == "endfirsthead"  ? &firstHead
                                 : end == "endhead"     ? &head
                                 : end == "endfoot"     ? &foot
@@ -2373,6 +3273,98 @@ private:
     const std::vector<NodeId>& tail = lastFoot.empty() ? foot : lastFoot;
     order.insert(order.end(), tail.begin(), tail.end());
     return order;
+  }
+
+  /** The characters of a table cell, less the spaces at its ends; anything
+   *  else in it (a command, a group, a space inside) is a backslash, so that
+   *  what reads the text as a number does not take it for one. */
+  std::string cellText(NodeId cell) const {
+    const NodeId list = child(cell, 0);
+    std::uint32_t from = 0, to = count(list);
+    while (from < to && isSpace(node(child(list, from)))) from++;
+    while (to > from && isSpace(node(child(list, to - 1)))) to--;
+    std::string out;
+    for (std::uint32_t i = from; i < to; i++) {
+      const Node& x = node(child(list, i));
+      if (x.kind == NodeKind::character && x.cp < 128) {
+        out += static_cast<char>(x.cp);
+      } else {
+        out += '\\';
+      }
+    }
+    return out;
+  }
+
+  static bool isTextTable(const std::string& name) {
+    return name == "tabular" || name == "tabular*" || name == "tabularx" || name == "longtable";
+  }
+
+  /** A column specification with siunitx's `S` and `S[options]` written as `r`,
+   *  and, in `sColumns`, the indices of the columns that were S. The letters
+   *  of what is in braces or brackets are not columns. A repeated group
+   *  (`*{3}{S}`) is left as it is. */
+  static std::string plainColumns(const std::string& spec, std::vector<int>* sColumns) {
+    if (spec.find('S') == std::string::npos || spec.find('*') != std::string::npos) return spec;
+    std::string out;
+    int column = 0;
+    // The index just past the group opened at `i` by `open`, which closes with `close`.
+    const auto past = [&](std::size_t i, char open, char close) {
+      int depth = 0;
+      for (; i < spec.size(); i++) {
+        if (spec[i] == open) depth++;
+        if (spec[i] == close && --depth == 0) return i + 1;
+      }
+      return spec.size();
+    };
+    for (std::size_t i = 0; i < spec.size();) {
+      const char c = spec[i];
+      std::size_t end = i + 1;
+      if (c == 'S') {
+        if (sColumns != nullptr) sColumns->push_back(column);
+        column++;
+        out += 'r';
+        if (end < spec.size() && spec[end] == '[') end = past(end, '[', ']');
+        i = end;
+        continue;
+      }
+      if (c == 'p' || c == 'm' || c == 'b') {
+        column++;
+        if (end < spec.size() && spec[end] == '{') end = past(end, '{', '}');
+      } else if (c == '@' || c == '!' || c == '>' || c == '<') {
+        if (end < spec.size() && spec[end] == '{') end = past(end, '{', '}');
+      } else if (c == 'l' || c == 'c' || c == 'r' || c == 'X' || c == 'Q') {
+        column++;
+        if (end < spec.size() && spec[end] == '[') end = past(end, '[', ']');
+      }
+      out.append(spec, i, end - i);
+      i = end;
+    }
+    return out;
+  }
+
+  /** A cell of an S column as siunitx reads a number: a sign, digits, and a
+   *  decimal marker with digits after it. */
+  struct SNumber {
+    bool numeric = false;
+    bool marker = false;
+    char mark = '.';
+    int decimals = 0;
+  };
+
+  static SNumber sNumber(const std::string& raw) {
+    const std::string s = trimmed(raw);
+    SNumber n;
+    std::size_t i = 0, digits = 0;
+    if (i < s.size() && (s[i] == '+' || s[i] == '-')) i++;
+    while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])) != 0) i++, digits++;
+    if (i < s.size() && (s[i] == '.' || s[i] == ',')) {
+      n.marker = true;
+      n.mark = s[i++];
+      while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])) != 0) i++, n.decimals++;
+      digits += static_cast<std::size_t>(n.decimals);
+    }
+    n.numeric = digits > 0 && i == s.size();
+    return n;
   }
 
   /** How many columns a column specification sets: its letters, with what
@@ -2509,6 +3501,16 @@ private:
     };
 
     bool noted = false;
+    // A colour is applied to every cell it covers: said once per name.
+    std::set<std::string> badColours;
+    const auto tblrColour = [&](const std::string& spec) {
+      color c = TRANSPARENT;
+      if (ColorAtom::parseColor(spec, c)) return c;
+      if (badColours.insert(spec).second) {
+        _diags.warn(node(env).span, "undefined colour `" + trimmed(spec) + "': the colour is not changed");
+      }
+      return static_cast<color>(TRANSPARENT);
+    };
     for (int k = 0; k < n; k++) {
       const NodeId row = rows[static_cast<std::size_t>(k)];
       rule(k + 1);
@@ -2531,10 +3533,12 @@ private:
                                               true);
         }
         if (!s.background.empty()) {
-          arr->addCellSpecifier(sptrOf<CellColorAtom>(ColorAtom::getColor(s.background)));
+          const color bg = tblrColour(s.background);
+          if (!isTransparent(bg)) arr->addCellSpecifier(sptrOf<CellColorAtom>(bg));
         }
         if (!s.foreground.empty()) {
-          arr->addCellSpecifier(sptrOf<CellForegroundAtom>(ColorAtom::getColor(s.foreground)));
+          const color fg = tblrColour(s.foreground);
+          if (!isTransparent(fg)) arr->addCellSpecifier(sptrOf<CellForegroundAtom>(fg));
         }
         const int span = std::min(s.colspan, static_cast<int>(cells - c));
         if (span > 1 || !s.halign.empty()) {
@@ -2601,6 +3605,7 @@ private:
     nums().sub = true;
     nums().subIndex = 0;
     nums().current = std::to_string(++nums().equation);
+    nums().currentKind = "equation";
   }
 
   /** A row, or a display, is done: its number or tag, and its labels. */
@@ -2626,8 +3631,12 @@ private:
     if (tag != nullptr) {
       arr._rowTags[row] = tag;
       nums().current = text;
+      nums().currentKind = "equation";
     }
-    for (const auto& key : n.labels) (*nums().labels)[key] = nums().current;
+    for (const auto& key : n.labels) {
+      (*nums().labels)[key] = nums().current;
+      (*nums().kinds)[key] = nums().currentKind;
+    }
   }
 
   /** The content of a display, `$$...$$` or `\[...\]`: its list, with a
@@ -2636,8 +3645,10 @@ private:
     RowNote outer = std::move(_note);
     _note = RowNote();
     _inRow++;
+    _inFamilyRow++;
     const sptr<Atom> body = build(list);
     _inRow--;
+    _inFamilyRow--;
     const bool tagged = _note.tag != nullptr;
     auto arr = sptrOf<ArrayFormula>();
     // `\[\tag{1}\]`: a display with nothing in it still has its number.
@@ -2653,11 +3664,183 @@ private:
   /** \label: what it names is the number of the row or display it is in,
    *  known when that ends; elsewhere, the last number set. */
   void label(const std::string& key) {
-    if (_inRow > 0) {
+    // In a numbered row (align, gather, equation: `_inFamilyRow`) the label waits for the row's number. Anywhere else -- a
+    // list item, a table cell, an aligned on its own -- it names what is current, as LaTeX's \label does: the item's
+    // number, the float's, the section's. It used to wait for a row number that nothing gave, and \ref found nothing.
+    if (_inFamilyRow > 0) {
       _note.labels.push_back(key);
     } else {
       (*nums().labels)[key] = nums().current;
+      (*nums().sublabels)[key] = nums().subCurrent;
+      (*nums().kinds)[key] = nums().currentKind;
     }
+  }
+
+  /** What a \caption in a float starts with, and the number a \label after it names: "Figure 1: " (the counter steps
+   *  here, as \refstepcounter does in \caption), or in a subfigure "(a) ", whose label is the figure's number, which the
+   *  main caption will take, and the letter. Nothing outside a float. */
+  std::string captionLabel() {
+    if (_floatKind.empty()) return std::string();
+    if (!_subKind.empty()) {
+      const std::string letter = formatCounter("alph", ++nums().counters[_subKind].value);
+      nums().current = std::to_string(nums().counters[_floatKind].value + 1) + letter;
+      nums().currentKind = _floatKind;
+      nums().subCurrent = letter;
+      return "(" + letter + ")~";
+    }
+    const int n = ++nums().counters[_floatKind].value;
+    nums().current = std::to_string(n);
+    nums().currentKind = _floatKind;
+    nums().subCurrent.clear();
+    return std::string(_floatKind == "table" ? "Table" : "Figure") + "~" + std::to_string(n) + ": ";
+  }
+
+  /** The name of the length an argument names, `\tabcolsep` as `tabcolsep`.
+   *  For \setlength and \addtolength the length has to be defined, or this
+   *  warns and answers empty; \newlength's is a new name. */
+  std::string lengthName(NodeId id, std::uint32_t arg, bool mustExist) {
+    std::string name = trimmed(rawOf(child(id, arg)));
+    if (!name.empty() && name[0] == '\\') name.erase(0, 1);
+    if (name.empty() || (mustExist && !nums().lengths.known(name))) {
+      _diags.warn(node(id).span, "length `\\" + name + "' is not defined: \\newlength makes one");
+      return std::string();
+    }
+    return name;
+  }
+
+  /** Whether `s` is a length: a number and a unit, or a number of a length
+   *  that is defined (`2\tabcolsep`, `\textwidth`). Units::getDimen() reads
+   *  any word as a unit, in pixels, so it cannot say. */
+  bool isLengthText(const std::string& s) {
+    static const std::set<std::string> units = {"em", "ex", "pt", "bp", "pc", "cm", "mm", "in",
+                                                "sp", "dd", "cc", "mu", "px"};
+    std::size_t i = 0;
+    if (i < s.size() && (s[i] == '+' || s[i] == '-')) i++;
+    while (i < s.size() && (std::isdigit(static_cast<unsigned char>(s[i])) != 0 || s[i] == '.')) i++;
+    std::string rest = trimmed(s.substr(i));
+    if (rest.empty()) return false;
+    if (rest[0] == '\\') {
+      const std::string name = trimmed(rest.substr(1));
+      return name == "textwidth" || name == "linewidth" || name == "columnwidth" ||
+             nums().lengths.known(name);
+    }
+    for (char& c : rest) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return units.count(rest) > 0;
+  }
+
+  /** `1.5em`, for a message. */
+  static std::string describe(const Dimen& d) {
+    std::ostringstream out;
+    out << d.val;
+    static const char* names[] = {"em", "ex", "px", "bp", "pc", "mu", "cm", "mm", "in", "sp", "pt", "dd", "cc", "tt", "tw"};
+    const int unit = static_cast<int>(d.unit);
+    if (unit >= 0 && unit < 15) out << names[unit];
+    return out.str();
+  }
+
+  bool counterIsKnown(const std::string& key) {
+    return key == "equation" || key == "section" || key == "subsection" || key == "subsubsection" ||
+           nums().counters.count(key) > 0;
+  }
+
+  /** Whether `name` is one of the commands that write a counter. */
+  static bool isCounterStyle(const std::string& name) {
+    static const std::set<std::string> styles = {"arabic", "roman", "Roman", "alph", "Alph", "fnsymbol"};
+    return styles.count(name) > 0;
+  }
+
+  /** The value of the counter `name`: the ones LaTeX has that the engine
+   *  keeps itself, and the ones \newcounter and \newtheorem made. Null, with
+   *  a warning, for none. */
+  int* counterOf(NodeId at, const std::string& name) {
+    if (name == "equation") return &nums().equation;
+    if (name == "section") return &_section[0];
+    if (name == "subsection") return &_section[1];
+    if (name == "subsubsection") return &_section[2];
+    const auto it = nums().counters.find(name);
+    if (it != nums().counters.end()) return &it->second.value;
+    _diags.warn(node(at).span, "no counter `" + name + "': \\newcounter makes one");
+    return nullptr;
+  }
+
+  /** A counter's number: an integer, or \value{other}. */
+  bool counterNumber(NodeId at, const std::string& raw, int& out) {
+    const std::string s = trimmed(raw);
+    if (s.rfind("\\value{", 0) == 0 && s.back() == '}') {
+      const int* other = counterOf(at, trimmed(s.substr(7, s.size() - 8)));
+      if (other == nullptr) return false;
+      out = *other;
+      return true;
+    }
+    char* end = nullptr;
+    const long v = std::strtol(s.c_str(), &end, 10);
+    if (s.empty() || *end != '\0') {
+      _diags.warn(node(at).span, "`" + s + "' is not a number for a counter");
+      return false;
+    }
+    out = static_cast<int>(v);
+    return true;
+  }
+
+  /** \stepcounter: one more, and every counter made `within` it starts again. */
+  void stepCounter(const std::string& name) {
+    if (name == "equation") {
+      nums().equation++;
+    } else if (name == "section" || name == "subsection" || name == "subsubsection") {
+      _section[name == "section" ? 0 : name == "subsection" ? 1 : 2]++;
+    } else {
+      nums().counters[name].value++;
+    }
+    resetCountersWithin(name);
+  }
+
+  /** Every counter made `within` `parent`, and those within them, start again. Counters that are each other's parents
+   *  (`\newcounter{a}[a]`, which LaTeX accepts as a loop that never ends) are reset once: `seen` stops the recursion. */
+  void resetCountersWithin(const std::string& parent, std::set<std::string>* seen = nullptr) {
+    std::set<std::string> here;
+    if (seen == nullptr) seen = &here;
+    if (!seen->insert(parent).second) return;
+    for (auto& entry : nums().counters) {
+      if (entry.second.parent != parent) continue;
+      entry.second.value = 0;
+      resetCountersWithin(entry.first, seen);
+    }
+  }
+
+  /** LaTeX source with the numbers its counters have now: `\arabic{c}` and the
+   *  other styles replaced by their text, so a \label made from \thec keeps the
+   *  number the counter had then. */
+  std::string withCounterValues(NodeId at, const std::string& source) {
+    static const char* styles[] = {"arabic", "roman", "Roman", "alph", "Alph", "fnsymbol"};
+    std::string out;
+    for (std::size_t i = 0; i < source.size();) {
+      bool replaced = false;
+      if (source[i] == '\\') {
+        for (const char* style : styles) {
+          const std::string head = std::string("\\") + style + "{";
+          if (source.compare(i, head.size(), head) != 0) continue;
+          const std::size_t close = source.find('}', i + head.size());
+          if (close == std::string::npos) break;
+          const int* v = counterOf(at, trimmed(source.substr(i + head.size(), close - i - head.size())));
+          if (v != nullptr) out += formatCounter(style, *v);
+          i = close + 1;
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) out += source[i++];
+    }
+    return out;
+  }
+
+  /** The colour `spec` names, or TRANSPARENT -- no colour, so the colour
+   *  around stays -- with a warning at `id`: xcolor stops with "Undefined
+   *  color", and we recover. */
+  color colourOf(NodeId id, const std::string& spec) {
+    color c = TRANSPARENT;
+    if (ColorAtom::parseColor(spec, c)) return c;
+    _diags.warn(node(id).span, "undefined colour `" + trimmed(spec) + "': the colour is not changed");
+    return TRANSPARENT;
   }
 
   /** \ref and \eqref, drawn when the whole input has been read. */
@@ -2675,6 +3858,20 @@ private:
       // `?\?)` so that `??)` is not read as a trigraph.
       _diags.warn(ref.at, "reference `" + ref.key + "' is undefined: drawn as " +
                             (ref.parentheses ? "(?\?)" : "??"));
+    }
+    for (const auto& c : nums().crossrefs) {
+      for (const auto& key : c.keys) {
+        if (key.empty() || nums().labels->count(key) > 0) continue;
+        _diags.warn(c.at, "reference `" + key + "' is undefined: drawn as ??");
+      }
+    }
+    for (const auto& c : nums().cites) {
+      const std::string drawn = c.form == "citet" ? "(author?) [?]" : c.form == "citealp" ? "?" : "[?]";
+      for (const auto& key : c.keys) {
+        // No key at all is a missing argument, which the parser has said.
+        if (key.empty() || nums().bibitems->count(key) > 0) continue;
+        _diags.warn(c.at, "citation `" + key + "' is undefined: drawn as " + drawn);
+      }
     }
   }
 

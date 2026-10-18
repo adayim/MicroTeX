@@ -13,7 +13,9 @@
 #include "env/units.h"
 #include "front/tblr.h"
 #include "macro/macro.h"
+#include "macro/macro_colors.h"
 #include "macro/macro_decl.h"
+#include "utils/counter_format.h"
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
 
@@ -40,12 +42,22 @@ inline cmdmacro(eqnarrayATATenv) {
   return table;
 }
 
+/** A table's column gap is 2\tabcolsep in text and 2\arraycolsep in math, as in LaTeX. */
+inline void setColumnSepOf(MatrixAtom& table, CommandArgs& args) {
+  Dimen half = Units::getDimen(args.isMathMode() ? "\\arraycolsep" : "\\tabcolsep");
+  if (!half.isValid()) return;
+  half.val *= 2.f;
+  table.setColumnSep(half);
+}
+
 // tabular*{width}{columns} and tabularx{width}{columns}.
 inline sptr<Atom> widthTable(CommandArgs& args, bool spread) {
   const auto arr = args.alignment(3);
   arr->checkDimensions();
   auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(2), true);
+  setColumnSepOf(*table, args);
   table->setTableWidth(Units::getDimen(args.text(1)), spread);
+  table->setRowSpacing(RowSpacing::strut);
   return table;
 }
 
@@ -62,7 +74,10 @@ inline cmdmacro(tabularxATATenv) {
 inline cmdmacro(longtableATATenv) {
   const auto arr = args.alignment(2);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
+  auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
+  setColumnSepOf(*table, args);
+  table->setRowSpacing(RowSpacing::strut);
+  return table;
 }
 
 // tabularray's tblr[options]{spec}: a tabular, of the columns its spec gives.
@@ -70,19 +85,22 @@ inline cmdmacro(tblrATATenv) {
   const auto arr = args.alignment(2);
   arr->checkDimensions();
   const auto spec = front::parseTblr("", args.text(1));
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, front::tblrColumns(spec, arr->cols()), true);
+  auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, front::tblrColumns(spec, arr->cols()), true);
+  setColumnSepOf(*table, args);  // tabularray's colsep is 6pt too
+  return table;
 }
 
 inline cmdmacro(arrayATATenv) {
   const auto arr = args.alignment(2);
   arr->checkDimensions();
   auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, args.text(1), true);
-  // tabular is this handler too: a table of text keeps the engine's rows.
+  setColumnSepOf(*table, args);
+  // tabular is this handler too: a table of text has TeX's strut rows as an array has.
   if (arr->_rows == "jot") {
     table->setRowSpacing(RowSpacing::jot);
   } else if (arr->_rows == "sub") {
     table->setRowSpacing(RowSpacing::sub);
-  } else if (args.isMathMode()) {
+  } else {
     table->setRowSpacing(RowSpacing::strut);
   }
   return table;
@@ -270,8 +288,7 @@ inline cmdmacro(thickhline) {
   return a;
 }
 
-// booktabs' \specialrule{thickness}{above}{below}: a rule of that
-// thickness. The space above and below is not set; no rule here has any.
+// booktabs' \specialrule{thickness}{above}{below}: a rule of that thickness, with that much space above and below it.
 inline cmdmacro(specialrule) {
   if (args.alignmentHere() == nullptr)
     throw ex_parse("The macro \\specialrule only available in array mode!");
@@ -282,6 +299,7 @@ inline cmdmacro(specialrule) {
   } else {
     a->setThicknessScale(2.f);  // an unreadable thickness: \toprule's
   }
+  a->setSpacing(Units::getDimen(args.text(2)), Units::getDimen(args.text(3)));
   return a;
 }
 
@@ -301,9 +319,8 @@ inline cmdmacro(addlinespace) {
   return a;
 }
 
-inline cmdmacro(cline) {
-  if (args.alignmentHere() == nullptr)
-    throw ex_parse("The macro \\cline only available in array mode!");
+inline sptr<HlineAtom> clineRule(CommandArgs& args, const char* name) {
+  if (args.alignmentHere() == nullptr) throw ex_parse(std::string("The macro \\") + name + " only available in array mode!");
   const std::string& spec = args.text(1);
   int a = 0, b = 0;
   const auto dash = spec.find('-');
@@ -324,6 +341,19 @@ inline cmdmacro(cline) {
   return at;
 }
 
+inline cmdmacro(cline) {
+  return clineRule(args, "cline");
+}
+
+// booktabs' \cmidrule[width](trim){a-b}: a light rule across columns a to b, with \aboverulesep (0.4ex) above it and
+// \belowrulesep (0.65ex) below, as \midrule has.
+inline cmdmacro(cmidrule) {
+  auto at = clineRule(args, "cmidrule");
+  at->setThickness(0.05f, UnitType::em);
+  at->setSpacing({0.4f, UnitType::ex}, {0.65f, UnitType::ex});
+  return at;
+}
+
 inline cmdmacro(multirow) {
   ArrayFormula* arr = args.alignmentHere();
   if (arr == nullptr) throw ex_parse("Command \\multirow must used in array environment!");
@@ -336,8 +366,8 @@ inline cmdmacro(multirow) {
 inline cmdmacro(cellcolor) {
   ArrayFormula* arr = args.alignmentHere();
   if (arr == nullptr) throw ex_parse("Command \\cellcolor must used in array environment!");
-  color c = ColorAtom::getColor(args.text(1));
-  arr->addCellSpecifier(sptrOf<CellColorAtom>(c));
+  color c = colourArg(args, args.text(1));
+  if (!isTransparent(c)) arr->addCellSpecifier(sptrOf<CellColorAtom>(c));
   return nullptr;
 }
 
@@ -347,21 +377,24 @@ inline cmdmacro(newcolumntype) {
 }
 
 inline cmdmacro(arrayrulecolor) {
-  color c = ColorAtom::getColor(args.text(1));
-  MatrixAtom::LINE_COLOR = c;
+  color c = colourArg(args, args.text(1));
+  if (!isTransparent(c)) {
+    MatrixAtom::LINE_COLOR = c;
+    gArrayRuleColor = c;
+  }
   return nullptr;
 }
 
 inline cmdmacro(columnbg) {
-  color c = ColorAtom::getColor(args.text(1));
-  return sptrOf<CellColorAtom>(c);
+  color c = colourArg(args, args.text(1));
+  return isTransparent(c) ? nullptr : sptrOf<CellColorAtom>(c);
 }
 
 inline cmdmacro(rowcolor) {
   ArrayFormula* arr = args.alignmentHere();
   if (arr == nullptr) throw ex_parse("Command \\rowcolor must used in array environment!");
-  color c = ColorAtom::getColor(args.text(1));
-  arr->addRowSpecifier(sptrOf<CellColorAtom>(c));
+  color c = colourArg(args, args.text(1));
+  if (!isTransparent(c)) arr->addRowSpecifier(sptrOf<CellColorAtom>(c));
   return nullptr;
 }
 
@@ -444,35 +477,6 @@ inline std::vector<std::string> listSplitItems(const std::string& body) {
   }
   if (started) items.push_back(cur);
   return items;
-}
-
-inline std::string listRoman(int n) {
-  static const int v[] = {1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1};
-  static const char* s[] =
-    {"m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"};
-  std::string r;
-  for (int k = 0; k < 13 && n > 0; k++) {
-    while (n >= v[k]) {
-      r += s[k];
-      n -= v[k];
-    }
-  }
-  return r;
-}
-
-inline std::string listAlph(int n) {
-  std::string r;
-  while (n > 0) {
-    n--;
-    r = (char)('a' + n % 26) + r;
-    n /= 26;
-  }
-  return r;
-}
-
-inline std::string listToUpper(std::string s) {
-  for (char& c : s) c = (char)std::toupper((unsigned char)c);
-  return s;
 }
 
 // Build the enumerate marker for item index `n` (1-based) from a label
@@ -574,17 +578,33 @@ inline std::vector<std::string> listParts(const std::string& item) {
   return parts;
 }
 
+// How deep the list being built is in other lists (a nested list is lowered while its outer one is): LaTeX's default
+// labels change with the level.
+inline int& listDepth() {
+  static thread_local int depth = 0;
+  return depth;
+}
+
 // Lay a list body out as rows, one per item: its marker, set right as
 // LaTeX sets labels, a quad, and its text in an X column, which takes the
 // rest of the text width and wraps to it (the whole line without a
 // width). A list nested after an item's text goes on rows of its own,
 // level with that text, as LaTeX sets it; one that opens the item shares
 // the item's first line, as in LaTeX too.
+//
+// `columns` is the column spec when it is not the usual one; `noteLabels` sets
+// an item's own label as a superscript, as threeparttable's notes are; and
+// `declarations` (a `\small` that opens the list's body) is put before the
+// text of every item.
 inline sptr<Atom> listBuild(
   CommandArgs& args,
   const std::vector<std::string>& items,
   const std::function<std::string(int)>& marker,
-  bool description = false
+  bool description = false,
+  const char* columns = nullptr,
+  bool noteLabels = false,
+  const std::string& declarations = std::string(),
+  bool numbered = false
 ) {
   if (items.empty()) return nullptr;
   std::string s;
@@ -601,11 +621,16 @@ inline sptr<Atom> listBuild(
     std::string mark;
     if (description) {
       mark = label.empty() ? "" : "\\textbf{" + label + "}";
+    } else if (noteLabels && !label.empty()) {
+      // threeparttable's \tnote in a label box of 0.5em.
+      mark = "\\rlap{\\textsuperscript{" + label + "}}\\hspace{0.5em}";
     } else if (!label.empty()) {
       mark = args.isMathMode() ? "\\text{" + label + "}" : label;
     } else {
       mark = marker(++counted);
     }
+    // What a \label in an enumerated item names: the item's number, as `\theenumi` is, which a custom label does not change.
+    const std::string named = numbered && label.empty() ? "\\gmcurrentlabel{" + std::to_string(counted) + "}" : std::string();
     const auto parts = listParts(body);
     bool first = true;
     for (size_t k = 0; k < parts.size(); k++) {
@@ -613,34 +638,78 @@ inline sptr<Atom> listBuild(
       if (part.empty()) continue;
       const bool nested = k % 2 == 1;
       // A nested list is met in text when its item is text.
-      const std::string content = args.isMathMode() ? part
+      const std::string content = (first ? named : std::string()) + (args.isMathMode() ? part
                                   : nested         ? "\\text{" + part + "}"
-                                                   : listTextItem(part);
-      row(first ? mark : "", content);
+                                                   : listTextItem(part));
+      row(first ? mark : "", declarations.empty() ? content : declarations + " " + content);
       first = false;
     }
     if (first) row(mark, "");  // an empty item still has its marker
   }
-  const auto arr = args.alignmentOfText(s);
+  struct Deeper {
+    Deeper() { listDepth()++; }
+    ~Deeper() { listDepth()--; }
+  };
+  sptr<ArrayFormula> arr;
+  {
+    const Deeper inside;   // the lists in this one's items are lowered here
+    arr = args.alignmentOfText(s);
+  }
   arr->checkDimensions();
-  const char* columns = description ? "l@{\\quad}X" : "r@{\\quad}X";
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, columns, false);
+  if (columns == nullptr) columns = description ? "l@{\\quad}X" : "r@{\\quad}X";
+  auto list = sptrOf<MatrixAtom>(args.isPartial(), arr, columns, false);
+  list->_flow = true;
+  return list;
+}
+
+// threeparttable's tablenotes: a list whose item labels are superscripts in a
+// box of 0.5em, \leftmargin 1.5em and \labelsep 0.2em, so the label starts 0.8em
+// in and the text 1.5em (pdflatex: 141 and 148 against a left edge of 133, in
+// points, though the package sets \leftskip \tabcolsep: the list ignores it).
+// `[para]` runs the notes on in one
+// paragraph; a `\small` before the first item sets all of them.
+inline cmdmacro(tablenotesATATenv) {
+  std::string body = args.text(1);
+  const std::string options = listPeelOptional(body);
+  // What stands before the first \item: declarations, which LaTeX lets stand there.
+  const auto firstItem = body.find("\\item");
+  const std::string declarations =
+    listTrim(firstItem == std::string::npos ? body : body.substr(0, firstItem));
+  const auto items = listSplitItems(body);
+  if (options.find("para") != std::string::npos) {
+    std::string runOn = declarations;
+    for (size_t i = 0; i < items.size(); i++) {
+      std::string item = items[i];
+      const std::string label = listPeelOptional(item);
+      if (i > 0) runOn += "\\quad ";
+      if (!label.empty()) runOn += "\\textsuperscript{" + label + "}\\,";
+      runOn += listTrim(item);
+    }
+    return args.formulaOf(runOn, false);
+  }
+  return listBuild(args, items, [](int) { return std::string("\\hspace{0.5em}"); }, false,
+                   "@{\\hspace{0.8em}}l@{\\hspace{0.2em}}X", true, declarations);
 }
 
 inline cmdmacro(itemizeATATenv) {
   std::string body = args.text(1);
   const std::string opt = listPeelOptional(body);
-  const std::string mark = opt.empty() ? "\\bullet" : opt;
+  // LaTeX's labels by level: a bullet, a bold en dash (\labelitemii is `\normalfont\bfseries\textendash`), an asterisk, a
+  // centred dot.
+  static const char* marks[] = {"\\bullet", "\\text{\\bfseries\\textendash}", "\\ast", "\\cdot"};
+  const std::string mark = opt.empty() ? marks[std::min(listDepth(), 3)] : opt;
   return listBuild(args, listSplitItems(body), [&](int) { return mark; });
 }
 
 inline cmdmacro(enumerateATATenv) {
   std::string body = args.text(1);
   std::string opt = listPeelOptional(body);
-  if (opt.empty()) opt = "\\arabic*.";
+  // LaTeX's labels by level: 1., (a), i., A.
+  static const char* labels[] = {"\\arabic*.", "(\\alph*)", "\\roman*.", "\\Alph*."};
+  if (opt.empty()) opt = labels[std::min(listDepth(), 3)];
   return listBuild(args, listSplitItems(body), [&](int n) {
     return "\\mathrm{" + listFormatLabel(opt, n) + "}";
-  });
+  }, false, nullptr, false, std::string(), true);
 }
 
 // A description: each item's label, in bold, hangs before its text.

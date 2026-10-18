@@ -52,4 +52,15 @@ cmdmacro(definecolor) {
   return nullptr;
 }
 
+// xcolor's \colorlet{name}{expression}: a name for a colour made of others.
+cmdmacro(colorlet) {
+  color c = TRANSPARENT;
+  if (!ColorAtom::parseColor(args.text(2), c)) {
+    args.warn("undefined colour `" + args.text(2) + "': " + args.text(1) + " is not defined");
+    return nullptr;
+  }
+  ColorAtom::defineColor(args.text(1), c);
+  return nullptr;
+}
+
 }  // namespace microtex

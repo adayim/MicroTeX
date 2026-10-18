@@ -8,6 +8,7 @@
 #include "utils/log.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -15,6 +16,37 @@ using namespace std;
 using namespace microtex;
 
 namespace {
+
+/** The size a line is set in: 1 for text as it stands, the scale of a size declaration (or a scaled box) that was opened
+ *  over it; 0 for glue and struts, which say nothing, and -1 where the pieces differ. */
+float pieceScale(const Box* b) {
+  if (b->_height + b->_depth <= 0.f) return 0.f;
+  if (const auto* s = dynamic_cast<const ScaleBox*>(b)) return s->sx();
+  if (const auto* h = dynamic_cast<const HBox*>(b)) {
+    float scale = 0.f;
+    for (const auto& c : h->_children) {
+      const float v = pieceScale(c.get());
+      if (v == 0.f) continue;
+      if (v < 0.f || (scale != 0.f && std::fabs(scale - v) > 1e-3f)) return -1.f;
+      scale = v;
+    }
+    return scale;
+  }
+  return 1.f;
+}
+
+/** A line under the ones before it: `baselineSkip` from the last one's baseline, or a twelfth of it (TeX's \lineskip,
+ *  1pt at 10pt) from its depth when the two are too tall for that. A line that is all of one size declaration
+ *  (\footnotesize, an opened scaled box) is spaced by that size's baselineskip, as TeX's changes with the size. */
+void stackLine(VBox& vbox, const sptr<Box>& line, float baselineSkip) {
+  if (vbox._children.empty()) {
+    vbox.add(line);
+    return;
+  }
+  const float scale = pieceScale(line.get());
+  if (scale > 0.f) baselineSkip *= scale;
+  vbox.add(line, std::max(baselineSkip / 12.f, baselineSkip - vbox._children.back()->_depth - line->_height));
+}
 
 // A colour, a size, a highlight or ulem's underline and strike-out is one
 // box around the run it applies to, and the splitter breaks only inside
@@ -635,7 +667,7 @@ std::pair<bool, sptr<Box>> BoxSplitter::split(const sptr<HBox>& hb, float width,
     // ragged. The trailing `second` added after this loop is that line,
     // and is deliberately left alone.
     if (_justify) justifyLine(first, width);
-    vbox->add(first, lineSpace);
+    stackLine(*vbox, first, lineSpace);
     splitted = true;
     hbox = second;
   }
@@ -643,7 +675,7 @@ std::pair<bool, sptr<Box>> BoxSplitter::split(const sptr<HBox>& hb, float width,
   if (second != nullptr) {
     // The last line, left ragged but still ordered.
     reorderLine(second);
-    vbox->add(second, lineSpace);
+    stackLine(*vbox, second, lineSpace);
     return {splitted, vbox};
   }
 

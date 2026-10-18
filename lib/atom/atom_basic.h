@@ -4,6 +4,7 @@
 #include "atom/atom.h"
 #include "atom/atom_row.h"
 #include "box/box_single.h"
+#include "env/units.h"
 #include "unimath/math_type.h"
 
 namespace microtex {
@@ -129,6 +130,10 @@ public:
   sptr<Box> createBox(Env& env) override;
 };
 
+/** The colour the array rule colour command last set: a rule takes it when it is made, so a table can change colour between its rules
+ *  (it was read when the rules were drawn, and the last one coloured them all). transparent: the default. */
+inline thread_local color gArrayRuleColor = transparent;
+
 /** An atom representing a horizontal-line in array environment */
 class HlineAtom : public Atom {
 private:
@@ -143,11 +148,13 @@ private:
   bool _blank = false;
   // Dashes, not a line (\hdashline).
   bool _dashed = false;
+  // booktabs' space above and below a rule (\aboverulesep, \belowrulesep, ...), set in the rule's own row.
+  Dimen _above, _below;
 
 public:
   HlineAtom() noexcept
       : _width(0), _shift(0), _thicknessScale(1.f),
-        _colStart(-1), _colEnd(-1), _color(transparent) {
+        _colStart(-1), _colEnd(-1), _color(gArrayRuleColor) {
     _type = AtomType::hline;
   }
 
@@ -159,9 +166,17 @@ public:
 
   inline void setColor(color c) { _color = c; }
 
+  inline color ruleColor() const { return _color; }
+
   inline void setThicknessScale(float s) { _thicknessScale = s; }
 
   inline void setBlank(bool blank) { _blank = blank; }
+
+  /** Space above and below the rule, which booktabs puts round its rules; none for an \hline. */
+  inline void setSpacing(const Dimen& above, const Dimen& below) {
+    _above = above;
+    _below = below;
+  }
 
   inline void setThickness(float value, UnitType unit) {
     _thickness = value;
@@ -183,6 +198,9 @@ class ColorAtom : public Atom, public Row {
 private:
   static std::map<std::string, color> _colors;
   static const color _default;
+
+  /** One colour, no mixing: what parseColor() reads between the `!`s. */
+  static bool lookup(std::string name, color& out);
 
   color _background, _color;
   // RowAtom for which the color settings apply
@@ -217,6 +235,13 @@ public:
    * or a predefined color name. Return black if not found.
    */
   static color getColor(std::string name);
+
+  /** An xcolor expression -- `red`, `red!50`, `red!30!blue`, `blue!20!black!60`,
+   *  `-red` -- or one of the engine's own forms (`#RRGGBB`, `#AARRGGBB`, six or
+   *  eight hex digits, `r,g,b`, `c,m,y,k`, a gray from 0 to 1). False, and `out`
+   *  untouched, when a name in it is not defined or a percentage is not a
+   *  number. */
+  static bool parseColor(std::string spec, color& out);
 
   /** Whether `name` is a colour that is defined: one of the names, not a guess. */
   static bool hasName(std::string name);

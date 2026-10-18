@@ -60,8 +60,8 @@ const function<float(const Env&)> _unitConversions[]{
   [](const Env& env) -> float { return 2.8346456693f * pt(env); },
   // 1 in = 72 point
   [](const Env& env) -> float { return 72.f * pt(env); },
-  // 1 sp = 65536 point
-  [](const Env& env) -> float { return 65536.f * pt(env); },
+  // 1 sp = 1/65536 point (TeX: a point is 65536 sp)
+  [](const Env& env) -> float { return pt(env) / 65536.f; },
   // 1 pt = 0.99626401 point (in printer's)
   [](const Env& env) -> float { return 0.99626401f * pt(env); },
   // 1 dd = 1.0660349422 point
@@ -78,7 +78,13 @@ const function<float(const Env&)> _unitConversions[]{
   },
 };
 
+Units::LengthResolver lengthResolver = nullptr;
+
 }  // namespace
+
+void Units::setLengthResolver(LengthResolver resolver) {
+  lengthResolver = resolver;
+}
 
 float Units::fsize(UnitType unit, float size, const Env& env) {
   if (unit == UnitType::none) return size;
@@ -100,22 +106,23 @@ Dimen Units::getDimen(const std::string& lgth) {
   if (lgth.empty()) return {0.f, UnitType::none};
 
   // TeX's factor times a length: `0.5\textwidth`, or `\linewidth` alone,
-  // which is one of it.
+  // which is one of it; and the same of a length the input names
+  // (`2\tabcolsep`).
   const size_t bs = lgth.find('\\');
   if (bs != string::npos) {
     string name = lgth.substr(bs + 1);
     trim(name);
-    if (name == "textwidth" || name == "linewidth" || name == "columnwidth") {
-      string num = lgth.substr(0, bs);
-      trim(num);
-      float f = 1.f;
-      if (num == "-") {
-        f = -1.f;
-      } else if (!num.empty() && num != "+") {
-        valueOf(num, f);
-      }
-      return {f, UnitType::tw};
+    string num = lgth.substr(0, bs);
+    trim(num);
+    float f = 1.f;
+    if (num == "-") {
+      f = -1.f;
+    } else if (!num.empty() && num != "+") {
+      valueOf(num, f);
     }
+    if (name == "textwidth" || name == "linewidth" || name == "columnwidth") return {f, UnitType::tw};
+    Dimen named;
+    if (lengthResolver != nullptr && lengthResolver(name, named)) return {f * named.val, named.unit};
   }
 
   size_t i = 0;

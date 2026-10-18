@@ -74,6 +74,10 @@ struct Table {
     // The rows of the array that comes next: jot (amsmath's, \openup\jot) or
     // sub (\substack's), as the prelude's split and substack say.
     add({"gmrows"}, "r");
+    // The code of an alltt or a Verbatim with commandchars, as the parser puts it back (Parser::commandLines()): one
+    // \gmcodeline a line, and in it the text between the commands as \gmlit{hex}, which is set as typed.
+    add({"gmlit"}, "r");
+    add({"gmcodeline"}, "t");
     add({"cfrac"}, "Rmm");
     add({"xleftarrow", "xrightarrow", "xleftrightarrow", "xRightarrow", "xLeftarrow",
          "xLeftrightarrow", "xhookleftarrow", "xhookrightarrow", "xmapsto",
@@ -166,9 +170,15 @@ struct Table {
     add({"textsc"}, "t");
     add({"scshape"}, "", Shape::declaration);
     add({"gmtheorem"}, "rrrrr");
+    // The date, as LaTeX prints it (`May 16, 2026`), which \date's default is.
+    add({"today"}, "");
     add({"href"}, "uc");
     // Its argument is its own delimited text (the parser reads it).
     add({"verb"}, "v");
+    // The inline code of listings, minted and fancyvrb: options and the language come first, then the code between
+    // a delimiter (or braces), which the parser reads as \verb's.
+    add({"lstinline", "Verb"}, "Rv");
+    add({"mintinline"}, "Rrv");
     // booktabs' \cmidrule, which the parser reads as \cline.
     add({"cmidrule"}, "r", Shape::prefix, Bare::none, true);
     add({"left", "middle", "right"}, "l", Shape::prefix, Bare::none, true);
@@ -206,6 +216,7 @@ struct Table {
     add({"everymath"}, "r");
     add({"dnomstyle", "numstyle", "substyle", "supstyle"}, "m");
     add({"definecolor"}, "rrr");
+    add({"colorlet"}, "rr");
     add({"fgcolor", "bgcolor", "textcolor", "colorbox"}, "rc");
     add({"fcolorbox"}, "rrc");
     add({",", ":", ";", "thinspace", "medspace", "thickspace", "!", "negthinspace",
@@ -252,18 +263,32 @@ struct Table {
     // cite, no counter to refer to and no page to put a note on. Each is
     // read so that it warns and draws what LaTeX draws when it cannot
     // resolve one, instead of coming out red as an unknown command.
-    add({"ref", "pageref", "eqref"}, "r", Shape::prefix, Bare::none, true);
+    add({"ref", "pageref", "eqref", "subref"}, "r", Shape::prefix, Bare::none, true);
+    // cleveref's and hyperref's references, which name the kind of what they refer to.
+    add({"cref", "Cref", "autoref"}, "r", Shape::prefix, Bare::none, true);
+    add({"crefrange", "Crefrange"}, "rr", Shape::prefix, Bare::none, true);
+    // The floats say what a \caption numbers: the prelude's figure, table, subfigure and subtable.
+    add({"gmfloat", "gmsubfloat"}, "r");
+    // multicol's \columnbreak: where the columns of a multicols are cut.
+    add({"columnbreak"}, "");
     add({"cite"}, "Rr", Shape::prefix, Bare::none, true);
     // natbib's: \citep[post]{keys} or \citep[pre][post]{keys}.
     add({"citep", "citet", "citealp"}, "RRr", Shape::prefix, Bare::none, true);
-    add({"footnote"}, "Rt", Shape::prefix, Bare::none, true);
+    // The page notes (the prelude's \footnote and kin): the mark, then the note.
+    add({"gmfootnote", "gmfootnotetext"}, "rt", Shape::prefix, Bare::none, true);
+    add({"gmfootnotemark"}, "r");
     // Equation numbers: the lowering numbers the displays of an input and
     // keeps the labels, which a reference then names. The starred form of tag is
     // the expander's gmtagstar.
     add({"tag", "gmtagstar"}, "t");
     add({"notag", "nonumber"}, "");
     add({"label"}, "r");
-    add({"setcounter"}, "rr");
+    // thebibliography's \bibitem{key}{label}, which the prelude writes.
+    add({"gmbibitem"}, "rr");
+    add({"newlength"}, "r");
+    add({"setlength", "addtolength"}, "rr");
+    add({"setcounter", "addtocounter", "gmnewcounter"}, "rr");
+    add({"stepcounter", "gmcurrentlabel", "value", "arabic", "roman", "Roman", "alph", "Alph", "fnsymbol"}, "r");
     // amsmath's subequations, which the prelude writes with these two.
     add({"gmsubeqbegin", "gmsubeqend"}, "");
     add({"hspace", "vspace"}, "d");
@@ -296,13 +321,26 @@ struct Table {
     env({"longtable"}, "Rr", EnvBody::alignment, true);
     // tabularray's tables, as tinytable writes them: [options]{spec}.
     env({"tblr", "talltblr", "longtblr"}, "Rr", EnvBody::alignment, true);
-    env({"itemize", "enumerate", "description"}, "", EnvBody::raw, true);
+    env({"itemize", "enumerate", "description", "tablenotes"}, "", EnvBody::raw, true);
     env({"verbatim", "verbatim*"}, "", EnvBody::verbatim, true);
+    // The code of listings (`[options]`), fancyvrb and minted (`[options]{language}`): set as verbatim is.
+    env({"lstlisting", "Verbatim", "Verbatim*"}, "R", EnvBody::verbatim, true);
+    env({"minted"}, "Rr", EnvBody::verbatim, true);
+    // alltt: verbatim whose backslash and braces keep their meaning, so its commands act.
+    env({"alltt"}, "", EnvBody::verbatim, true);
+    // The comment package's: the body is skipped.
+    env({"comment"}, "", EnvBody::verbatim, true);
+    // article's quote, quotation and verse: a body of paragraphs between margins.
+    env({"quote", "quotation", "verse"}, "", EnvBody::text);
     // Commutative diagrams: amscd's, and tikz-cd's, which a handler reads
     // whole (its options and arrows are in the body).
-    env({"CD", "tikzcd"}, "", EnvBody::raw);
+    env({"CD", "tikzcd", "tikzpicture"}, "", EnvBody::raw);
     // [position][height][inner position]{width}: a box of paragraphs.
     env({"minipage"}, "RDRd", EnvBody::text);
+    // [keys]: tcolorbox's framed box of paragraphs, with the keys that change how it is drawn.
+    env({"tcolorbox", "mdframed"}, "R", EnvBody::text);
+    // {columns}[header]: multicol's balanced columns.
+    env({"multicols"}, "rR", EnvBody::text);
   }
 };
 
@@ -331,12 +369,23 @@ bool isHeadingLine(const std::string& name) {
 }
 
 bool isFloatEnvironment(const std::string& name) {
-  return name == "table" || name == "table*" || name == "figure" || name == "figure*";
+  return name == "table" || name == "table*" || name == "figure" || name == "figure*" || name == "wrapfigure" ||
+         name == "wraptable";
+}
+
+bool isVerbatimEnvironment(const std::string& name) {
+  return name == "verbatim" || name == "verbatim*" || name == "lstlisting" || name == "minted" ||
+         name == "Verbatim" || name == "Verbatim*" || name == "alltt";
 }
 
 bool isBlockEnvironment(const std::string& name) {
-  return name == "abstract" || name == "thebibliography" || name == "proof" ||
-         name == "subequations";
+  return name == "abstract" || name == "titlepage" || name == "thebibliography" || name == "proof" ||
+         name == "subequations" || name == "framed" || name == "shaded" || name == "shaded*" || name == "snugshade" ||
+         name == "snugshade*" || isFloatEnvironment(name);
+}
+
+bool isCrossReference(const std::string& name) {
+  return name == "cref" || name == "Cref" || name == "autoref" || name == "crefrange" || name == "Crefrange";
 }
 
 bool isCitation(const std::string& name) {
@@ -344,7 +393,7 @@ bool isCitation(const std::string& name) {
 }
 
 bool isRule(const std::string& name) {
-  return name == "hline" || name == "thickhline" || name == "hdashline" || name == "cline" || name == "specialrule" ||
+  return name == "hline" || name == "thickhline" || name == "hdashline" || name == "cline" || name == "cmidrule" || name == "specialrule" ||
          name == "addlinespace" || name == "endhead" || name == "endfirsthead" ||
          name == "endfoot" || name == "endlastfoot";
 }
