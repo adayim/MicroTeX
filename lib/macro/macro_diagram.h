@@ -6,6 +6,7 @@
 // tikz-cd's tikzcd, whose arrows are `\arrow[r, "f"]` commands inside the
 // cells they start from. Both fill a DiagramAtom (atom/diagram_atom.h).
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <functional>
@@ -84,7 +85,11 @@ inline std::string groupAt(const std::string& s, std::size_t& i) {
       return inner;
     }
   }
-  return "";
+  // A group left open runs to the end of the text, as TeX reads one at the end of its input. `i` is past it: a caller
+  // that reads group after group made no progress when it stayed, and `\node[` at the end of a picture hung.
+  const std::string rest = s.substr(std::min(i + 1, s.size()));
+  i = s.size();
+  return rest;
 }
 
 /** A number or a tikz size name to a size in em. */

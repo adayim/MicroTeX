@@ -1167,3 +1167,19 @@ TEST(tikz_runaway_arcs_and_dash_patterns_are_bounded) {
   const auto fine = pic(R"(\draw[dash pattern=on 0.001pt off 0.001pt] (0,0) -- (10,0);)");
   CHECK_EQ(strokes(fine).size(), std::size_t(1));
 }
+
+// Found by the fuzzer on the first CI run: an option bracket (or brace) left open at the end of a picture made the reader
+// of trees read the same `[` for ever, because the helper that cuts a group out of the text said "none" and did not move
+// on. A group left open now runs to the end of the text, as TeX reads one, and every one of these returns.
+TEST(tikz_a_bracket_or_brace_left_open_at_the_end_of_a_picture_does_not_hang) {
+  for (const char* tail : {"\\node[", "\\node[draw", "\\draw[", "\\path (0,0) node[", "\\node at (0,0) [", "\\matrix [",
+                           "\\foreach \\i in {1,2} \\node[", "\\node {x} child[", "\\node {x} child {node[", "\\node{x",
+                           "\\node {x} child {", "\\coordinate[", "\\draw (0,0) -- (1,1) node[", "\\scoped{",
+                           "\\begin{scope}[", "\\draw plot coordinates {", "\\node {x} edge from parent[",
+                           "\\draw[decorate, decoration={brace, amplitude=", "\\tikzset{a/.style={"}) {
+    const auto l = check::render(std::string("\\begin{tikzpicture}") + tail);
+    CHECK(l.width >= 0);
+    const auto closed = check::render(std::string("\\begin{tikzpicture}") + tail + "\\end{tikzpicture}");
+    CHECK(closed.width >= 0);
+  }
+}
