@@ -1,2 +1,4 @@
 \ProvidesPackage{xfrac}[2026/10/11 xfrac: \sfrac]
-\newcommand{\sfrac}[2]{\scalebox{.8}{\raisebox{.5ex}{\raisebox{.45ex}{\numstyle{#1}}\kern-.4ex\nokern\mathslash\nokern\kern-.4ex\raisebox{-.45ex}{\dnomstyle{#2}}}}}
+% As LaTeX sets it at 10pt: the numerator and the denominator in script size, the numerator 2.24pt up, the slash at
+% the size of the text with the denominator 1.1pt back into it.
+\newcommand{\sfrac}[2]{\raisebox{.224em}{\numstyle{#1}}\nokern\mathslash\kern-.11em\dnomstyle{#2}}

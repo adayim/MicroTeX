@@ -1,0 +1,7 @@
+\ProvidesPackage{diagbox}[2026/10/22 diagbox: a header cell cut by a diagonal; approximate (the options are read and not used)]
+% \diagbox[options]{A}{B}: A at the lower left, B at the upper right, a line from the top left to the bottom right. The
+% cell is the two words one over the other with a space between, and the line is \bcancel's over that box (its slope
+% is the cancel package's, near the diagonal for a box of this shape).
+\newcommand{\diagbox}[3][]{\bcancel{\mbox{\begin{tabular}{@{}l@{\hspace{1.5em}}r@{}}&#3\\#2&\end{tabular}}}}
+\newcommand{\backslashbox}[3][]{\diagbox{#2}{#3}}
+\newcommand{\slashbox}[3][]{\cancel{\mbox{\begin{tabular}{@{}l@{\hspace{1.5em}}r@{}}#3&\\&#2\end{tabular}}}}

@@ -1,5 +1,6 @@
 #include "atom/atom_root.h"
 
+#include "atom/atom_row.h"
 #include "box/box_factory.h"
 #include "box/box_group.h"
 #include "env/env.h"
@@ -11,7 +12,7 @@ sptr<Box> NthRoot::createBox(Env& env) {
   const auto base = (
     _base == nullptr
     ? StrutBox::empty()
-    : env.withStyle(env.crampStyle(), [&](Env& cramp) { return _base->createBox(cramp); })
+    : env.withStyle(env.crampStyle(), [&](Env& cramp) { return RowAtom::withItalic(_base)->createBox(cramp); })
   );
   // clang-format on
 

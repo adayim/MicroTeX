@@ -1,0 +1,7 @@
+\ProvidesPackage{caption}[2026/10/22 caption: \captionof, and the settings that only change a look]
+% \captionof{figure}{text}: a caption outside a float, "Figure N: text", centred, numbered by the same counter.
+\newcommand{\captionof}[2]{\begin{center}\gmfloat{#1}\caption{#2}\gmfloat{}\end{center}}
+% The settings of caption and subcaption change how a caption looks (fonts, labels, separators), which is not drawn.
+\newcommand{\captionsetup}[2][]{}
+\newcommand{\DeclareCaptionFormat}[3]{}
+\newcommand{\DeclareCaptionLabelFormat}[2]{}

@@ -1,5 +1,7 @@
 #include "atom/atom_frac.h"
 
+#include "atom/atom_fence.h"
+#include "atom/atom_row.h"
 #include "box/box_group.h"
 #include "box/box_single.h"
 #include "env/env.h"
@@ -8,7 +10,7 @@
 using namespace microtex;
 
 FracAtom::FracAtom(const sptr<Atom>& num, const sptr<Atom>& den, bool rule, const Dimen& thickness)
-    : _thickness(thickness), _num(num), _dnom(den), _rule(rule) {}
+    : _thickness(thickness), _num(RowAtom::withItalic(num)), _dnom(RowAtom::withItalic(den)), _rule(rule) {}
 
 FracAtom::FracAtom(
   const sptr<Atom>& num,
@@ -16,7 +18,7 @@ FracAtom::FracAtom(
   Alignment numAlign,
   Alignment denAlign
 )
-    : _num(num), _dnom(den), _rule(true) {
+    : _num(RowAtom::withItalic(num)), _dnom(RowAtom::withItalic(den)), _rule(true) {
   _numAlign = checkAlign(numAlign);
   _dnomAlign = checkAlign(denAlign);
 }
@@ -56,14 +58,17 @@ sptr<Box> FracAtom::createBox(Env& env) {
       v += (phi - psi) / 2;
     }
   } else {
-    const auto phi = isDisplay ? math.fractionNumeratorDisplayStyleGapMin()
-                               : math.fractionNumeratorGapMin();
+    // TeX's gaps are a multiple of the rule's own thickness (rule 15d), the font's constants those of its default one
+    const auto fixed = math.fractionRuleThickness() * env.scale();
+    const auto grow = _thickness.isValid() && fixed > 0.f ? theta / fixed : 1.f;
+    const auto phi = grow * (isDisplay ? math.fractionNumeratorDisplayStyleGapMin()
+                                       : math.fractionNumeratorGapMin());
     const auto d = (u - x->_depth) - (axis + theta / 2);
     if (d < phi) {
       u += phi - d;
     }
-    const auto rho = isDisplay ? math.fractionDenominatorDisplayStyleGapMin()
-                               : math.fractionDenominatorGapMin();
+    const auto rho = grow * (isDisplay ? math.fractionDenominatorDisplayStyleGapMin()
+                                       : math.fractionDenominatorGapMin());
     const auto f = (axis - theta / 2) - (z->_height - v);
     if (f < rho) {
       v += rho - f;
@@ -97,5 +102,25 @@ sptr<Box> FracAtom::createBox(Env& env) {
   vbox->_height = x->_height + u;
   vbox->_depth = z->_depth + v;
 
-  return vbox;
+  if (!_nullLeft && !_nullRight) return vbox;
+  // \nulldelimiterspace is a length, 1.2pt of the 10pt page, whatever the style
+  const auto space = Units::fsize(Dimen{1.2f, UnitType::pt}, env);
+  const auto hbox = sptrOf<HBox>();
+  if (_nullLeft) hbox->add(sptrOf<StrutBox>(space, 0.f, 0.f, 0.f));
+  hbox->add(vbox);
+  if (_nullRight) hbox->add(sptrOf<StrutBox>(space, 0.f, 0.f, 0.f));
+  return hbox;
+}
+
+sptr<Atom> FracAtom::fence(const sptr<FracAtom>& frac, const std::string& l, const std::string& r) {
+  const bool nullLeft = l.empty() || l == ".", nullRight = r.empty() || r == ".";
+  // no delimiter at all: the fraction with its own two null ones, as \frac is
+  if (nullLeft && nullRight) return frac;
+  // built first: it refuses what is not a delimiter, and the fraction is then left as it was
+  auto fenced = sptrOf<FencedAtom>(frac, l, r);
+  fenced->setNullSpace(false);
+  fenced->setFractionDelimiters(true);
+  frac->_nullLeft = nullLeft;
+  frac->_nullRight = nullRight;
+  return fenced;
 }

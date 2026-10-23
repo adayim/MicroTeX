@@ -1,6 +1,7 @@
 #include "builder.h"
 
 #include "atom/atom_basic.h"
+#include "atom/atom_row.h"
 #include "box/box_group.h"
 #include "box/box_single.h"
 #include "core/formula.h"
@@ -48,7 +49,7 @@ Render* RenderBuilder::build(const sptr<Atom>& fc) {
   }
 
   Render* render;
-  auto box = f->createBox(env);
+  auto box = RowAtom::withItalic(f)->createBox(env);
   if (isLimitedWidth) {
     HBox* hb;
     bool isBoxSplit = false;

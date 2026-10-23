@@ -48,7 +48,7 @@ Char SymbolAtom::getChar(Env& env) const {
   if (_symbol == nullptr) return {};
   if (env.style() >= TexStyle::script) {
     const auto& chr = env.getChar(*_symbol);
-    return chr.script(0);
+    return chr.script(env.style() >= TexStyle::scriptScript ? 1 : 0);
   }
   if (_type == AtomType::bigOperator) {
     const auto& chr = env.getChar(*_symbol);
@@ -72,7 +72,7 @@ sptr<Box> SymbolAtom::createBox(Env& env) {
 Char CharAtom::getChar(Env& env) const {
   if (_mathMode && env.style() >= TexStyle::script) {
     const auto& chr = env.getChar(_unicode, true, _fontStyle);
-    return chr.isValid() ? chr.script(0) : chr;
+    return chr.isValid() ? chr.script(env.style() >= TexStyle::scriptScript ? 1 : 0) : chr;
   }
   return env.getChar(unicode(), isMathMode(), _fontStyle);
 }

@@ -1,0 +1,33 @@
+% packages: tabularray,booktabs,xcolor,graphicx
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+entry=none,label=none,
+note{}={+ p \num{< 0.1}, * p \num{< 0.05}, ** p \num{< 0.01}, *** p \num{< 0.001}},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]},
+hline{2}={1-3}{solid, black, 0.05em},
+hline{8}={1-3}{solid, black, 0.05em},
+hline{1}={1-3}{solid, black, 0.08em},
+hline{16}={1-3}{solid, black, 0.08em},
+column{2-3}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Simple & Full \\
+(Intercept) & \num{37.285}*** & \num{37.227}*** \\
+& (\num{1.878}) & (\num{1.599}) \\
+wt & \num{-5.344}*** & \num{-3.878}*** \\
+& (\num{0.559}) & (\num{0.633}) \\
+hp &  & \num{-0.032}** \\
+&  & (\num{0.009}) \\
+Num.Obs. & \num{32} & \num{32} \\
+R2 & \num{0.753} & \num{0.827} \\
+R2 Adj. & \num{0.745} & \num{0.815} \\
+AIC & \num{166.0} & \num{156.7} \\
+BIC & \num{170.4} & \num{162.5} \\
+Log.Lik. & \num{-80.015} & \num{-74.326} \\
+F & \num{91.375} & \num{69.211} \\
+RMSE & \num{2.95} & \num{2.47} \\
+\end{talltblr}
+\end{table}

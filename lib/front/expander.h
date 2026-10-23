@@ -176,6 +176,8 @@ public:
 
   /** The `\tikzset` and `\tikzstyle` read so far, as statements: what a tikzpicture begins with. */
   const std::string& tikzStyles() const;
+  /** The `\tikzcdset` read so far, as `\gmcdset{keys}` statements: what a tikzcd begins with. */
+  const std::string& tikzcdSets() const;
   Cat catcode(c32 ch) const;
 
 private:

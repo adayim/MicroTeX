@@ -18,23 +18,24 @@ cmdmacro(xarrow) {
   const auto stack = new StackAtom(nullptr, over, under);
   // The ones the font has no stretching glyph for are drawn.
   using Kind = StretchArrowAtom::Kind;
-  const Kind kinds[] = {Kind::twoHeadRight, Kind::twoHeadLeft, Kind::longEqual, Kind::toFrom};
-  const char* names[] = {"twoheadrightarrow", "twoheadleftarrow", "longequal", "tofrom"};
-  for (int k = 0; k < 4; k++) {
+  // amsmath sets the arrow a label's width and 14mu of script style longer (pdflatex, \xrightarrow{abcdef}: the
+  // label's 24.07pt and 6.37pt); mathtools' \xLeftarrow and \xLeftrightarrow have more (+1.51pt, +4.84pt) and are
+  // never shorter than the glyphs of \Leftarrow and \Leftrightarrow (12.22pt, 15.56pt).
+  const float more = name == "Leftarrow" ? 0.151f : name == "Leftrightarrow" ? 0.484f : 0.f;
+  const float least = name == "Leftarrow" ? 1.222f : name == "Leftrightarrow" ? 1.556f : 0.f;
+  const auto length = [stack, more, least](const Env& env) -> float {
+    const float em = Units::fsize(UnitType::em, 1.f, env);
+    return std::max(stack->getMaxWidth() + (0.637f + more) * em, least * em);
+  };
+  const Kind kinds[] = {Kind::twoHeadRight, Kind::twoHeadLeft, Kind::longEqual, Kind::toFrom, Kind::doubleLeft, Kind::doubleBoth};
+  const char* names[] = {"twoheadrightarrow", "twoheadleftarrow", "longequal", "tofrom", "Leftarrow", "Leftrightarrow"};
+  for (int k = 0; k < 6; k++) {
     if (name != names[k]) continue;
-    stack->setBaseAtom(sptrOf<StretchArrowAtom>(kinds[k], [stack](const Env& env) -> float {
-      return stack->getMaxWidth() + Units::fsize(UnitType::ex, 1.f, env);
-    }));
+    stack->setBaseAtom(sptrOf<StretchArrowAtom>(kinds[k], length));
     return sptr<StackAtom>(stack);
   }
-  const auto& arrow = sptrOf<ExtensibleAtom>(
-    name,
-    // capture raw pointer to avoid cycle reference
-    [stack](const Env& env) -> float {
-      return stack->getMaxWidth() + Units::fsize(UnitType::ex, 1.f, env);
-    },
-    false
-  );
+  // The stack is captured by raw pointer to avoid a cycle of references.
+  const auto& arrow = sptrOf<ExtensibleAtom>(name, length, false);
   arrow->_type = AtomType::relation;
   stack->setBaseAtom(arrow);
   return sptr<StackAtom>(stack);

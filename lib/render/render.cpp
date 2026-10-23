@@ -1,5 +1,7 @@
 #include "render.h"
 
+#include <algorithm>
+
 #include "atom/atom.h"
 #include "box/box_single.h"
 #include "core/split.h"
@@ -20,6 +22,18 @@ struct RenderData {
 
 }  // namespace microtex
 
+namespace {
+
+/** A size in whole pixels. A box can be absurdly large (`\hspace{1e45pt}`), and what a cast to int
+ *  makes of that depends on the value; it is held to a count the host can still read. */
+int pixels(float v) {
+  constexpr float limit = 1.0e9f;
+  if (!(v == v)) return 0;
+  return static_cast<int>(std::max(-limit, std::min(limit, v)));
+}
+
+}  // namespace
+
 Render::Render(const sptr<Box>& box, float textSize, bool isSplit) {
   _data = new RenderData{box, textSize, textSize / Env::fixedTextSize(), black, isSplit};
 }
@@ -34,15 +48,15 @@ float Render::getTextSize() const {
 
 int Render::getHeight() const {
   auto box = _data->root;
-  return (int)(box->vlen() * _data->fixedScale);
+  return pixels(box->vlen() * _data->fixedScale);
 }
 
 int Render::getDepth() const {
-  return (int)(_data->root->_depth * _data->fixedScale);
+  return pixels(_data->root->_depth * _data->fixedScale);
 }
 
 int Render::getWidth() const {
-  return (int)(_data->root->_width * _data->fixedScale);
+  return pixels(_data->root->_width * _data->fixedScale);
 }
 
 float Render::getBaseline() const {

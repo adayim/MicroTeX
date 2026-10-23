@@ -14,6 +14,10 @@ private:
   // the atoms representing the numerator and denominator
   sptr<Atom> _num, _dnom;
   bool _rule = false;
+  // TeX sets a null delimiter, \nulldelimiterspace wide, where a generalized
+  // fraction has no delimiter: both sides of \frac, \over, \atop... A side
+  // that has a real delimiter (see fence()) is the delimiter's.
+  bool _nullLeft = true, _nullRight = true;
 
   static inline Alignment checkAlign(Alignment align) {
     if (align == Alignment::left || align == Alignment::right) return align;
@@ -29,6 +33,11 @@ public:
     Alignment numAlign = Alignment::center,
     Alignment denAlign = Alignment::center
   );
+
+  /** `frac` between the delimiters `l` and `r` (empty and "." are none, and a null one is
+   *  \nulldelimiterspace wide), as \binom and \genfrac set it.
+   *  @throw ex_parse if `l` or `r` is not a delimiter */
+  static sptr<Atom> fence(const sptr<FracAtom>& frac, const std::string& l, const std::string& r);
 
   AtomType leftType() const override { return AtomType::inner; }
 

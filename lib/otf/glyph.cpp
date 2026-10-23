@@ -37,6 +37,7 @@ MathKernRecord::~MathKernRecord() {
 Math::~Math() {
   if (_horizontalVariants != &Variants::empty) delete _horizontalVariants;
   if (_verticalVariants != &Variants::empty) delete _verticalVariants;
+  if (_scriptsVariants != &Variants::empty) delete _scriptsVariants;
   if (_horizontalAssembly != &GlyphAssembly::empty) delete _horizontalAssembly;
   if (_verticalAssembly != &GlyphAssembly::empty) delete _verticalAssembly;
   if (_kernRecord != &MathKernRecord::empty) delete _kernRecord;

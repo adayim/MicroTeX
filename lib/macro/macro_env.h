@@ -24,7 +24,12 @@ namespace microtex {
 inline cmdmacro(smallmatrixATATenv) {
   const auto arr = args.alignment(1);
   arr->checkDimensions();
-  return sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::smallMatrix);
+  // amsmath's \smallmatrix begins with `\null\,` and ends with `\,` (pdflatex: one cell 3.3pt wider than its text).
+  auto row = sptrOf<RowAtom>();
+  row->add(sptrOf<SpaceAtom>(UnitType::mu, 3.f, 0.f, 0.f));
+  row->add(sptrOf<MatrixAtom>(args.isPartial(), arr, MatrixType::smallMatrix));
+  row->add(sptrOf<SpaceAtom>(UnitType::mu, 3.f, 0.f, 0.f));
+  return row;
 }
 
 inline cmdmacro(matrixATATenv) {
@@ -604,12 +609,17 @@ inline sptr<Atom> listBuild(
   const char* columns = nullptr,
   bool noteLabels = false,
   const std::string& declarations = std::string(),
-  bool numbered = false
+  bool numbered = false,
+  const std::string& itemGap = std::string()
 ) {
   if (items.empty()) return nullptr;
   std::string s;
-  const auto row = [&](const std::string& lead, const std::string& content) {
-    if (!s.empty()) s += "\\\\";
+  // Between two items LaTeX puts \itemsep and \parsep on top of the baselineskip: 4pt and 4pt in a list of the first
+  // level, 2pt and 2pt in the second, none in the third (article, 10pt; pdflatex: 20pt, 16pt and 12pt from item to item).
+  static const char* gaps[] = {"0.8em", "0.4em", "0pt", "0pt"};
+  const std::string gap = itemGap.empty() ? gaps[std::min(listDepth(), 3)] : itemGap;
+  const auto row = [&](const std::string& lead, const std::string& content, bool newItem = false) {
+    if (!s.empty()) s += newItem && gap != "0pt" ? "\\\\[" + gap + "]" : "\\\\";
     s += lead + "&" + content;
   };
   // An item's own label stands for its marker, and a labelled item is no
@@ -641,10 +651,10 @@ inline sptr<Atom> listBuild(
       const std::string content = (first ? named : std::string()) + (args.isMathMode() ? part
                                   : nested         ? "\\text{" + part + "}"
                                                    : listTextItem(part));
-      row(first ? mark : "", declarations.empty() ? content : declarations + " " + content);
+      row(first ? mark : "", declarations.empty() ? content : declarations + " " + content, first);
       first = false;
     }
-    if (first) row(mark, "");  // an empty item still has its marker
+    if (first) row(mark, "", true);  // an empty item still has its marker
   }
   struct Deeper {
     Deeper() { listDepth()++; }
@@ -688,34 +698,115 @@ inline cmdmacro(tablenotesATATenv) {
     return args.formulaOf(runOn, false);
   }
   return listBuild(args, items, [](int) { return std::string("\\hspace{0.5em}"); }, false,
-                   "@{\\hspace{0.8em}}l@{\\hspace{0.2em}}X", true, declarations);
+                   "@{\\hspace{0.8em}}l@{\\hspace{0.2em}}X", true, declarations, false, "0pt");
+}
+
+/** enumitem's keys of a list (`[label=(\alph*), start=3, noitemsep]`), where the options are not a label alone. Only
+ *  what changes the marker is read: `label`, `start`, `font`. The rest changes the spacing, which a grob sets from
+ *  the font, and is left out without a word, as listings' look options are; what changes the numbering warns. */
+struct ListKeys {
+  bool keyed = false;
+  bool hasLabel = false;
+  std::string label, font;
+  int start = 1;
+  /** `noitemsep` and `nosep` (no space between items), or `itemsep=`/`parsep=` (that much, alone). */
+  std::string itemGap;
+};
+
+inline ListKeys listKeys(CommandArgs& args, const std::string& opt) {
+  ListKeys k;
+  if (opt.empty()) return k;
+  // The comma-separated keys, at the top level of braces and brackets.
+  std::vector<std::string> keys;
+  std::string cur;
+  int depth = 0;
+  for (const char c : opt) {
+    if (c == '{' || c == '[') depth++;
+    if (c == '}' || c == ']') depth--;
+    if (c == ',' && depth == 0) {
+      keys.push_back(cur);
+      cur.clear();
+    } else {
+      cur += c;
+    }
+  }
+  keys.push_back(cur);
+  static const char* bare[] = {"noitemsep", "nosep", "wide", "resume", "resume*", "widest", "nolistsep"};
+  bool any = opt.find('=') != std::string::npos;
+  for (const std::string& raw : keys) {
+    const std::string t = listTrim(raw);
+    for (const char* b : bare) any = any || t == b;
+  }
+  if (!any) return k;
+  k.keyed = true;
+  for (const std::string& raw : keys) {
+    const std::string t = listTrim(raw);
+    if (t.empty()) continue;
+    const size_t eq = t.find('=');
+    const std::string name = listTrim(t.substr(0, eq));
+    std::string value = eq == std::string::npos ? std::string() : listTrim(t.substr(eq + 1));
+    if (value.size() >= 2 && value.front() == '{' && value.back() == '}') value = value.substr(1, value.size() - 2);
+    if (name == "label") {
+      k.label = value;
+      k.hasLabel = true;
+    } else if (name == "start") {
+      k.start = std::atoi(value.c_str());
+    } else if (name == "font") {
+      k.font = value;
+    } else if (name == "noitemsep" || name == "nosep" || name == "nolistsep") {
+      k.itemGap = "0pt";
+    } else if ((name == "itemsep" || name == "parsep") && !value.empty()) {
+      k.itemGap = value;
+    } else if (name == "resume" || name == "resume*" || name == "series" || name == "ref" || name == "label*" ||
+               name == "wide" || name == "widest") {
+      args.warn("enumitem: the key `" + name + "' is not supported: left out");
+    }
+  }
+  return k;
+}
+
+/** A label that is text (`\textbullet`, `--`, `$\star$`) as the math cells of a list's marker column take it. */
+inline std::string listMarkText(const std::string& label, const std::string& font) {
+  std::string t = label;
+  if (t.size() >= 2 && t.front() == '$' && t.back() == '$') {
+    t = t.substr(1, t.size() - 2);
+    return font.empty() ? t : "{" + font + " " + t + "}";
+  }
+  return "\\text{" + (font.empty() ? std::string() : font + " ") + t + "}";
 }
 
 inline cmdmacro(itemizeATATenv) {
   std::string body = args.text(1);
-  const std::string opt = listPeelOptional(body);
+  std::string opt = listPeelOptional(body);
+  const ListKeys keys = listKeys(args, opt);
+  if (keys.keyed) opt = keys.hasLabel ? listMarkText(keys.label, keys.font) : std::string();
   // LaTeX's labels by level: a bullet, a bold en dash (\labelitemii is `\normalfont\bfseries\textendash`), an asterisk, a
   // centred dot.
   static const char* marks[] = {"\\bullet", "\\text{\\bfseries\\textendash}", "\\ast", "\\cdot"};
   const std::string mark = opt.empty() ? marks[std::min(listDepth(), 3)] : opt;
-  return listBuild(args, listSplitItems(body), [&](int) { return mark; });
+  return listBuild(args, listSplitItems(body), [&](int) { return mark; }, false, nullptr, false, std::string(), false, keys.itemGap);
 }
 
 inline cmdmacro(enumerateATATenv) {
   std::string body = args.text(1);
   std::string opt = listPeelOptional(body);
+  const ListKeys keys = listKeys(args, opt);
+  if (keys.keyed) opt = keys.hasLabel ? keys.label : std::string();
   // LaTeX's labels by level: 1., (a), i., A.
   static const char* labels[] = {"\\arabic*.", "(\\alph*)", "\\roman*.", "\\Alph*."};
   if (opt.empty()) opt = labels[std::min(listDepth(), 3)];
+  const std::string font = keys.font;
   return listBuild(args, listSplitItems(body), [&](int n) {
-    return "\\mathrm{" + listFormatLabel(opt, n) + "}";
-  }, false, nullptr, false, std::string(), true);
+    const std::string mark = listFormatLabel(opt, n + keys.start - 1);
+    return font.empty() ? "\\mathrm{" + mark + "}" : "\\text{" + font + " " + mark + "}";
+  }, false, nullptr, false, std::string(), true, keys.itemGap);
 }
 
 // A description: each item's label, in bold, hangs before its text.
 inline cmdmacro(descriptionATATenv) {
   std::string body = args.text(1);
-  return listBuild(args, listSplitItems(body), [](int) { return std::string(); }, true);
+  const ListKeys keys = listKeys(args, listPeelOptional(body));
+  return listBuild(args, listSplitItems(body), [](int) { return std::string(); }, true, nullptr, false, std::string(), false, keys.itemGap);
 }
 
 // endregion

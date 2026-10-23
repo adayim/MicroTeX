@@ -14,6 +14,27 @@ namespace microtex {
 
 class ArrayFormula;
 
+/**
+ * A cell of dcolumn's D column: the number split at its separator, to be aligned on it. The
+ * matrix sets every such cell of a column with the separators in one line: the part before
+ * it flush right, the part after flush left (dcolumn's column is as wide as the widest of
+ * each).
+ */
+class DecimalAtom : public Atom {
+private:
+  sptr<Atom> _before, _sep, _after;
+
+public:
+  /** The boxes of the parts, made by createBox() for the matrix to put in line. */
+  sptr<Box> _beforeBox, _sepBox, _afterBox;
+
+  /** A part may be null: a cell without the separator has no `sep` and `after`. */
+  DecimalAtom(const sptr<Atom>& before, const sptr<Atom>& sep, const sptr<Atom>& after)
+      : _before(before), _sep(sep), _after(after) {}
+
+  sptr<Box> createBox(Env& env) override;
+};
+
 /** Atom to justify cells in array */
 class CellSpecifier : public Atom {
 public:
@@ -129,6 +150,8 @@ private:
   // columns share it, and tabular* spreads its columns across it.
   Dimen _tableWidth;
   bool _spread = false;
+  // `@{\extracolsep{len}}`: every gap between two columns after the one the material stands before is that much wider.
+  std::map<int, Dimen> _extraColSep;
 
   void parsePositions(std::string opt, std::vector<Alignment>& lpos);
 

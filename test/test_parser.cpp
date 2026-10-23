@@ -188,11 +188,11 @@ TEST(parser_every_command_is_read_by_the_front_end_or_has_a_handler_and_none_is_
                    "bangle", "begin", "bf", "boldmath", "brace", "brack", "cal", "caption",
                    "centering", "char", "choose", "cite", "citealp", "citep", "citet",
                    "color", "cr", "displaystyle", "end", "endfirsthead", "endfoot", "endhead", "endlastfoot", "ensuremath", "eqref",
-                   "fontfamily", "fontspec", "fontsize", "footnotesize", "frak", "gmarraystretch", "gmbibitem", "gmfootnote", "gmfootnotemark", "gmfootnotetext", "gmfloat", "gmsubfloat", "subref", "columnbreak", "Verb", "lstinline", "mintinline", "today", "cref", "Cref", "autoref", "crefrange", "Crefrange", "gmrows", "gmtagstar", "gmtheorem", "gmsubeqbegin", "gmsubeqend", "graphicspath", "href", "huge", "Huge",
+                   "fontfamily", "fontspec", "fontsize", "footnotesize", "frak", "gmarraystretch", "gmextracolsep", "gmbibitem", "gmfootnote", "gmfootnotemark", "gmfootnotetext", "gmfloat", "gmsubfloat", "subref", "columnbreak", "Verb", "lstinline", "mintinline", "today", "cref", "Cref", "autoref", "crefrange", "Crefrange", "gmrows", "gmtagstar", "gmtheorem", "gmsubeqbegin", "gmsubeqend", "graphicspath", "href", "huge", "Huge",
                    "hskip", "it", "kern", "label", "large", "Large", "LARGE", "left", "limits", "makeatletter",
                    "makeatother", "mkern", "mskip", "newlength", "noindent", "nolimits", "nonumber", "normal", "normalsize", "notag", "over",
                    "overwithdelims", "pageref", "par", "paragraph", "raggedleft",
-                   "raggedright", "ref", "relscale", "right", "rm", "scriptscriptstyle",
+                   "raggedright", "ref", "relscale", "right", "rm", "rowcolors", "scriptscriptstyle",
                    "scriptsize", "scriptstyle", "scshape", "section", "setcounter", "setlength", "setmainfont", "setmathfont", "setmonofont", "setsansfont", "sf", "sixptsize", "small", "subsection",
                    "subsubsection", "tag", "textsc", "textstyle", "tiny", "tt", "url", "verb"}));
 }
@@ -297,7 +297,7 @@ TEST(parser_verbatim_environment_keeps_everything_up_to_its_own_end) {
 TEST(parser_prelude_defines_the_engines_latex_written_environments_and_commands) {
   CHECK_EQ(tree("\\begin{pmatrix}a\\end{pmatrix}"),
            std::string("[{LR('(';[env:matrix(row:([a]))];')')}]"));
-  CHECK_EQ(tree("\\dfrac12"), std::string("[\\genfrac('' '' '1' '' <1> <2>)]"));
+  CHECK_EQ(tree("\\dfrac12"), std::string("[\\genfrac('' '' '' '0' <1> <2>)]"));
 }
 
 TEST(parser_itemize_keeps_its_body_as_text_for_its_builder) {

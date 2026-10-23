@@ -12,6 +12,11 @@ using namespace microtex;
 sptr<Box> OperatorAtom::createBox(Env& env) {
   // case 1: side sets
   if (auto ss = dynamic_cast<SideSetsAtom*>(_base.get()); ss != nullptr) {
+    const bool stacked = _limitsType == LimitsType::limits ||
+                         (_limitsType == LimitsType::normal && env.style() == TexStyle::display);
+    if (!stacked && (_under != nullptr || _over != nullptr)) {
+      return ScriptsAtom(_base, _under, _over).createBox(env);
+    }
     ss->_under = _under;
     ss->_over = _over;
     return ss->createBox(env);

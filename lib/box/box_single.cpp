@@ -72,7 +72,8 @@ void CharBox::draw(Graphics2D& g2, float x, float y) {
     );
   }
 #endif
-  if (MicroTeX::isRenderGlyphUsePath() && hasGlyphPath) {
+  // A glyph of the font cannot be drawn turned (a record carries no angle for it); its outline can.
+  if ((MicroTeX::isRenderGlyphUsePath() || g2.isRotated()) && hasGlyphPath) {
     _drawWithPath(_chr, g2, x, y);
   } else {
     _drawWithFont(_chr, g2, x, y);

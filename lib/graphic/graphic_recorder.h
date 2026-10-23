@@ -100,6 +100,7 @@ public:
     void scale(float sx, float sy) override;
     void rotate(float angle) override;
     void rotate(float angle, float px, float py) override;
+    bool isRotated() const override;
     void reset() override;
     float sx() const override;
     float sy() const override;

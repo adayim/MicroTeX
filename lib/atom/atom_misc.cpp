@@ -243,16 +243,53 @@ void LongDivAtom::calculate(vector<string>& results) const {
   }
 }
 
+namespace {
+
+/** The extent of the line cancel.sty's \cancel draws over a box `w` wide and `h` high and deep (`pt` is a point): it is
+ *  a picture-mode \line, which has only a few slopes, 2pt longer than the box and as tall as its slope makes it,
+ *  and set in a box at least 2pt wide and 6pt high. A flat box (wide) gets a line whose slope goes up with the box's
+ *  height; a tall one a line that is as tall as the box and 2pt, and as wide as the slope makes it. */
+void cancelSlash(float w, float h, float pt, float& x, float& y) {
+  float width = std::max(w, 2.f * pt), total = std::max(h, 6.f * pt);
+  if (total < width) {
+    width = std::max(width, 8.f * pt);
+    const int k = std::min(4, static_cast<int>(5.f * total / width));
+    static const float slope[] = {1.f / 6.f, 1.f / 4.f, 1.f / 2.f, 3.f / 4.f, 1.f};  // (6,1) (4,1) (2,1) (4,3) (1,1)
+    x = width + 2.f * pt;
+    y = x * slope[k];
+  } else {
+    total = std::max(total, 8.f * pt) + 2.f * pt;
+    const int k = std::min(4, static_cast<int>(5.f * width / total));
+    static const float span[] = {.16f, .25f, .5f, .75f, 1.f};
+    static const float slope[] = {6.f, 4.f, 2.f, 4.f / 3.f, 1.f};  // (1,6) (1,4) (1,2) (3,4) (1,1)
+    x = span[k] * total;
+    y = x * slope[k];
+  }
+}
+
+}  // namespace
+
 sptr<Box> CancelAtom::createBox(Env& env) {
   auto box = _base->createBox(env);
   vector<float> lines;
   const float rt = env.mathConsts().fractionRuleThickness() * env.scale();
+  // How much taller the lines make the box, and their own thickness.
+  float up = 0.f, down = 0.f, thickness = rt;
   // y runs down from the top of the box: a slash, as the cancel package's
   // \cancel draws it, goes from the bottom left to the top right.
-  if (_cancelType == SLASH) {
-    lines = {0, box->_height + box->_depth, box->_width, 0};
-  } else if (_cancelType == BACKSLASH) {
-    lines = {0, 0, box->_width, box->_height + box->_depth};
+  if (_cancelType == SLASH || _cancelType == BACKSLASH || _cancelType == CROSS) {
+    const float pt = Units::fsize(Units::getDimen("1pt"), env);
+    const float w = box->_width, h = box->_height + box->_depth;
+    float x = 0.f, y = 0.f;
+    cancelSlash(w, h, pt, x, y);
+    // Centred on the box, as cancel.sty's \ooalign has it, and thin lines of 0.4pt.
+    const float cx = w / 2.f, cy = h / 2.f;
+    if (_cancelType != BACKSLASH) lines.insert(lines.end(), {cx - x / 2.f, cy + y / 2.f, cx + x / 2.f, cy - y / 2.f});
+    if (_cancelType != SLASH) lines.insert(lines.end(), {cx - x / 2.f, cy - y / 2.f, cx + x / 2.f, cy + y / 2.f});
+    // The lines hang over the box and do not widen it (pdfTeX: \cancel{a} is as wide as a); they make it taller.
+    up = std::max(0.f, (y - h) / 2.f);
+    down = up;
+    thickness = 0.4f * pt;
   } else if (_cancelType == ARROW) {
     // \cancelto: the slash, ending in an arrow head at the top right.
     const float w = box->_width;
@@ -269,17 +306,6 @@ sptr<Box> CancelAtom::createBox(Env& env) {
           lines.end(), {w, 0.f, w + head * (bx * c - by * s), head * (bx * s + by * c)});
       }
     }
-  } else if (_cancelType == CROSS) {
-    lines = {
-      0,
-      0,
-      box->_width,
-      box->_height + box->_depth,
-      box->_width,
-      0,
-      0,
-      box->_height + box->_depth,
-    };
   } else if (_cancelType == HORIZONTAL) {
     // Strike through the visible middle of lowercase letters: half of
     // x-height above the baseline. Box coords run y=0 at the top with y
@@ -290,10 +316,10 @@ sptr<Box> CancelAtom::createBox(Env& env) {
     return box;
   }
 
-  auto overlap = sptrOf<LineBox>(lines, rt);
+  auto overlap = sptrOf<LineBox>(lines, thickness);
   overlap->_width = box->_width;
-  overlap->_height = box->_height;
-  overlap->_depth = box->_depth;
+  overlap->_height = box->_height + up;
+  overlap->_depth = box->_depth + down;
   auto hbox = new HBox(box);
   hbox->add(sptr<Box>(new StrutBox(-box->_width, 0, 0, 0)));
   hbox->add(overlap);

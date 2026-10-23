@@ -405,3 +405,77 @@ TEST(packages_what_a_start_package_does_besides_define_is_done_a_definecolor_for
   opt.packages = {"colorprobe"};
   CHECK(check::drawsColour(check::render(tex, opt), 0xFF00FF00u));
 }
+
+// --- what the audit of the packages (tools/latex-ref/audit/packages) found LaTeX had and these did not ---------------------
+
+TEST(audit_page_breaks_and_the_choice_of_where_to_break_are_nothing_in_a_grob) {
+  CHECK_PAIRS((Pairs{
+    {R"(a \newpage b)", R"(a b)"},
+    {R"(a \clearpage b)", R"(a b)"},
+    {R"(a \pagebreak[3] b)", R"(a b)"},
+    {R"(a \nopagebreak b)", R"(a b)"},
+    {R"(a \sloppy b)", R"(a b)"},
+    {R"(a \frenchspacing b)", R"(a b)"},
+    {R"(a \ignorespaces b)", R"(a b)"},
+    {R"(a \allowdisplaybreaks b)", R"(a b)"},
+    {R"(a \allowdisplaybreaks[2] b)", R"(a b)"},
+  }));
+}
+
+TEST(audit_amsmath_overunderset_and_theequation) {
+  CHECK_PAIRS((Pairs{
+    {R"(\overunderset{o}{u}{x})", R"(\overset{o}{\underset{u}{x}})"},
+    {R"(\theequation)", R"(\arabic{equation})"},
+  }));
+}
+
+TEST(audit_amsthm_the_end_mark_is_set_where_qedhere_says_and_once) {
+  // The same ink with the mark put where it falls by itself and with \qedhere there: one mark, not two.
+  CHECK_PAIRS((Pairs{
+    {R"(\begin{proof} x \qedhere \end{proof})", R"(\begin{proof} x \end{proof})"},
+    {R"(\qedsymbol)", R"(\openbox)"},
+    {R"(\mathqed)", R"(\openbox)"},
+    {R"(\begin{proof}[\proofname] x \end{proof})", R"(\begin{proof} x \end{proof})"},
+  }));
+  check::Options document(microtex::InputMode::document);
+  CHECK(check::render(R"(\begin{proof} x \qedhere \end{proof})", document).warnings.empty());
+}
+
+TEST(audit_mathtools_the_colon_forms_are_pulled_against_each_other_and_splitfrac_stacks_two_lines) {
+  CHECK_PAIRS((Pairs{
+    {R"(a \dblcolon b)", R"(a \mathrel{\vcentcolon\mkern-.9mu\vcentcolon} b)"},
+    {R"(a \colondash b)", R"(a \mathrel{\vcentcolon\mkern-1.2mu-} b)"},
+    {R"(a \Approxcolon b)", R"(a \mathrel{\approx\mkern-1.2mu\dblcolon} b)"},
+    {R"(a \noeqref{x} b)", R"(a b)"},
+    {R"(\xlongrightarrow[u]{o})", R"(\xrightarrow[u]{o})"},
+    {R"(\crampedsubstack{a \\ b})", R"(\substack{a \\ b})"},
+  }));
+  CHECK(check::render(R"(\splitfrac{a}{b} \splitdfrac{a}{b})").warnings.empty());
+}
+
+TEST(audit_upgreek_capitals_are_the_capitals_and_cmll_has_its_two_marks) {
+  CHECK_PAIRS((Pairs{
+    {R"(\Updelta \Upomega \Upgamma)", R"(\Delta \Omega \Gamma)"},
+    {R"(\oc A)", R"(\mathord{!} A)"},
+    {R"(\wn A)", R"(\mathord{?} A)"},
+    {R"(\mathlarger{x})", R"({\larger x})"},
+    {R"(\mathsmaller{x})", R"({\smaller x})"},
+  }));
+}
+
+TEST(audit_physics_the_long_names_of_the_functions_are_the_functions_and_re_and_im_are_upright) {
+  CHECK_PAIRS((Pairs{
+    {R"(\usepackage{physics}\sine x + \cosine x + \tangent x)", R"(\usepackage{physics}\sin x + \cos x + \tan x)"},
+    {R"(\usepackage{physics}\arctangent x)", R"(\usepackage{physics}\arctan x)"},
+    {R"(\usepackage{physics}\hypsine x)", R"(\usepackage{physics}\sinh x)"},
+    {R"(\usepackage{physics}\exponential x)", R"(\usepackage{physics}\exp x)"},
+    {R"(\usepackage{physics}\Re z)", R"(\usepackage{physics}\operatorname{Re} z)"},
+    {R"(\usepackage{physics}\asin x)", R"(\usepackage{physics}\operatorname{asin} x)"},
+  }));
+}
+
+TEST(audit_stmaryrd_symbols_that_unicode_has_are_drawn) {
+  for (const char* name : {"varoast", "varodot", "varoplus", "varotimes", "fatslash", "boxempty", "shortrightarrow", "ssearrow"}) {
+    CHECK(check::render(std::string("a \\") + name + " b").warnings.empty());
+  }
+}

@@ -199,7 +199,8 @@ TEST(tables_every_table_the_packages_write_is_read_without_a_warning) {
     // Something is drawn, and not much wider than the measure it was given
     // (a table at the start of a paragraph is indented, as in LaTeX).
     CHECK(l.records.size() > 5);
-    CHECK(l.width <= 300 + 20);
+    // (the test font's letters are 0.55em wide: stargazer's tables, which LaTeX sets about 330pt, are wider than the measure)
+    if (l.width > 1.2f * 300) check::fail(__FILE__, __LINE__, f.filename().string() + " is " + std::to_string(l.width) + " wide");
   }
 }
 
@@ -219,7 +220,7 @@ TEST(tables_addlinespace_leaves_the_space_it_is_given_and_half_an_em_without) {
   const auto h = [](const std::string& sep) {
     return rec("\\begin{tabular}{l}a\\\\" + sep + " b\\end{tabular}", 0, 20).height;
   };
-  CHECK(std::abs((h("\\addlinespace[10pt]") - h("")) - 10) <= 1.5);
+  CHECK(std::abs((h("\\addlinespace[10pt]") - h("")) - 20) <= 1.5);  // 10pt at 20px
   CHECK(std::abs((h("\\addlinespace") - h("")) - 10) <= 1.5);
   CHECK(quiet("\\begin{tabular}{l}a\\\\\\addlinespace b\\end{tabular}"));
 }
@@ -262,7 +263,7 @@ TEST(tables_a_longtable_sets_its_head_and_foot_once_and_its_caption_above) {
   const std::string tex =
     "\\begin{longtable}{lr}\n\\caption{Cap}\\\\\n\\hline A & B \\endfirsthead\n\\hline C & D \\endhead\n"
     "\\hline E & F \\endfoot\n\\hline G & H \\endlastfoot\n1 & 2 \\\\ 3 & 4 \\\\\n\\end{longtable}";
-  CHECK_EQ(linesOf(tex), Strings({"Cap", "AB", "12", "34", "GH"}));
+  CHECK_EQ(linesOf(tex), Strings({"Table1:Cap", "AB", "12", "34", "GH"}));
   // No first head, no last foot: the head and the foot.
   const std::string plain = "\\begin{longtable}{lr}\\hline C & D \\endhead\\hline E & F \\endfoot 1 & 2 \\\\ 3 & 4 \\\\\\end{longtable}";
   CHECK_EQ(linesOf(plain), Strings({"CD", "12", "34", "EF"}));
@@ -291,7 +292,7 @@ TEST(tables_a_longtable_whose_columns_are_repeated_with_a_group_missing_is_recov
   // With one group missing it is a table of one column, and it is drawn.
   for (const char* spec : {"*", "*{3}"}) {
     const auto lines = linesOf(std::string("\\begin{longtable}{") + spec + "}\\caption{Cap}\\\\ a \\end{longtable}");
-    CHECK(std::find(lines.begin(), lines.end(), "Cap") != lines.end());
+    CHECK(std::find(lines.begin(), lines.end(), "Table1:Cap") != lines.end());
   }
 }
 
@@ -608,4 +609,138 @@ TEST(tables_the_other_text_tables_pad_by_tabcolsep) {
   const float base = gap("\\begin{tabular}{ll}a&b\\end{tabular}");
   CHECK(near(gap("\\begin{longtable}{ll}a&b\\end{longtable}"), base));
   CHECK(near(gap("\\setlength{\\tabcolsep}{0em}\\begin{longtable}{ll}a&b\\end{longtable}"), base - 12.f));
+}
+
+TEST(tables_a_rule_before_a_p_column_is_drawn_across_the_table_and_extrarowheight_makes_rows_taller) {
+  // An \hline in front of a p{} cell was drawn inside the cell, as a point: pdflatex draws it across the table.
+  const auto longest = [](const std::string& tex) {
+    float most = 0.f;
+    for (const auto& l : check::of(rec(tex), DrawRecord::LINE)) most = std::max(most, std::fabs(l.x2 - l.x1));
+    return most;
+  };
+  const float narrow = longest(R"(\begin{tabular}{|l|l|}\hline a&b\\\hline\end{tabular})");
+  const float wide = longest(R"(\begin{tabular}{|p{3cm}|l|}\hline a&b\\\hline\end{tabular})");
+  CHECK(narrow > 10.f);
+  CHECK(wide > 2.f * narrow);
+  size_t rules = 0;
+  for (const auto& l : check::of(rec(R"(\begin{tabular}{|p{3cm}|}\hline a\\\hline b\\\hline\end{tabular})"), DrawRecord::LINE)) {
+    if (std::fabs(l.x2 - l.x1) > 20.f) rules++;
+  }
+  CHECK_EQ(rules, size_t(3));
+  // array.sty's \extrarowheight is more height in every row.
+  const float plain = rec(R"(\begin{tabular}{c}a\\b\end{tabular})").height;
+  const float taller = rec(R"({\setlength{\extrarowheight}{4pt}\begin{tabular}{c}a\\b\end{tabular}})").height;
+  CHECK(taller > plain + 3);
+  CHECK(quiet(R"({\setlength{\extrarowheight}{4pt}\begin{tabular}{c}a\end{tabular}})"));
+}
+
+TEST(tables_the_notes_of_a_threeparttable_stand_under_the_table) {
+  const auto l = rec(R"(\begin{threeparttable}\begin{tabular}{cc}a&b\end{tabular}\begin{tablenotes}\item[a] note\end{tablenotes}\end{threeparttable})");
+  float cell = -1e9f, note = -1e9f;
+  for (const auto& r : check::of(l, DrawRecord::TEXT)) {
+    if (r.text == "b") cell = r.y;
+    if (r.text == "note") note = r.y;
+  }
+  CHECK(cell > -1e8f && note > cell + 5);
+}
+
+TEST(tables_a_longtables_caption_is_a_tables_numbered_by_the_table_counter) {
+  // pdflatex: `\caption{A table}` in a longtable is "Table 1: A table".
+  const auto words = check::of(rec("\\begin{longtable}{l}\\caption{A table}\\\\ a\\end{longtable}"), DrawRecord::TEXT);
+  bool label = false;
+  for (const auto& w : words) label = label || w.text == "Table" || w.text == "Table1:";
+  CHECK(label);
+}
+
+// xcolor's \rowcolors{2}{red!40}{blue!40} (pdflatex): the header row is not coloured, row 2 is the even colour (blue) and
+// row 3 the odd one (red): the colour of a row is its number's parity, from the row named.
+TEST(tables_rowcolors_colours_the_rows_from_the_first_by_the_parity_of_their_number) {
+  const std::string rows = "\\begin{tabular}{c}H\\\\a\\\\b\\\\c\\end{tabular}";
+  const auto colours = [&](const std::string& tex) {
+    std::vector<std::pair<float, std::uint32_t>> by;
+    for (const auto& r : check::of(rec(tex), DrawRecord::FILL_RECT)) by.emplace_back(r.y, r.col);
+    std::sort(by.begin(), by.end());
+    std::vector<std::uint32_t> out;
+    for (const auto& p : by) out.push_back(p.second);
+    return out;
+  };
+  const auto got = colours("\\rowcolors{2}{red}{blue}" + rows);
+  CHECK_EQ(got.size(), std::size_t(3));
+  CHECK_EQ(got[0], 0xFF0000FFu);  // row 2, even: blue
+  CHECK_EQ(got[1], 0xFFFF0000u);  // row 3, odd: red
+  CHECK_EQ(got[2], 0xFF0000FFu);
+  // From row 1, and an empty colour is none.
+  CHECK_EQ(colours("\\rowcolors{1}{red}{}" + rows).size(), std::size_t(2));
+  // Rules and a group: the table after the group is not coloured, and rules are not rows.
+  CHECK_EQ(colours("{\\rowcolors{1}{red}{blue}}" + rows).size(), std::size_t(0));
+  CHECK_EQ(colours("\\rowcolors{1}{red}{blue}\\begin{tabular}{c}\\hline a\\\\\\hline b\\\\\\hline\\end{tabular}"), (std::vector<std::uint32_t>{0xFFFF0000u, 0xFF0000FFu}));
+  CHECK(check::warns(rec("\\rowcolors{1}{nosuchcolour}{red}" + rows), "undefined colour"));
+}
+
+// dcolumn: a D{in}{out}{places} column holds numbers set in math, aligned on the separator. (stargazer's align = TRUE
+// and texreg's dcolumn = TRUE write `D{.}{.}{-1}`, with the stars as `^{***}` after the number.)
+TEST(tables_a_dcolumn_aligns_its_cells_on_the_separator) {
+  const std::string table = "\\begin{tabular}{D{.}{.}{-1}} 1.5 \\\\ 22.25 \\\\ 333 \\\\ -4.5^{***} \\end{tabular}";
+  CHECK(quiet(table));
+  // the '.' of every cell that has one stands in one vertical line
+  const auto dot = check::of(rec("$.$", 300, 20, InputMode::mixed), DrawRecord::GLYPH);
+  CHECK_EQ(dot.size(), std::size_t(1));
+  if (dot.size() != 1) return;
+  std::vector<float> xs;
+  for (const auto& g : check::of(rec(table), DrawRecord::GLYPH)) {
+    if (g.glyph_id == dot[0].glyph_id) xs.push_back(g.x);
+  }
+  CHECK_EQ(xs.size(), std::size_t(3));
+  for (const float x : xs) CHECK(std::fabs(x - xs[0]) < 0.01f);
+  // a number with no separator is flush right of it, before the separator's place
+  const auto narrow = rec("\\begin{tabular}{D{.}{.}{-1}} 7 \\end{tabular}");
+  const auto wide = rec("\\begin{tabular}{D{.}{.}{-1}} 7 \\\\ 1.5 \\end{tabular}");
+  CHECK(wide.width > narrow.width);
+  // the output separator may differ from the one typed
+  CHECK(quiet("\\begin{tabular}{D{.}{,}{1}} 1.5 \\\\ 22.25 \\end{tabular}"));
+  CHECK(quiet("\\begin{tabular}{lD{.}{.}{-1}D{.}{.}{-1}} a & 1.5 & 2.25 \\\\ \\multicolumn{1}{c}{b} & 3 & 4.125 \\end{tabular}"));
+}
+
+// siunitx: a comparator in front of a number is an ordinary symbol close to it (LuaLaTeX: \num{< 0.1} is 20.56pt, \mathord{<}0.1).
+TEST(tables_siunitx_num_reads_a_comparator_in_front_of_the_number) {
+  const std::string pkg = "\\usepackage{siunitx}";
+  CHECK(quiet(pkg + "\\num{< 0.1}", 300, 10, InputMode::mixed));
+  CHECK(quiet(pkg + "\\num{\\leq 3}", 300, 10, InputMode::mixed));
+  CHECK(check::sameInk(rec(pkg + "\\num{< 0.1}", 300, 10, InputMode::mixed), rec(pkg + "$\\mathord{<}0.1$", 300, 10, InputMode::mixed)));
+}
+
+// A column spec that begins with @{...} puts that material before the first cell of every row, including the rows of a rule:
+// stargazer's `@{\extracolsep{5pt}}lcc`. A rule is a rule all the same, and adds no row of text.
+TEST(tables_a_rule_is_a_rule_after_a_leading_at_column) {
+  const auto height = [&](const std::string& spec) {
+    return rec("\\begin{tabular}{" + spec + "}a\\\\\\hline b\\\\\\hline\\end{tabular}").height;
+  };
+  CHECK_EQ(height("@{}l"), height("l"));
+  CHECK_EQ(height("@{\\extracolsep{5pt}}l"), height("l"));
+  CHECK_EQ(rec("\\begin{tabular}{@{}l}\\\\[-1.8ex]\\hline\\end{tabular}").height, rec("\\begin{tabular}{l}\\\\[-1.8ex]\\hline\\end{tabular}").height);
+}
+
+// `\extracolsep{5pt}` in an @ column adds 5pt to each gap between the columns after it (LuaLaTeX, lcc: 60pt with `@{}`,
+// 70pt with `@{\extracolsep{5pt}}`: two gaps), and nothing at the edges.
+TEST(tables_extracolsep_widens_each_gap_between_columns) {
+  const auto width = [&](const std::string& spec) {
+    return rec("\\begin{tabular}{" + spec + "}a & b & c\\end{tabular}", 0).width;
+  };
+  CHECK(std::abs((width("@{\\extracolsep{5pt}}lcc") - width("@{}lcc")) - 10) <= 1);
+  CHECK(std::abs(width("@{\\extracolsep{1cm}}lc") - width("@{\\extracolsep{28.4528pt}}lc")) <= 1);
+}
+
+// A cell is read as far as its own end: an S column's last cell, with no `\\`, does not look into the text after
+// `\end{tabular}` for a script, so the number is drawn the same whatever follows the table.
+TEST(tables_an_s_cell_does_not_read_past_the_end_of_its_table) {
+  const auto drawn = [&](const std::string& after) {
+    const auto l = rec("\\begin{tabular}{S}12\\end{tabular}" + after, 300, 10);
+    std::vector<std::pair<std::string, int>> out;
+    for (const auto& r : check::of(l, DrawRecord::TEXT)) {
+      if (r.text == "1" || r.text == "2" || r.text == "12") out.emplace_back(r.text, static_cast<int>(std::lround(r.x)));
+    }
+    return out;
+  };
+  CHECK(!drawn("").empty());
+  CHECK(drawn("") == drawn(" $x^2$"));
 }

@@ -100,7 +100,7 @@ TEST(expander_starred_definition_commands_define) {
   CHECK_EQ(ex("\\DeclareMathOperator{\\am}{am}\\am"),
            std::string("\\mathop{\\mathrm{am}}\\nolimits"));
   CHECK_EQ(ex("\\DeclareMathOperator*{\\am}{am}\\am"),
-           std::string("\\mathop{\\mathrm{am}}\\limits"));
+           std::string("\\mathop{\\mathrm{am}}"));
 }
 
 TEST(expander_paired_delimiters_have_a_plain_a_sized_and_a_starred_form) {
@@ -154,7 +154,7 @@ TEST(expander_tag_star_is_the_tag_without_parentheses) {
 }
 
 TEST(expander_starred_builtins_become_forms_the_parser_reads) {
-  CHECK_EQ(ex("\\operatorname*{x}"), std::string("\\mathop{\\mathrm{x}}\\limits"));
+  CHECK_EQ(ex("\\operatorname*{x}"), std::string("\\mathop{\\mathrm{x}}"));
   CHECK_EQ(ex("\\hspace*{1em}"), std::string("\\hspace{1em}"));
   CHECK_EQ(ex("a\\\\*b"), std::string("a\\\\b"));
 }

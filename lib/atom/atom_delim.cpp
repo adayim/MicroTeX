@@ -6,6 +6,7 @@
 #include "box/box_group.h"
 #include "box/box_single.h"
 #include "env/env.h"
+#include "env/units.h"
 
 using namespace microtex;
 
@@ -41,13 +42,23 @@ sptr<Box> OverUnderBar::createBox(Env& env) {
 
 sptr<Box> OverUnderDelimiter::createBox(Env& env) {
   const auto base = _base->createBox(env);
-  const auto delim = microtex::createHDelim(_delim, env, base->_width);
+  // LaTeX's are never shorter than the glyphs they are built of: a brace is 18pt (1.8em) over one letter, an arrow
+  // the width of \rightarrow (pdflatex, \underbrace{a}, \overrightarrow{a}, \overleftrightarrow{a}).
+  const bool brace = _delim == "overbrace" || _delim == "underbrace";
+  const bool arrow = _delim == "overrightarrow" || _delim == "overleftarrow" || _delim == "underrightarrow" ||
+                     _delim == "underleftarrow";
+  const bool both = _delim == "overleftrightarrow" || _delim == "underleftrightarrow";
+  const float least = brace ? 1.8f : both ? 1.222f : arrow ? 1.f : 0.f;
+  const auto delim = microtex::createHDelim(
+    _delim, env, std::max(base->_width, least * Units::fsize(UnitType::em, 1.f, env)));
   base->_shift = (delim->_width - base->_width) / 2;
 
   const auto vbox = sptrOf<VBox>();
   if (_over) {
     vbox->add(delim);
-    const auto kern = SpaceAtom(UnitType::ex, 0.f, -1.f, 0.f).createBox(env);
+    // Set off from the base as pdflatex does it: the ink of \overbrace, \underbrace and the arrows round `abc`, within
+    // half a point (the braces and arrow heads are taller in Latin Modern's own assembly, so a centre is matched).
+    const auto kern = SpaceAtom(UnitType::ex, 0.f, -0.8f, 0.f).createBox(env);
     vbox->add(kern);
     vbox->add(base);
     const auto h = vbox->_height + vbox->_depth;
@@ -55,6 +66,7 @@ sptr<Box> OverUnderDelimiter::createBox(Env& env) {
     vbox->_height = h - vbox->_depth;
   } else {
     vbox->add(base);
+    vbox->add(SpaceAtom(UnitType::ex, 0.f, brace ? 0.27f : 0.15f, 0.f).createBox(env));
     vbox->add(delim);
     const auto h = vbox->_height + vbox->_depth;
     vbox->_height = base->_height;

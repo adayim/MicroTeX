@@ -34,10 +34,25 @@ const u32 _unitsCount = sizeof(_units) / sizeof(pair<const char*, UnitType>);
 
 /**
  * Helper function to get the size of 1 point (big-point) corresponds to
- * the font design unit.
+ * the font design unit. It is the device's point: the host's `px` and the
+ * width and line space it hands in are counted in it, and stay the same
+ * whatever the size of the text.
  */
 float pt(const Env& env) {
   return Env::pixelsPerPoint() * env.upem() / env.ppem() * env.fixedScale();
+}
+
+/**
+ * 1 TeX point (1/72.27 in) in the same units. A grob is a LaTeX page set at
+ * 10pt and magnified to the size of its text, so a length written in a TeX
+ * unit (pt, bp, pc, cm, mm, in, dd, cc, sp) follows that size: a point is a
+ * tenth of the em of the grob, as it is of a 10pt page. It is the grob's em
+ * and not the style's: a centimetre in a subscript is still a centimetre.
+ * (pt() times the size of the text over 10, written so that the size
+ * cancels: the layout is made at FIXED_TEXT_SIZE.)
+ */
+float texPt(const Env& env) {
+  return Env::fixedTextSize() / 10.f * Env::pixelsPerPoint() * env.upem() / env.ppem();
 }
 
 // IMPORTANT: the order corresponds to the order of the enum UnitType
@@ -48,33 +63,33 @@ const function<float(const Env&)> _unitConversions[]{
   [](const Env& env) -> float { return env.xHeight(); },
   // pixel
   [](const Env& env) -> float { return pt(env) / Env::pixelsPerPoint(); },
-  // point
-  [](const Env& env) -> float { return pt(env); },
+  // point: TeX's big point, 72.27/72 points
+  [](const Env& env) -> float { return 1.00375f * texPt(env); },
   // 1 pica = 12 point
-  [](const Env& env) -> float { return 12 * pt(env); },
+  [](const Env& env) -> float { return 12.f * texPt(env); },
   // 1 mu = 1/18 em
   [](const Env& env) -> float { return env.em() / 18.f; },
-  // 1 cm = 28.346456693 point
-  [](const Env& env) -> float { return 28.346456693f * pt(env); },
+  // 1 cm = 72.27/2.54 points
+  [](const Env& env) -> float { return 28.452756f * texPt(env); },
   // 1 mm = 1/10 cm
-  [](const Env& env) -> float { return 2.8346456693f * pt(env); },
-  // 1 in = 72 point
-  [](const Env& env) -> float { return 72.f * pt(env); },
+  [](const Env& env) -> float { return 2.8452756f * texPt(env); },
+  // 1 in = 72.27 points
+  [](const Env& env) -> float { return 72.27f * texPt(env); },
   // 1 sp = 1/65536 point (TeX: a point is 65536 sp)
-  [](const Env& env) -> float { return pt(env) / 65536.f; },
-  // 1 pt = 0.99626401 point (in printer's)
-  [](const Env& env) -> float { return 0.99626401f * pt(env); },
-  // 1 dd = 1.0660349422 point
-  [](const Env& env) -> float { return 1.0660349422f * pt(env); },
+  [](const Env& env) -> float { return texPt(env) / 65536.f; },
+  // 1 pt
+  [](const Env& env) -> float { return texPt(env); },
+  // 1 dd = 1238/1157 points
+  [](const Env& env) -> float { return 1.0700086f * texPt(env); },
   // 1 cc = 12 dd
-  [](const Env& env) -> float { return 12.7924193070f * pt(env); },
+  [](const Env& env) -> float { return 12.840104f * texPt(env); },
   // 1 tt = rule thickness
   [](const Env& env) -> float { return env.ruleThickness() * env.scale(); },
   // 1 tw = the text width. Without one there is no page to measure, so it
   // is what LaTeX's article class sets \textwidth to: 345pt.
   [](const Env& env) -> float {
     const float w = env.textWidth();
-    return w != POS_INF ? w : 345.f * 0.99626401f * pt(env);
+    return w != POS_INF ? w : 345.f * texPt(env);
   },
 };
 

@@ -135,13 +135,13 @@ TEST(diagnostics_a_row_gap_in_an_alignment_adds_that_much_space_below_its_row) {
     glyphs.path = false;
     const auto plain = check::render(body(""), glyphs);
     const auto gapped = check::render(body("[10pt]"), glyphs);
-    // The second row moves down by it (10pt is 9.963 of the px a pt of the
-    // drawing is) and the first stays; the sizes are whole numbers, so they
-    // are not compared.
+    // The second row moves down by it (10pt is the em of a 10pt page: 20px at the
+    // 20px of these tests) and the first stays; the sizes are whole numbers, so
+    // they are not compared.
     CHECK(!plain.records.empty() && plain.records.size() == gapped.records.size());
     if (!plain.records.empty() && plain.records.size() == gapped.records.size()) {
       CHECK(std::fabs(gapped.records.front().y - plain.records.front().y) < 0.01);
-      CHECK(std::fabs(gapped.records.back().y - plain.records.back().y - 10 * 72.f / 72.27f) < 0.01);
+      CHECK(std::fabs(gapped.records.back().y - plain.records.back().y - 10 * glyphs.textSize / 10.f) < 0.01);
     }
     // The [10pt] is not drawn.
     CHECK(check::pathCharacters(check::render(body("[10pt]"))).find(U'[') == std::u32string::npos);

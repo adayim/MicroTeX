@@ -45,7 +45,9 @@ float Env::baselineSkip() const {
 
 float Env::interline(float prevDepth, float nextHeight) const {
   const float skip = baselineSkip();
-  return std::max(skip / 12.f, skip - prevDepth - nextHeight);
+  // TeX: the baselineskip glue, unless it is under \lineskiplimit (0pt in article), and then \lineskip
+  const float glue = skip - prevDepth - nextHeight;
+  return glue >= 0.f ? glue : skip / 12.f;
 }
 
 float Env::em() const {

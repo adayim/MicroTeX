@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstdio>
 #include <functional>
 #include <string>
 #include <tuple>
@@ -198,6 +200,40 @@ TEST(math_cancel_rises_to_the_right_and_bcancel_falls_as_the_cancel_package_draw
   const auto b = line(R"(\bcancel{x})");
   CHECK(b.y1 < b.y2);
   CHECK(b.x1 < b.x2);
+}
+
+TEST(math_cancel_is_a_line_of_cancel_styles_slope_that_hangs_over_the_box_and_makes_it_taller) {
+  // cancel.sty draws a picture-mode \line over the box: 2pt longer than the box when the box is wide, as tall as the
+  // box and 2pt when it is not, in a few slopes; centred; the box keeps its width and grows in height. pdfTeX:
+  // \cancel{a} is as wide as a (9.251pt in the page) and 3.2pt taller. (A point is not what it is in the page in these
+  // records, so only what the line overhangs by is compared, between boxes.)
+  const auto at10 = [](const std::string& tex) {
+    Options opt(InputMode::math);
+    opt.path = false;
+    opt.textSize = 10;
+    return check::render(tex, opt);
+  };
+  const auto last = [&](const std::string& tex) {
+    const auto lines = check::of(at10(tex), DrawRecord::LINE);
+    return lines.empty() ? DrawRecord() : lines.back();
+  };
+  const auto overhang = [&](const std::string& body) {
+    const auto l = last("\\cancel{" + body + "}");
+    return (l.x2 - l.x1) - at10(body).width;
+  };
+  // The same 2pt over a box of 8 letters and one of 16: the line grows as the box does (a render's size is whole pixels).
+  const float eight = overhang("xxxxxxxx"), sixteen = overhang("xxxxxxxxxxxxxxxx");
+  CHECK(eight > 0.5f);
+  CHECK(std::fabs(eight - sixteen) < 1.f);
+  CHECK_EQ(at10("\\cancel{xxxxxxxx}").width, at10("xxxxxxxx").width);
+  // A tall box: the line is taller than the box by that much, and steep (the cancel package's slope for a tall box).
+  const auto tall = last("\\cancel{\\frac{a}{b}}");
+  const auto plain = at10("\\frac{a}{b}");
+  const auto cancelled = at10("\\cancel{\\frac{a}{b}}");
+  CHECK(cancelled.height + cancelled.depth > plain.height + plain.depth);
+  CHECK(std::fabs(tall.y2 - tall.y1) > std::fabs(tall.x2 - tall.x1));
+  // The cross is two such lines, one each way.
+  CHECK_EQ(check::of(at10("\\xcancel{xxxxxxxx}"), DrawRecord::LINE).size(), std::size_t(2));
 }
 
 TEST(math_a_columns_displaystyle_sets_its_cells_in_display_style) {
@@ -629,7 +665,7 @@ TEST(siunitx_num_sets_digits_in_groups_an_exponent_as_a_power_of_ten_and_an_unce
   SAME_SET(R"(\num{1.5e-4})", R"(1.5\times10^{-4})");
   SAME_SET(R"(\num{2E+3})", R"(2\times10^{3})");
   SAME_SET(R"(\num{-3.2(1)})", R"({-}3.2(1))");
-  SAME_SET(R"(\num{1.2+-0.3})", R"(1.2\pm0.3)");
+  SAME_SET(R"(\num{1.2+-0.3})", "1.2(3)");
   SAME_SET(R"(\num{1.2+-0.3e3})", R"(\left(1.2\pm0.3\right)\times10^{3})");
   SAME_SET(R"(\num{.5})", "0.5");
   SAME_SET(R"(\num{1,5})", "1{,}5");
@@ -658,7 +694,7 @@ TEST(siunitx_si_and_qty_are_a_number_a_thin_space_and_a_unit) {
   SAME_SET(R"(\SI{9.81}{\meter\per\second\squared})", R"(9.81\,\mathrm{m}\,\mathrm{s}^{-2})");
   SAME_SET(R"(\qty{1.5}{\kilo\gram})", R"(1.5\,\mathrm{kg})");
   SAME_SET(R"(\SI{3e8}{m/s})", R"(3\times10^{8}\,\mathrm{m}\,\mathrm{s}^{-1})");
-  SAME_SET(R"(\SI[round-mode=places]{12345}{\hertz})", R"(12\,345\,\mathrm{Hz})");
+  SAME_SET(R"(\SI[round-mode=places]{12345}{\hertz})", R"(12\,345.00\,\mathrm{Hz})");
   SAME_SET(R"(\SI{20}{\degreeCelsius})", R"(20\,\mathrm{{}^{\circ}C})");
 }
 
@@ -769,4 +805,165 @@ TEST(math_the_cells_of_an_array_are_in_text_style_and_those_of_an_alignment_in_d
   CHECK(check::render(R"(\begin{array}{c}\frac{x}{x}\end{array})", display).height + 4 <= height("gathered"));
   // A column asks for display style as before.
   CHECK_EQ(check::render(R"(\begin{array}{>{\displaystyle}c}\frac{x}{x}\end{array})", display).height, height("aligned"));
+}
+
+TEST(math_braces_and_arrows_over_a_letter_are_as_wide_as_the_glyphs_they_are_made_of) {
+  // pdflatex, 10pt: \underbrace{a} and \overbrace{a} 18pt, \overrightarrow{a} 10pt, \overleftrightarrow{a} 12.2pt,
+  // \xLeftarrow{a} 12.2pt, \xLeftrightarrow{a} 15.6pt (a render's size is whole pixels).
+  Options opt(InputMode::math);
+  opt.path = false;
+  opt.textSize = 10;
+  const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
+  CHECK(width(R"(\underbrace{a})") >= 18);
+  CHECK(width(R"(\overbrace{a})") >= 18);
+  // (The arrows of the test font cannot be stretched, so only the drawn ones are asked: a pixel or two is allowed.)
+  CHECK(width(R"(\xLeftarrow{a})") >= 11);
+  CHECK(width(R"(\xLeftrightarrow{a})") >= 14);
+  // Over a wide base they are the base's width, as before.
+  CHECK(width(R"(\underbrace{xxxxxxxxxxxx})") <= width(R"(xxxxxxxxxxxx)") + 2);
+}
+
+TEST(math_a_smallmatrix_has_a_thin_space_at_each_end) {
+  // amsmath's \smallmatrix starts with \null\, and ends with \, (pdflatex: one cell is 7.67pt wide, 3.3pt more than a).
+  Options opt(InputMode::math);
+  opt.path = false;
+  opt.textSize = 100;
+  const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
+  const float gain = width(R"(\begin{smallmatrix}x\end{smallmatrix})") - width(R"(\scriptstyle x)");
+  CHECK(gain > 20.f && gain < 45.f);
+}
+
+TEST(math_operatorname_star_puts_its_limits_beside_it_in_text) {
+  // amsmath: `\operatorname*{res}_{z}` is \mathop{...} with no \limits: beside it in text style, as \lim's are.
+  const auto sameInk = [](const std::string& a, const std::string& b) {
+    return rec(a).width == rec(b).width && rec(a).height == rec(b).height && rec(a).depth == rec(b).depth;
+  };
+  CHECK(sameInk(R"(\operatorname*{res}_{z=0}f)", R"(\mathop{\mathrm{res}}_{z=0}f)"));
+  CHECK(!sameInk(R"(\operatorname*{res}_{z=0}f)", R"(\mathop{\mathrm{res}}\limits_{z=0}f)"));
+}
+
+namespace {
+
+int widthAt(const std::string& tex, float size) {
+  Options opt = typeface();
+  opt.textSize = size;
+  return check::render(tex, opt).width;
+}
+
+}  // namespace
+
+TEST(math_tex_lengths_follow_the_size_of_the_text_and_px_does_not) {
+  // A grob is a LaTeX page set at 10pt and magnified to its font size: 1pt is a tenth of the em, 1cm 28.4528 of them,
+  // in every TeX unit, and the same at every size. `px` is the device's (R's max_width and line space), so it stays.
+  for (const char* len : {"10pt", "1cm", "5mm", "1in", "7bp", "2pc", "3dd", "100000sp"}) {
+    const std::string tex = std::string("\\rule{") + len + "}{1pt}";
+    const int small = widthAt(tex, 40), big = widthAt(tex, 80);
+    CHECK(std::abs(big - 2 * small) <= 2);
+  }
+  CHECK(std::abs(widthAt(R"(\rule{40px}{1pt})", 40) - widthAt(R"(\rule{40px}{1pt})", 80)) <= 1);
+  // ... and they are TeX's lengths to each other: 10pt is 1em, 72.27pt an inch, 1cm 28.4528pt, 1bp 1.00375pt
+  for (const float size : {40.f, 100.f}) {
+    const auto w = [&](const std::string& len) { return widthAt("\\rule{" + len + "}{1pt}", size); };
+    CHECK(std::abs(w("10pt") - w("1em")) <= 1);
+    CHECK(std::abs(w("72.27pt") - w("1in")) <= 1);
+    CHECK(std::abs(w("28.4528pt") - w("1cm")) <= 1);
+    CHECK(std::abs(w("100bp") - w("100.375pt")) <= 1);
+    CHECK(std::abs(w("12pt") - w("1pc")) <= 1);
+  }
+}
+
+TEST(math_a_fraction_has_a_null_delimiter_at_each_side) {
+  // TeX puts \nulldelimiterspace (1.2pt of the 10pt page, 0.12em) where a generalized fraction has no delimiter, and
+  // at \left. and \right. LuaLaTeX + unicode-math, Latin Modern Math, 10pt: \frac{a}{b} is 6.74pt wide, 2.4pt wider
+  // than the box of its larger part; \left(\frac{a}{b}\right) 15.18pt, \left.\frac{a}{b}\right. 9.14pt.
+  const float em = 100;
+  // (rules, not letters: a letter has its italic correction in both and the fraction sets its parts in a smaller style)
+  const std::string bar = R"(\rule{50pt}{1pt})";
+  const int part = widthAt(bar, em);
+  CHECK(std::abs(widthAt("\\frac{" + bar + "}{" + bar + "}", em) - (part + 0.24f * em)) <= 2);
+  CHECK(std::abs(widthAt("{" + bar + "\\over " + bar + "}", em) - (part + 0.24f * em)) <= 2);
+  CHECK(std::abs(widthAt("{" + bar + "\\atop " + bar + "}", em) - (part + 0.24f * em)) <= 2);
+  // \cfrac takes one null delimiter back (amsmath: \kern-\nulldelimiterspace)
+  CHECK(std::abs(widthAt("\\cfrac{" + bar + "}{" + bar + "}", em) - part - 0.12f * em) <= 2);
+  // the null delimiter of \left. is the same width, and a real one replaces it: no space beside a \binom's parenthesis
+  CHECK(std::abs(widthAt(R"(\left.\frac{x}{x}\right.)", em) - widthAt(R"(\frac{x}{x})", em) - 0.24f * em) <= 2);
+  CHECK(std::abs(widthAt(R"(\binom{x}{x})", em) - widthAt(R"({x\choose x})", em)) <= 1);
+  CHECK(widthAt(R"(\binom{x}{x})", em) < widthAt(R"(\left(\frac{x}{x}\right))", em));
+  // it is a length: it does not shrink in a script
+  CHECK(std::abs((widthAt("\\scriptstyle\\frac{" + bar + "}{" + bar + "}", em) - part) - 0.24f * em) <= 2);
+}
+
+TEST(math_genfrac_reads_an_empty_style_and_an_empty_thickness_as_amsmath_does) {
+  // amsmath: an empty style is the one the fraction stands in, 0 to 3 are display, text, script, scriptscript; an empty
+  // thickness is the default rule and 0pt none. \dfrac and \tfrac are \genfrac{}{}{}{0} and {}{}{}{1}.
+  // (LuaLaTeX: \genfrac{}{}{0pt}{}{a}{b} is 6.74pt wide and 7.53 + 3.52 tall, as {a\atop b}; \dfrac 7.69 and 11.19 + 6.97.)
+  check::Options text;
+  text.path = false;
+  CHECK_PAIRS_WITH((check::Pairs{
+    {R"(\genfrac{}{}{}{}{x}{y})", R"(\frac{x}{y})"},
+    {R"(\genfrac{}{}{}{0}{x}{y})", R"(\displaystyle\frac{x}{y})"},
+    {R"(\genfrac{}{}{}{1}{x}{y})", R"(\textstyle\frac{x}{y})"},
+    {R"(\genfrac{}{}{}{2}{x}{y})", R"(\scriptstyle\frac{x}{y})"},
+    {R"(\genfrac{}{}{0pt}{}{x}{y})", R"({x\atop y})"},
+    {R"(\genfrac{(}{)}{0pt}{}{x}{y})", R"(\binom{x}{y})"},
+    {R"(\genfrac{(}{)}{0pt}{0}{x}{y})", R"(\displaystyle\binom{x}{y})"},
+    {R"(\dfrac{x}{y})", R"(\displaystyle\frac{x}{y})"},
+    {R"(\tfrac{x}{y})", R"(\textstyle\frac{x}{y})"},
+    {R"(\dbinom{x}{y})", R"(\displaystyle\binom{x}{y})"},
+    {R"(\tbinom{x}{y})", R"(\textstyle\binom{x}{y})"},
+    {R"(\genfrac{}{}{2pt}{}{x}{y})", R"({x\above 2pt y})"},
+  }), text);
+  // in a script, an empty style stays a script, where it used to be set in display style
+  CHECK(widthAt(R"(\scriptstyle\genfrac{}{}{}{}{x}{y})", 100) == widthAt(R"(\scriptstyle\frac{x}{y})", 100));
+}
+
+namespace {
+
+// height and depth at a size of 100, in px
+std::pair<int, int> sizeAt100(const std::string& tex) {
+  Options opt = typeface();
+  opt.textSize = 100;
+  const auto l = check::render(tex, opt);
+  return {l.height, l.depth};
+}
+
+}  // namespace
+
+TEST(math_a_fractions_delimiters_are_texs_delim_size_and_the_fraction_stays_put) {
+  // LuaLaTeX, Latin Modern Math at 10pt: \dbinom{n}{k} is 29.9pt tall (a delimiter of at least LuaTeX's 2.4em, centred on
+  // the axis) where \binom is 11.5; the delimiters do not follow the fraction's height, and the fraction is not moved.
+  const auto display = sizeAt100(R"(\dbinom{x}{x})");
+  const auto text = sizeAt100(R"(\binom{x}{x})");
+  CHECK(display.first + display.second > 2.3f * 100);
+  CHECK(text.first + text.second < 0.6f * (display.first + display.second));
+  // \genfrac's rule of its own thickness takes gaps of that thickness (TeX's rule 15d)
+  CHECK(sizeAt100(R"(\genfrac{}{}{3pt}{}{x}{x})").first + sizeAt100(R"(\genfrac{}{}{3pt}{}{x}{x})").second >=
+        sizeAt100(R"(\frac{x}{x})").first + sizeAt100(R"(\frac{x}{x})").second);
+}
+
+TEST(math_sideset_is_set_in_display_style_and_smallmatrix_has_a_thick_space_between_columns) {
+  // amsmath measures the operator \displaystyle: in running text \sideset still has the big one (LuaLaTeX: 11.9 + 6.6pt)
+  CHECK(sizeAt100(R"(\sideset{}{'}\sum)").first > sizeAt100(R"(\sum)").first + 10);
+  // and its limits are scripts at the side in text style (LuaLaTeX: depth 6.5pt) and under it in display style (10.5pt)
+  CHECK(sizeAt100(R"(\sideset{}{'}\sum_{n}f)").second < 0.85f * 100);
+  CHECK(sizeAt100(R"(\displaystyle\sideset{}{'}\sum_{n}f)").second > 0.95f * 100);
+  // smallmatrix: \thickspace (5mu of the text, 2.78pt at 10pt) between columns, a \, at each end
+  Options opt = typeface();
+  opt.textSize = 100;
+  const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
+  const int one = width(R"(\begin{smallmatrix}x\end{smallmatrix})"), two = width(R"(\begin{smallmatrix}x&x\end{smallmatrix})");
+  CHECK(std::abs((two - one) - (width(R"(\scriptstyle x)") + 5.f / 18.f * 100)) < 12);
+}
+
+// amsmath's \sideset is an empty \hbox and then the \mathop, so a thin space stands before the operator whatever comes before
+// it (LuaLaTeX: `a=\sideset{}{'}\sum b` 44.24pt, `a\sideset{}{'}\sum b` 30.90, `a=b` - `ab` the same 13.34 as the difference)
+TEST(math_sideset_has_a_thin_space_before_its_operator_after_a_relation_too) {
+  Options opt = typeface();
+  opt.textSize = 100;
+  const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
+  const int withRel = width(R"(a=\sideset{}{'}\sum b)") - width(R"(a\sideset{}{'}\sum b)");
+  const int plain = width("a=b") - width("ab");
+  CHECK(std::abs(withRel - plain) <= 2);
+  // after an ordinary atom the space is the one ord-op already had: no more than before
+  CHECK(width(R"(a\sideset{}{'}\sum b)") - width(R"(\sideset{}{'}\sum b)") == width("ab") - width("b"));
 }

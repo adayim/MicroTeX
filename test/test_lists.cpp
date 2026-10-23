@@ -226,3 +226,43 @@ TEST(lists_a_short_list_keeps_its_own_width_and_labels_are_set_right) {
   ten += "\\end{enumerate}";
   CHECK_EQ(check::distinct(check::column(check::of(items(ten), DrawRecord::TEXT), &DrawRecord::x)), std::size_t(1));
 }
+
+TEST(lists_items_are_an_itemsep_and_a_parsep_further_apart_than_lines_and_enumitems_keys_say_otherwise) {
+  // pdflatex, article at 10pt: 20pt from item to item in a list of the first level (12pt baselineskip, itemsep 4pt and
+  // parsep 4pt), 16pt in the second and 12pt in the third; `noitemsep` takes both away.
+  const auto pitch = [&](const std::string& tex) {
+    return rowOf(items(tex, InputMode::document, 300), "b") - rowOf(items(tex, InputMode::document, 300), "a");
+  };
+  Options opt(InputMode::document, 300);
+  opt.path = false;
+  opt.textSize = 10;
+  const auto row = [&](const std::string& tex, const std::string& word) {
+    for (const auto& r : check::of(check::render(tex, opt), DrawRecord::TEXT)) {
+      if (r.text == word) return r.y;
+    }
+    return -1e9f;
+  };
+  const auto step = [&](const std::string& tex) { return row(tex, "b") - row(tex, "a"); };
+  const float first = step(R"(\begin{itemize}\item a\item b\end{itemize})");
+  const float tight = step(R"(\begin{itemize}[noitemsep]\item a\item b\end{itemize})");
+  CHECK(std::fabs(first - tight - 8.f) < 1.f);
+  CHECK(std::fabs(step(R"(\begin{itemize}[nosep]\item a\item b\end{itemize})") - tight) < 0.01f);
+  CHECK(std::fabs(step(R"(\begin{enumerate}\item a\item b\end{enumerate})") - first) < 0.01f);
+  CHECK(std::fabs(step(R"(\begin{description}\item[x] a\item[y] b\end{description})") - first) < 0.01f);
+  const float second = step(R"(\begin{itemize}\item q\begin{itemize}\item a\item b\end{itemize}\end{itemize})");
+  CHECK(std::fabs(first - second - 4.f) < 1.f);
+  (void)pitch;
+}
+
+TEST(lists_enumitems_label_start_and_font_keys_set_the_marker) {
+  // `[label=(\alph*)]` is the label template of `[(\alph*)]`, `start=` the first number.
+  CHECK_EQ(check::lines(items(R"(\begin{enumerate}[label=(\alph*)]\item x\item y\end{enumerate})", InputMode::document, 300)),
+           check::lines(items(R"(\begin{enumerate}[(\alph*)]\item x\item y\end{enumerate})", InputMode::document, 300)));
+  CHECK_EQ(check::lines(items(R"(\begin{enumerate}[label=\arabic*.,start=3]\item x\item y\end{enumerate})", InputMode::document, 300)),
+           check::lines(items(R"(\begin{enumerate}\item[3.] x\item[4.] y\end{enumerate})", InputMode::document, 300)));
+  // For itemize the label is the marker, text or math.
+  CHECK_EQ(check::lines(items(R"(\begin{itemize}[label=$\star$]\item x\end{itemize})", InputMode::document, 300)),
+           check::lines(items(R"(\begin{itemize}[$\star$]\item x\end{itemize})", InputMode::document, 300)));
+  CHECK(items(R"(\begin{enumerate}[label=(\roman*),itemsep=0pt,leftmargin=*]\item x\end{enumerate})", InputMode::document, 300).warnings.empty());
+  CHECK(check::warns(items(R"(\begin{enumerate}[resume]\item x\end{enumerate})", InputMode::document, 300), "resume"));
+}

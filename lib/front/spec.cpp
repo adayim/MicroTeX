@@ -74,6 +74,8 @@ struct Table {
     // The rows of the array that comes next: jot (amsmath's, \openup\jot) or
     // sub (\substack's), as the prelude's split and substack say.
     add({"gmrows"}, "r");
+    // `\extracolsep{len}` in an @ column, kept for the matrix to read: it widens the gaps between the columns after it.
+    add({"gmextracolsep"}, "r");
     // The code of an alltt or a Verbatim with commandchars, as the parser puts it back (Parser::commandLines()): one
     // \gmcodeline a line, and in it the text between the commands as \gmlit{hex}, which is set as typed.
     add({"gmlit"}, "r");
@@ -119,6 +121,8 @@ struct Table {
     add({"endhead", "endfirsthead", "endfoot", "endlastfoot"}, "", Shape::prefix, Bare::none,
         true);
     add({"rowcolor", "columncolor", "arrayrulecolor", "cellcolor"}, "r");
+    // xcolor's table option: \rowcolors[commands]{first row}{odd colour}{even colour}, for the tables after it.
+    add({"rowcolors"}, "Rrrr");
     add({"newcolumntype"}, "rr");
     add({"color"}, "r", Shape::groupDeclaration);
     // fontspec's and unicode-math's: a font for a role -- body, \textsf,
@@ -380,7 +384,7 @@ bool isVerbatimEnvironment(const std::string& name) {
 
 bool isBlockEnvironment(const std::string& name) {
   return name == "abstract" || name == "titlepage" || name == "thebibliography" || name == "proof" ||
-         name == "subequations" || name == "framed" || name == "shaded" || name == "shaded*" || name == "snugshade" ||
+         name == "subequations" || name == "threeparttable" || name == "framed" || name == "shaded" || name == "shaded*" || name == "snugshade" ||
          name == "snugshade*" || isFloatEnvironment(name);
 }
 

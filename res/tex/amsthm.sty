@@ -1,2 +1,14 @@
-\ProvidesPackage{amsthm}[2026/10/11 AMS theorems: the proof environment]
-\newenvironment{proof}[1][Proof]{\par\textit{#1.}\ }{\hfill\ensuremath{\square}\par}
+\ProvidesPackage{amsthm}[2026/10/21 AMS theorems: the proof environment and its end mark]
+% The end mark stands at the end of the proof, a quad after it (a grob has no margin to put it flush against);
+% \qedhere and \qed put it where they stand and leave none at the end.
+\newcommand{\proofname}{Proof}
+\newcommand{\openbox}{\ensuremath{\mdlgwhtsquare}}
+\newcommand{\qedsymbol}{\openbox}
+\newcommand{\mathqed}{\ensuremath{\qedsymbol}}
+\newcommand{\gm@qedmark}{\hfill\ensuremath{\qedsymbol}}
+\gdef\gm@qedpending{}
+\newcommand{\qedhere}{\gm@qedmark\gdef\gm@qedpending{}}
+\newcommand{\qed}{\qedhere}
+\newcommand{\pushQED}[1]{}
+\newcommand{\popQED}{}
+\newenvironment{proof}[1][\proofname]{\par\gdef\gm@qedpending{\gm@qedmark}\textit{#1.}\ }{\gm@qedpending\gdef\gm@qedpending{}\par}

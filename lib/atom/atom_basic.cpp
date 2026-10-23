@@ -131,5 +131,5 @@ sptr<Box> PhantomAtom::createBox(Env& env) {
 sptr<Box> ExtensibleAtom::createBox(Env& env) {
   const auto len = _getLen(env);
   return _vertical ? microtex::createVDelim(_sym, env, len)
-                   : microtex::createHDelim(_sym, env, len);
+                   : microtex::createHDelim(_sym, env, len, true, 0.25f * Units::fsize(UnitType::em, 1.f, env));
 }

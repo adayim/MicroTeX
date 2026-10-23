@@ -20,7 +20,11 @@
 \@namedef{gm@mc@cl}{[c]{@{}l@{}}}
 \@namedef{gm@mc@cr}{[c]{@{}r@{}}}
 \newcommand{\makecell}[2][c]{\@ifundefined{gm@mc@#1}{\begin{tabular}{@{}c@{}}#2\end{tabular}}{\begin{tabular}\csname gm@mc@#1\endcsname#2\end{tabular}}}
-\newcommand{\thead}[2][c]{\makecell[#1]{\bfseries #2}}
+% \thead[vh]{a\\b}: a \makecell in \theadfont (bold) and, unless it says, \theadalign (bottom, centred); both are macros a
+% document can \renewcommand.
+\newcommand{\theadfont}{\bfseries}
+\newcommand{\theadalign}{bc}
+\newcommand{\thead}[2][\theadalign]{\makecell[#1]{\theadfont #2}}
 % \shortstack[l]{a\\b}: lines stacked in one column, centred unless told (l, r), with no padding, the last line on the
 % baseline (it is a \vbox).
 \newcommand{\shortstack}[2][c]{\begin{tabular}[b]{@{}#1@{}}#2\end{tabular}}

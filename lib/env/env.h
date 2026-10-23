@@ -93,7 +93,7 @@ public:
   float baselineSkip() const;
 
   /** What goes between two lines whose first has depth `prevDepth` and whose next has height `nextHeight`: the
-   *  baselineskip glue, or ineskip (a twelfth of it, 1pt at 10pt) where that would leave less. */
+   *  baselineskip glue, or lineskip (a twelfth of it, 1pt at 10pt) where that would be negative (\lineskiplimit is 0). */
   float interline(float prevDepth, float nextHeight) const;
 
   /** The line space to layout boxes vertically */

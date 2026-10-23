@@ -6,6 +6,7 @@
 #include <cstring>
 #include <utility>
 
+#include "front/colspec.h"
 #include "utils/utf.h"
 
 namespace microtex::front {
@@ -1494,10 +1495,18 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
   n.flag = spec != nullptr && spec->textInText && mode == Mode::text;
   const Mode cellMode = n.flag ? Mode::text : Mode::math;
   std::vector<NodeId> kids;
+  std::map<int, std::pair<std::string, std::string>> decimals;
+  std::set<int> numbers;
   if (spec != nullptr) {
     for (const ArgSpec& a : spec->args) {
       kids.push_back(spec->body == EnvBody::verbatim ? parseVerbatimArgument(a.optional)
                                                      : parseArgument(a, mode, "\\begin{" + name + "}"));
+      // dcolumn's D columns hold numbers, which it sets in math: `-5.3^{***}`
+      if (n.flag && _ast.node(kids.back()).flag && !_ast.node(kids.back()).raw.empty()) {
+        numbers.clear();
+        const auto found = decimalColumns(_ast.node(kids.back()).raw, &numbers);
+        if (!found.empty()) decimals = found;
+      }
     }
   }
   if (spec != nullptr && spec->body == EnvBody::text) {
@@ -1611,6 +1620,8 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
       n.raw = stopRecording(mark, used);
       // A picture starts from the styles set before it.
       if (name == "tikzpicture" && !_in.tikzStyles().empty()) n.raw = _in.tikzStyles() + n.raw;
+      // A commutative diagram, from what `\tikzcdset` set before it.
+      if (name == "tikzcd" && !_in.tikzcdSets().empty()) n.raw = _in.tikzcdSets() + n.raw;
       return _ast.add(std::move(n), kids);
     }
   }
@@ -1630,8 +1641,42 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
       const SourceSpan cellAt = peek().tok.span;
       if (firstCell) row.span = cellAt;
       firstCell = false;
-      const Mode thisMode =
+      Mode thisMode =
         spec != nullptr && spec->textAfterFirst && !cells.empty() ? Mode::text : cellMode;
+      // (a \multicolumn keeps its content as text, and its own place)
+      // Whether the cell has a script in it, read ahead and put back (texreg writes `37.29^{***}` in an S column,
+      // where siunitx sets what it does not parse in math).
+      const auto hasScript = [&] {
+        std::vector<ExpandedToken> read;
+        bool found = false;
+        int depth = 0;
+        while (read.size() < 4096) {
+          read.push_back(next());
+          const auto& k = read.back().tok;
+          // (the cell ends at the end of the row, and of the table: `\end` is not read past)
+          if (k.kind == TokKind::end ||
+              (depth == 0 && (k.isChar(Cat::alignTab) || k.isCs("\\") || k.isCs("cr") || k.isCs("end")))) {
+            break;
+          }
+          if (k.isChar(Cat::beginGroup)) {
+            depth++;
+          } else if (k.isChar(Cat::endGroup)) {
+            if (depth == 0) break;
+            depth--;
+          } else if (k.isChar(Cat::superscript) || k.isChar(Cat::subscript)) {
+            found = true;
+          }
+        }
+        for (auto it = read.rbegin(); it != read.rend(); ++it) unread(std::move(*it));
+        return found;
+      };
+      const int column = static_cast<int>(cells.size());
+      if (decimals.count(column) != 0 && !peekNonSpace().tok.isCs("multicolumn")) {
+        thisMode = Mode::math;
+      } else if (numbers.count(column) != 0 && !peekNonSpace().tok.isCs("multicolumn") &&
+                 !peekNonSpace().tok.isChar(Cat::beginGroup) && hasScript()) {
+        thisMode = Mode::math;
+      }
       const NodeId list = parseList(thisMode, cellStop, cellAt);
       Node cell;
       cell.kind = NodeKind::cell;

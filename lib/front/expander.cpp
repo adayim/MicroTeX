@@ -111,7 +111,8 @@ const std::unordered_map<std::string, MacroDef>& starredBuiltins() {
       def.body = std::move(body);
       t.emplace(name, std::move(def));
     };
-    add("operatorname*", 1, {{"\\mathop{\\mathrm{", 0}, {"", 1}, {"}}\\limits", 0}});
+    // Its limits go over and under in a display and beside it in text, as \lim's do (amsmath: no \nolimits).
+    add("operatorname*", 1, {{"\\mathop{\\mathrm{", 0}, {"", 1}, {"}}", 0}});
     add("hspace*", 1, {{"\\hspace{", 0}, {"", 1}, {"}", 0}});
     add("vspace*", 1, {{"\\vspace{", 0}, {"", 1}, {"}", 0}});
     // amsmath's \tag*{x}: the tag without its parentheses.
@@ -229,6 +230,8 @@ struct Expander::Impl {
   std::string theoremStyle = "plain";
   /** Units a document made with \DeclareSIUnit. */
   siunitx::UserUnits siUnits;
+  /** `\sisetup{...}`, as written: the options every later number is read with. */
+  std::string siSetup;
   /** The counter a theorem environment is numbered within (`section`), by
    *  environment name, for those that share its counter. */
   std::unordered_map<std::string, std::string> theoremWithin;
@@ -240,6 +243,8 @@ struct Expander::Impl {
   std::unordered_set<std::string> foreachNames;  // the names some \foreach loops over, read as written from then on
   // `\tikzset` and `\tikzstyle` so far, as the statements the pictures after them begin with.
   std::string tikzStyles;
+  // `\tikzcdset` so far, as `\gmcdset{keys}` statements: what a tikzcd begins with.
+  std::string tikzcdSets;
   // fancyvrb's \DefineVerbatimEnvironment{name}{Verbatim}{options}: name -> (the environment it is, its options).
   std::unordered_map<std::string, std::pair<std::string, std::string>> verbatimEnvironments;
   // Where the input ends for now (Expander::endInputAt()), and the first
@@ -1317,7 +1322,7 @@ struct Expander::Impl {
       fail("newcommand", "Command " + name + " already exists! Use renewcommand instead!");
     }
     MacroDef def;
-    def.body = literal("\\mathop{\\mathrm{" + text + "}}" + (star ? "\\limits" : "\\nolimits"));
+    def.body = literal("\\mathop{\\mathrm{" + text + "}}" + (star ? "" : "\\nolimits"));
     store(name, std::move(def));
   }
 
@@ -1401,6 +1406,10 @@ struct Expander::Impl {
   /** `\tikzset{keys}` and `\tikzstyle{name} = [keys]`: kept as text, for the tikzpictures after it,
    *  which read them first (Expander::tikzStyles()); nothing is drawn. */
   void tikzStyleCommand(const ExpToken& e) {
+    if (e.tok.text == "tikzcdset") {
+      tikzcdSets += "\\gmcdset{" + readArg("\\tikzcdset") + "}";
+      return;
+    }
     if (e.tok.text == "tikzset") {
       tikzStyles += "\\tikzset{" + readArg("\\tikzset") + "}";
       return;
@@ -1530,7 +1539,7 @@ struct Expander::Impl {
     static const std::unordered_set<std::string> names = {
       "newcommand", "renewcommand", "providecommand", "DeclareRobustCommand", "DeclareMathOperator",
       "DeclarePairedDelimiter", "ce", "pu", "newtheorem", "newfontfamily", "newfontface",
-      "tikzset", "tikzstyle", "DefineVerbatimEnvironment", "RecustomVerbatimEnvironment",
+      "tikzset", "tikzstyle", "tikzcdset", "DefineVerbatimEnvironment", "RecustomVerbatimEnvironment",
       "theoremstyle", "def", "gdef", "edef", "xdef", "@ifstar", "@ifnextchar", "global",
       "expandafter", "noexpand", "futurelet", "let", "newenvironment", "renewenvironment",
       "makeatletter", "makeatother", "begingroup", "endgroup", "begin", "end", "usepackage",
@@ -1573,7 +1582,9 @@ struct Expander::Impl {
   void siunitxCommand(const ExpToken& e) {
     const std::string name = e.tok.text;
     const SourceSpan at = e.tok.span;
-    readOptional();
+    const auto given = readOptional();
+    siunitx::Options siOptions = siunitx::parseOptions(siSetup);
+    if (given) siOptions = siunitx::parseOptions(*given, siOptions);
     std::string problem;
     const auto say = [&] {
       if (!problem.empty()) diags.warn(at, "\\" + name + ": " + problem);
@@ -1581,7 +1592,7 @@ struct Expander::Impl {
     };
     const std::string who = "\\" + name;
     if (name == "sisetup") {
-      readArg(who);
+      siSetup += "," + readArg(who);
       return;
     }
     if (name == "DeclareSIUnit") {
@@ -1592,7 +1603,7 @@ struct Expander::Impl {
       return;
     }
     const auto num = [&](const std::string& s) {
-      const std::string out = siunitx::number(s, problem);
+      const std::string out = siunitx::number(s, problem, siOptions);
       say();
       return out;
     };
@@ -2384,7 +2395,7 @@ struct Expander::Impl {
       declareTheorem(e);
       return true;
     }
-    if ((name == "tikzset" || name == "tikzstyle") && unshadowed()) {
+    if ((name == "tikzset" || name == "tikzstyle" || name == "tikzcdset") && unshadowed()) {
       tikzStyleCommand(e);
       return true;
     }
@@ -2715,6 +2726,10 @@ ExpandedToken Expander::next() {
 
 const std::string& Expander::tikzStyles() const {
   return _impl->tikzStyles;
+}
+
+const std::string& Expander::tikzcdSets() const {
+  return _impl->tikzcdSets;
 }
 
 bool Expander::verbatimEnvironment(const std::string& name, std::string& base, std::string& options) const {

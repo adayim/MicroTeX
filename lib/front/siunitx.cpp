@@ -1,6 +1,8 @@
 #include "front/siunitx.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 namespace microtex::front::siunitx {
@@ -73,9 +75,103 @@ std::string showReal(const Real& r) {
   return out;
 }
 
+/** `r` to `places` decimals or `figures` significant digits, as siunitx rounds (half up), padded with zeros when it
+ *  has fewer. */
+void roundReal(Real& r, const Options& o) {
+  if (o.round == Options::Round::none || r.empty()) return;
+  std::string d = r.whole + r.fraction;
+  const int point = static_cast<int>(r.whole.size());
+  int cut = 0;
+  if (o.round == Options::Round::places) {
+    cut = point + o.precision;
+  } else {
+    std::size_t first = 0;
+    while (first < d.size() && d[first] == '0') first++;
+    if (first == d.size()) return;
+    cut = static_cast<int>(first) + o.precision;
+  }
+  if (cut <= 0) return;
+  int newPoint = point;
+  if (cut >= static_cast<int>(d.size())) {
+    if (o.pad) d.append(static_cast<std::size_t>(cut) - d.size(), '0');
+  } else {
+    const bool up = d[static_cast<std::size_t>(cut)] >= '5';
+    d.resize(static_cast<std::size_t>(cut));
+    if (cut < point) d.append(static_cast<std::size_t>(point - cut), '0');
+    if (up) {
+      std::size_t k = static_cast<std::size_t>(cut);
+      while (k > 0) {
+        if (d[k - 1] == '9') {
+          d[k - 1] = '0';
+          k--;
+        } else {
+          d[k - 1]++;
+          break;
+        }
+      }
+      if (k == 0) {
+        d.insert(d.begin(), '1');
+        newPoint++;
+      }
+    }
+  }
+  r.whole = d.substr(0, static_cast<std::size_t>(newPoint));
+  r.fraction = d.substr(static_cast<std::size_t>(newPoint));
+  r.decimal = !r.fraction.empty();
+}
+
+/** `1 +- 0.1` as 1.0(1): the uncertainty in the last digits of the value. False when it is not written so. */
+bool compactUncertainty(Real& a, const Real& b) {
+  if (!a.uncertainty.empty() || !b.uncertainty.empty()) return false;
+  const auto zeros = [](const std::string& s) { return s.find_first_not_of('0') == std::string::npos; };
+  std::string unc;
+  if (b.decimal && zeros(b.whole)) {
+    const std::size_t want = std::max(a.fraction.size(), b.fraction.size());
+    a.fraction.resize(want, '0');
+    unc = b.fraction;
+    unc.resize(want, '0');
+  } else if (!b.decimal && !a.decimal) {
+    unc = b.whole;
+  } else {
+    return false;
+  }
+  const std::size_t first = unc.find_first_not_of('0');
+  a.uncertainty = first == std::string::npos ? "0" : unc.substr(first);
+  a.decimal = !a.fraction.empty();
+  return true;
+}
+
 }  // namespace
 
-std::string number(const std::string& text, std::string& problem) {
+Options parseOptions(const std::string& text, Options o) {
+  std::size_t i = 0;
+  while (i < text.size()) {
+    std::size_t j = i;
+    int depth = 0;
+    for (; j < text.size() && !(text[j] == ',' && depth == 0); j++) {
+      if (text[j] == '{') depth++;
+      if (text[j] == '}') depth--;
+    }
+    const std::string item = trim(text.substr(i, j - i));
+    const std::size_t eq = item.find('=');
+    const std::string key = trim(item.substr(0, eq));
+    std::string value = eq == std::string::npos ? "" : trim(item.substr(eq + 1));
+    if (value.size() >= 2 && value.front() == '{' && value.back() == '}') value = trim(value.substr(1, value.size() - 2));
+    if (key == "round-mode") {
+      o.round = value == "places" ? Options::Round::places : value == "figures" ? Options::Round::figures : Options::Round::none;
+    } else if (key == "round-precision") {
+      o.precision = std::atoi(value.c_str());
+    } else if (key == "round-pad") {
+      o.pad = value != "false";
+    } else if (key == "uncertainty-mode") {
+      o.separate = value == "separate";
+    }
+    i = j + 1;
+  }
+  return o;
+}
+
+std::string number(const std::string& text, std::string& problem, const Options& options) {
   std::string s;
   for (const char c : text) {
     if (std::isspace(static_cast<unsigned char>(c)) == 0) s += c;
@@ -86,6 +182,19 @@ std::string number(const std::string& text, std::string& problem) {
   };
   if (s.empty()) return "";
   std::size_t i = 0;
+  // A comparator in front (input-comparators: <, >, =, \approx, \ge, \geq, \gg, \le, \leq, \ll, \sim) is set
+  // as an ordinary symbol, close to the number (LuaLaTeX: \num{< 0.1} is \mathord{<}0.1).
+  std::string comparator;
+  static const char* const comparators[] = {"\\approx", "\\geq", "\\leq", "\\gg", "\\ll", "\\sim", "\\ge", "\\le",
+                                            "<", ">", "=", "\xe2\x89\xa4", "\xe2\x89\xa5"};
+  for (const char* c : comparators) {
+    const std::size_t n = std::strlen(c);
+    if (s.compare(0, n, c) != 0) continue;
+    const std::string mark = c;
+    comparator = "\\mathord{" + (mark == "\xe2\x89\xa4" ? std::string("\\leq") : mark == "\xe2\x89\xa5" ? std::string("\\geq") : mark) + "}";
+    i = n;
+    break;
+  }
   Real a, b;
   const bool hasA = readReal(s, i, a);
   bool plusMinus = false;
@@ -110,13 +219,23 @@ std::string number(const std::string& text, std::string& problem) {
   if (i != s.size() || (!hasA && !hasExp)) return bad();
   std::string out;
   if (hasA) {
+    roundReal(a, options);
+    if (plusMinus && !options.separate && !hasExp) {
+      // 1 +- 0.1 is 1.0(1); the uncertainty is not rounded on its own.
+      Real value = a;
+      if (compactUncertainty(value, b)) {
+        plusMinus = false;
+        a = value;
+      }
+    }
+    if (plusMinus) roundReal(b, options);
     out = showReal(a);
     if (plusMinus) out += "\\pm" + showReal(b);
     if (hasExp && plusMinus) out = "\\left(" + out + "\\right)";
     if (hasExp) out += "\\times";
   }
   if (hasExp) out += "10^{" + expSign + exponent + "}";
-  return out;
+  return comparator + out;
 }
 
 std::string angle(const std::string& text, std::string& problem) {

@@ -171,7 +171,7 @@ TEST(docmode_a_display_is_centred_on_a_line_of_its_own_as_in_latex) {
   const float dw = static_cast<float>(rec(R"(\displaystyle x^2 + y^2)", InputMode::math).width);
   CHECK(std::fabs(at(tex, 300) - (300 - dw) / 2) < 1);
   // With no text width, it is centred on the widest line.
-  CHECK(close(at("\\kern100bp " + tex) - at(tex), 50, 1e-4f));
+  CHECK(close(at("\\kern50pt " + tex) - at(tex), 50, 1e-4f));  // 50pt is 100px at the 20px of these tests
   // Each display LaTeX has sits between the text around it, starred or not.
   for (const char* d : {R"(\[x\])", R"($$x$$)", R"(\begin{equation}x\end{equation})",
                         R"(\begin{equation*}x\end{equation*})", R"(\begin{align*}x\end{align*})",
@@ -819,7 +819,7 @@ TEST(docmode_a_box_stays_whole_in_a_broken_line_and_keeps_a_height_set_by_hand) 
   // Against a box as wide and no taller than a line, so that both break alike.
   const auto flat = [&](const std::string& tall) {
     const int width = check::render(tall, Options(InputMode::mixed)).width;
-    return height("\\rule{" + std::to_string(width) + "bp}{0pt}");
+    return height("\\rule{" + std::to_string(width) + "px}{0pt}");  // the width is a count of pixels
   };
   for (const char* tall : {"\\smash{\\Huge Tall}", "\\smash{\\textcolor{red}{\\Huge Tall}}",
                            "\\raisebox{0pt}[0pt][0pt]{\\Huge Tall}", "\\smash{\\rule{1pt}{40pt}\\textcolor{red}{a b}}"}) {
@@ -1079,7 +1079,7 @@ TEST(docmode_specialrule_is_a_rule_of_the_thickness_it_names) {
   CHECK_EQ(check::texts(l), Strings({"a", "b"}));  // its arguments are read
   const auto lines = check::of(l, DrawRecord::LINE);
   CHECK_EQ(lines.size(), std::size_t(1));
-  CHECK(close(lines[0].line_width, 3 * 72 / 72.27f, 1e-4f));
+  CHECK(close(lines[0].line_width, 3 * 20 / 10.f, 1e-4f));  // 3pt, at 20px
 }
 
 TEST(docmode_boldmath_makes_the_math_of_its_group_bold_and_only_the_math) {
@@ -1123,7 +1123,7 @@ TEST(docmode_a_minipage_sets_its_body_to_its_width_placed_as_latex_places_it) {
   std::string longText;
   for (int i = 0; i < 12; i++) longText += (i ? " " : "") + std::string("word");
   for (const char* pos : {"t", "c", "b"}) {
-    const auto r = check::of(rec(std::string("A \\begin{minipage}[") + pos + "]{100pt}" + longText + "\\end{minipage} B"),
+    const auto r = check::of(rec(std::string("A \\begin{minipage}[") + pos + "]{50pt}" + longText + "\\end{minipage} B"),
                              DrawRecord::TEXT);
     const auto words = named(r, "word");
     const auto lines = check::uniqueSorted(ysOf(words), 2);
@@ -1207,7 +1207,7 @@ TEST(docmode_textwidth_and_linewidth_are_the_text_width_as_in_latex) {
   CHECK(std::fabs(w("\\rule{0.5\\textwidth}{1pt}", 200) - 100) <= 1);
   CHECK(std::fabs(w("\\rule{\\linewidth}{1pt}", 200) - 200) <= 1);
   // With no page to measure, article's 345pt.
-  CHECK(std::fabs(w("\\rule{\\columnwidth}{1pt}") - 345 * 72 / 72.27f) <= 1);
+  CHECK(std::fabs(w("\\rule{\\columnwidth}{1pt}") - 345 * 20 / 10.f) <= 1);  // 345 TeX points, at 20px
 }
 
 namespace {
@@ -1330,6 +1330,7 @@ TEST(docmode_display_skips_are_texs_long_after_a_full_line_and_short_after_a_sho
   const auto d = pitches(align, {"ab", "V", "bbb"});
   CHECK_EQ(d.size(), std::size_t(2));
   if (d.size() < 2) return;
+  if (std::fabs(d[1] - (line + em)) >= 1.f) check::fail(__FILE__, __LINE__, "DEBUG d = " + std::to_string(d[0]) + ", " + std::to_string(d[1]) + " want " + std::to_string(line + em));
   CHECK(std::fabs(d[0] - (line + em)) < 1.f);
   CHECK(std::fabs(d[1] - (line + em)) < 1.f);
 }

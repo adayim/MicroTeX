@@ -153,10 +153,10 @@ TEST(equivalence_a_macro_expands_to_what_it_stands_for) {
 
 TEST(equivalence_a_starred_command_is_the_commands_starred_form_not_a_star_argument) {
   CHECK_PAIRS((Pairs{
-    {R"(\operatorname*{argmax}_x f)", R"(\mathop{\mathrm{argmax}}\limits_x f)"},
+    {R"(\operatorname*{argmax}_x f)", R"(\mathop{\mathrm{argmax}}_x f)"},
     {R"(\newcommand*{\f}{x}\f)", "x"},
     {R"(\hspace*{1em}a)", R"(\hspace{1em}a)"},
-    {R"(\DeclareMathOperator*{\am}{am}\am_x f)", R"(\mathop{\mathrm{am}}\limits_x f)"},
+    {R"(\DeclareMathOperator*{\am}{am}\am_x f)", R"(\mathop{\mathrm{am}}_x f)"},
     {R"(\begin{aligned} a \\* b \end{aligned})", R"(\begin{aligned} a \\ b \end{aligned})"},
   }));
 }

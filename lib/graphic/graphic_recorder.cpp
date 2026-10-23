@@ -227,6 +227,12 @@ static bool transform_has_rotation(float b, float c) {
     return std::abs(b) > eps || std::abs(c) > eps;
 }
 
+// A glyph record has a size and a place, nothing more: a turn, and a scale that is not the same both ways
+// (`\scalebox{2}[1]`), can only be drawn as the outline.
+bool Graphics2D_Recorder::isRotated() const {
+    return transform_has_rotation(_transform.b, _transform.c) || std::abs(this->sx() - this->sy()) > 1e-4f * std::max(this->sx(), this->sy());
+}
+
 void Graphics2D_Recorder::drawRect(float x, float y, float w, float h) {
     if (transform_has_rotation(_transform.b, _transform.c)) {
         float cx[4] = {x, x + w, x + w, x};

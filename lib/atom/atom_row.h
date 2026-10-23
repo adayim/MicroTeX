@@ -168,6 +168,13 @@ public:
 
   explicit RowAtom(const sptr<Atom>& atom);
 
+  /**
+   * `atom`, as a row if it is a lone math character. A character in a row has its italic
+   * correction after it (TeX, Appendix G rule 17), and a lone one, which a formula holds as
+   * the atom itself, would have none: `f` is 5.80pt wide in LaTeX and its glyph 4.82.
+   */
+  static sptr<Atom> withItalic(const sptr<Atom>& atom);
+
   /** Get the atom at the front in the elements */
   sptr<Atom> getFirstAtom();
 

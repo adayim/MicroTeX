@@ -16,7 +16,15 @@ public:
 
   SideSetsAtom(const sptr<Atom>& base, const sptr<Atom>& left, const sptr<Atom>& right);
 
+  /** amsmath sets all of \sideset in display style, whatever the text around it is (it measures the operator
+   *  `\displaystyle` and puts the scripts about that), so the big operator stands in running text too. */
   sptr<Box> createBox(Env& env) override;
+
+  /** amsmath puts an empty `\hbox` before the `\mathop`: what comes before meets an ordinary atom. */
+  AtomType leftType() const override { return AtomType::ordinary; }
+
+private:
+  sptr<Box> createBoxInStyle(Env& env);
 };
 
 }  // namespace microtex

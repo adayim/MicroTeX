@@ -1,5 +1,7 @@
 #include "front/lower.h"
 
+#include "front/siunitx.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -33,6 +35,7 @@
 #include "box/box_factory.h"
 #include "core/localized_num.h"
 #include "env/units.h"
+#include "front/colspec.h"
 #include "front/front.h"
 #include "front/hooks.h"
 #include "front/lengths.h"
@@ -757,7 +760,8 @@ private:
         return;
       }
       case NodeKind::math:
-        f.add(sptrOf<MathAtom>(x.flag ? displayBody(child(id, 0)) : build(child(id, 0)),
+        // (a lone character has the italic correction TeX sets after it: `$f$` is wider than the glyph)
+        f.add(sptrOf<MathAtom>(RowAtom::withItalic(x.flag ? displayBody(child(id, 0)) : build(child(id, 0))),
                                x.flag ? TexStyle::display : TexStyle::text));
         return;
       case NodeKind::list:
@@ -1138,11 +1142,21 @@ private:
       return typewriter(rawOf(text), node(text).star);
     }
     if (name == "includegraphics") return image(id);
+    if (name == "rowcolors") {
+      // The colours as they are now (an undefined one warns here), and the first row; empty is no colour.
+      const auto one = [&](std::size_t k) {
+        const std::string spec = trimmed(rawOf(child(id, k)));
+        return spec.empty() ? std::string("-") : std::to_string(static_cast<unsigned>(colourOf(id, spec)));
+      };
+      nums().lengths.setWord("rowcolors", trimmed(rawOf(child(id, 1))) + "|" + one(2) + "|" + one(3));
+      return nullptr;
+    }
     if (name == "gmarraystretch") {
       _stretch = static_cast<float>(std::atof(rawOf(child(id, 0)).c_str()));
       if (!(_stretch > 0.f)) _stretch = 1.f;
       return nullptr;
     }
+    if (name == "gmextracolsep") return nullptr;
     if (name == "gmrows") {
       _rows = trimmed(rawOf(child(id, 0)));
       return nullptr;
@@ -1705,8 +1719,7 @@ private:
       auto frac = thickness != nullptr ? sptrOf<FracAtom>(num, den, rule, *thickness)
                                        : sptrOf<FracAtom>(num, den, rule);
       try {
-        return sptrOf<FencedAtom>(frac, args.size() > 0 ? args[0] : "",
-                                  args.size() > 1 ? args[1] : "");
+        return FracAtom::fence(frac, args.size() > 0 ? args[0] : "", args.size() > 1 ? args[1] : "");
       } catch (const std::exception& e) {
         // TeX puts a null delimiter in place of one that is not.
         _diags.warn(x.span, "\\" + name + ": " + clean(e.what()) + "; left out");
@@ -1726,7 +1739,7 @@ private:
                       : name == "bangle" ? "langle" : "lbrace";
       const char* r = name == "choose" ? "rparen" : name == "brack" ? "rbrack"
                       : name == "bangle" ? "rangle" : "rbrace";
-      out = sptrOf<FencedAtom>(sptrOf<FracAtom>(num, den, false), l, r);
+      out = FracAtom::fence(sptrOf<FracAtom>(num, den, false), l, r);
     } else if (name == "overwithdelims") {
       out = delims(true, nullptr);
     } else if (name == "atopwithdelims") {
@@ -2819,7 +2832,7 @@ private:
           // Display style for the display math alone.
           beforeLine(l);
           auto g = displayBody(list);
-          l.line->add(sptrOf<StyleAtom>(TexStyle::display, g == nullptr ? sptrOf<EmptyAtom>() : g));
+          l.line->add(sptrOf<StyleAtom>(TexStyle::display, g == nullptr ? sptrOf<EmptyAtom>() : RowAtom::withItalic(g)));
           return;
         }
         // A span of math is a list of its own, as in TeX: \over, \limits
@@ -2830,7 +2843,7 @@ private:
         const auto place = [&]() {
           if (g->_root != nullptr) {
             beforeLine(l);
-            l.line->add(wrap(l, sptrOf<TypedAtom>(AtomType::ordinary, AtomType::ordinary, g->_root)));
+            l.line->add(wrap(l, sptrOf<TypedAtom>(AtomType::ordinary, AtomType::ordinary, RowAtom::withItalic(g->_root))));
           }
           g = std::make_unique<Formula>();
         };
@@ -3119,6 +3132,7 @@ private:
     auto arr = sptrOf<ArrayFormula>();
     arr->_stretch = _stretch;
     _stretch = 1.f;
+    arr->_extraRow = Units::getDimen("\\extrarowheight");
     arr->_rows = std::move(_rows);
     _rows.clear();
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
@@ -3159,12 +3173,15 @@ private:
     std::vector<int> sColumns;
     std::map<int, int> sDecimals;
     std::map<int, char> sMark;
+    std::map<int, std::pair<std::string, std::string>> dColumns;
     if (text && isTextTable(node(env).text)) {
       for (std::uint32_t a = 0; a < count(env); a++) {
         const Node& arg = node(child(env, a));
         if (arg.kind == NodeKind::argument && arg.flag && !arg.raw.empty()) {
           sColumns.clear();
           plainColumns(arg.raw, &sColumns);
+          const auto found = decimalColumns(arg.raw);
+          if (!found.empty()) dColumns = found;
         }
       }
       for (const NodeId row : rows) {
@@ -3177,15 +3194,58 @@ private:
         }
       }
     }
+    // xcolor's \rowcolors: the rows from the first it names, the odd and the even in their colours.
+    bool coloring = false;
+    int firstColoured = 1, rowNumber = 0;
+    color oddColour = TRANSPARENT, evenColour = TRANSPARENT;
+    if (text && isTextTable(node(env).text)) {
+      std::string word;
+      if (nums().lengths.getWord("rowcolors", word)) {
+        const std::size_t a = word.find('|'), b = word.find('|', a + 1);
+        if (a != std::string::npos && b != std::string::npos) {
+          const auto read = [](const std::string& s) {
+            return s == "-" ? TRANSPARENT : static_cast<color>(std::strtoul(s.c_str(), nullptr, 10));
+          };
+          firstColoured = std::max(1, std::atoi(word.substr(0, a).c_str()));
+          oddColour = read(word.substr(a + 1, b - a - 1));
+          evenColour = read(word.substr(b + 1));
+          coloring = true;
+        }
+      }
+    }
     for (std::size_t k = 0; k < rows.size(); k++) {
       const NodeId row = rows[k];
       if (longtable && k == 0 && captionRow(env, row, *arr)) {
         arr->addRow();
         continue;
       }
+      if (coloring && hasContent(row)) {
+        rowNumber++;
+        const color shade = rowNumber % 2 == 1 ? oddColour : evenColour;
+        if (rowNumber >= firstColoured && !isTransparent(shade)) arr->addRowSpecifier(sptrOf<CellColorAtom>(shade));
+      }
       for (std::uint32_t c = 0; c < count(row); c++) {
         if (c > 0) arr->addCol();
-        if (text || (cases && c > 0)) {
+        // An S column's number that is not just digits (1.2e3, 1.5 +- 0.1) is set as siunitx sets it, in math.
+        std::string sSet;
+        if (text && std::find(sColumns.begin(), sColumns.end(), static_cast<int>(c)) != sColumns.end()) {
+          const std::string raw = trimmed(cellText(child(row, c)));
+          if (!raw.empty() && !sNumber(raw).numeric && raw.find_first_of("\\{}$") == std::string::npos) {
+            std::string problem;
+            const std::string set = siunitx::number(raw, problem);
+            if (problem.empty()) sSet = set;
+          }
+        }
+        const auto decimal = dColumns.find(static_cast<int>(c));
+        bool acts = false;
+        for (std::uint32_t k = 0; k < count(child(child(row, c), 0)); k++) {
+          acts = acts || actsOnAlignment(node(child(child(child(row, c), 0), k)));
+        }
+        if (decimal != dColumns.end() && node(child(row, c)).mode == Mode::math && !acts) {
+          arr->add(decimalCell(child(child(row, c), 0), decimal->second));
+        } else if (!sSet.empty()) {
+          arr->add(fragment("$" + sSet + "$", false));
+        } else if (text || (cases && c > 0)) {
           textCell(child(child(row, c), 0), *arr);
           const auto padded = sDecimals.find(static_cast<int>(c));
           if (padded != sDecimals.end() && padded->second > 0) {
@@ -3304,7 +3364,10 @@ private:
    *  of what is in braces or brackets are not columns. A repeated group
    *  (`*{3}{S}`) is left as it is. */
   static std::string plainColumns(const std::string& spec, std::vector<int>* sColumns) {
-    if (spec.find('S') == std::string::npos || spec.find('*') != std::string::npos) return spec;
+    if ((spec.find('S') == std::string::npos && spec.find('D') == std::string::npos) ||
+        spec.find('*') != std::string::npos) {
+      return spec;
+    }
     std::string out;
     int column = 0;
     // The index just past the group opened at `i` by `open`, which closes with `close`.
@@ -3324,6 +3387,14 @@ private:
         column++;
         out += 'r';
         if (end < spec.size() && spec[end] == '[') end = past(end, '[', ']');
+        i = end;
+        continue;
+      }
+      if (c == 'D') {
+        // dcolumn's D{in}{out}{places}: its cells are aligned on the separator by the matrix (DecimalAtom)
+        column++;
+        out += 'r';
+        for (int g = 0; g < 3 && end < spec.size() && spec[end] == '{'; g++) end = past(end, '{', '}');
         i = end;
         continue;
       }
@@ -3399,6 +3470,9 @@ private:
                                columnCount(spec.substr(first + 2, last - first - 2), depth + 1);
         n = static_cast<int>(std::min<long long>(n + more, 1 << 14));
         i = last;
+      } else if (c == 'D') {
+        n++;
+        for (int g = 0; g < 3 && i + 1 < spec.size() && spec[i + 1] == '{'; g++) i = close(i + 1);
       } else if (c == 'l' || c == 'c' || c == 'r' || c == 'S' || c == 'Q') {
         n++;
         if (i + 1 < spec.size() && spec[i + 1] == '[') {
@@ -3432,7 +3506,11 @@ private:
       }
     }
     columns = std::min(std::max(columns, 1), 1 << 14);
+    // A longtable's caption is a table's: "Table N: text", by the table counter.
+    const std::string kind = _floatKind;
+    if (_floatKind.empty()) _floatKind = "table";
     arr.add(sptrOf<MulticolumnAtom>(columns, "c", commandAtom(cap, arr)));
+    _floatKind = kind;
     if (columns > 1) arr.addCol(columns);
     return true;
   }
@@ -3560,6 +3638,20 @@ private:
   }
 
   /** A row with nothing in it: the one a final \\ starts. */
+  /** A row of a table that has something of its own: not only spaces, rules and the colour of the row. */
+  bool hasContent(NodeId row) const {
+    for (std::uint32_t c = 0; c < count(row); c++) {
+      const NodeId list = child(child(row, c), 0);
+      for (std::uint32_t i = 0; i < count(list); i++) {
+        const Node& x = node(child(list, i));
+        if (isSpace(x)) continue;
+        if (x.kind == NodeKind::command && !x.flag && (isRule(x.text) || x.text == "rowcolor" || x.text == "noalign")) continue;
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool isBlankRow(NodeId row) const {
     for (std::uint32_t c = 0; c < count(row); c++) {
       const NodeId list = child(child(row, c), 0);
@@ -3881,6 +3973,28 @@ private:
     static const std::set<std::string> names = {"intertext", "multicolumn", "multirow",
                                                 "hdotsfor", "cellcolor", "rowcolor"};
     return x.kind == NodeKind::command && !x.flag && (isRule(x.text) || names.count(x.text) > 0);
+  }
+
+  /** A cell of dcolumn's D column, read in math: split at the first `in` that is not inside a group,
+   *  and drawn as `out`. A cell without it is all before the separator. */
+  sptr<Atom> decimalCell(NodeId list, const std::pair<std::string, std::string>& sep) {
+    std::uint32_t from = 0, to = count(list);
+    while (from < to && isSpace(node(child(list, from)))) from++;
+    while (to > from && isSpace(node(child(list, to - 1)))) to--;
+    std::uint32_t at = to;
+    for (std::uint32_t i = from; i < to && !sep.first.empty(); i++) {
+      const Node& x = node(child(list, i));
+      if (x.kind == NodeKind::character && x.cp == static_cast<c32>(static_cast<unsigned char>(sep.first[0]))) {
+        at = i;
+        break;
+      }
+    }
+    Formula before, after;
+    for (std::uint32_t i = from; i < at; i++) lowerItem(child(list, i), before);
+    for (std::uint32_t i = at + 1; i < to; i++) lowerItem(child(list, i), after);
+    sptr<Atom> mark;
+    if (at < to) mark = fragment("\\mathord{" + (sep.second.empty() ? sep.first : sep.second) + "}", true);
+    return sptrOf<DecimalAtom>(before._root, mark, at < to ? after._root : nullptr);
   }
 
   /** A cell of a table met in text: text, as LaTeX sets a tabular's, less

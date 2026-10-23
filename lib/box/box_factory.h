@@ -13,8 +13,11 @@ sptr<Box> createHDelim(const sptr<SymbolAtom>& sym, Env& env, int size);
 /** Create a vertical delimiter with given symbol and size */
 sptr<Box> createVDelim(const sptr<SymbolAtom>& sym, Env& env, int size);
 
-/** Create a horizontal delimiter with given symbol and width */
-sptr<Box> createHDelim(const std::string& sym, Env& env, float width, bool round = false);
+/**
+ * Create a horizontal delimiter with given symbol and width. A variant of the symbol up to `slack` short of the width
+ * is taken as it is, where the next one up would be a different size of glyph: an assembly is always the width.
+ */
+sptr<Box> createHDelim(const std::string& sym, Env& env, float width, bool round = false, float slack = 0.f);
 
 /** Create a vertical delimiter with given symbol and height */
 sptr<Box> createVDelim(const std::string& sym, Env& env, float height, bool round = false);

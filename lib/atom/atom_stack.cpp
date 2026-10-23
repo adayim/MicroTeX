@@ -21,6 +21,8 @@ sptr<Box> StackAtom::createBox(Env& env) {
 }
 
 StackResult StackAtom::createStack(Env& env) {
+  // The widest of this pass: an arrow that is as long as its label is, read again by the next, grew with each.
+  _maxWidth = 0.f;
   // over and under
   sptr<Box> o, u, b;
   const auto createOverUnder = [&](const StackArgs& args, TexStyle style) -> sptr<Box> {

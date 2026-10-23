@@ -31,7 +31,7 @@ TEST(siunitx_numbers_are_grouped_from_five_digits_and_exponents_are_powers_of_te
   CHECK_EQ(num(".5"), std::string("0.5"));
   CHECK_EQ(num("1,5"), std::string("1{,}5"));
   CHECK_EQ(num("-3.2(1)"), std::string("{-}3.2(1)"));
-  CHECK_EQ(num("1.2+-0.3"), std::string("1.2\\pm0.3"));
+  CHECK_EQ(num("1.2+-0.3"), std::string("1.2(3)"));
   CHECK_EQ(num("1.2+-0.3e3"), std::string("\\left(1.2\\pm0.3\\right)\\times10^{3}"));
 }
 
@@ -85,4 +85,26 @@ TEST(siunitx_angles_ranges_and_lists) {
   CHECK_EQ(numberList("1;2;3", problem), std::string("1\\text{, }2\\text{, and }3"));
   CHECK_EQ(numberList("1;2", problem), std::string("1\\text{ and }2"));
   CHECK_EQ(range("1", "10"), std::string("1\\text{ to }10"));
+}
+
+TEST(siunitx_an_uncertainty_is_the_last_digits_of_the_value_and_options_round) {
+  // pdflatex (siunitx 3): \num{1 +- 0.1} is 1.0(1), \num{22.25 +- 0.01} 22.25(1), widths within a point.
+  CHECK_EQ(num("1 +- 0.1"), std::string("1.0(1)"));
+  CHECK_EQ(num("1.234 +- 0.005"), std::string("1.234(5)"));
+  CHECK_EQ(num("22.25 +- 0.01"), std::string("22.25(1)"));
+  CHECK_EQ(num("10 +- 2"), std::string("10(2)"));
+  CHECK_EQ(num("3 +- 0.5"), std::string("3.0(5)"));
+  CHECK_EQ(num("1.2 +- 0.05"), std::string("1.20(5)"));
+  // `uncertainty-mode=separate` keeps it as written.
+  std::string problem;
+  CHECK_EQ(number("1.0 +- 0.1", problem, parseOptions("uncertainty-mode=separate")), std::string("1.0\\pm0.1"));
+  // round-mode: places, or figures, half up, padded with zeros (pdflatex: \num[round-mode=places]{12345} is 12 345.00).
+  const auto round = [&](const char* options, const char* n) { return number(n, problem, parseOptions(options)); };
+  CHECK_EQ(round("round-mode=places,round-precision=1", "3.14159"), std::string("3.1"));
+  CHECK_EQ(round("round-mode=places,round-precision=2", "0.999"), std::string("1.00"));
+  CHECK_EQ(round("round-mode=places", "12345"), std::string("12\\,345.00"));
+  CHECK_EQ(round("round-mode=places,round-pad=false", "12345"), std::string("12\\,345"));
+  CHECK_EQ(round("round-mode=places,round-precision=3", "1.5"), std::string("1.500"));
+  CHECK_EQ(round("round-mode=figures,round-precision=3", "12345.678"), std::string("12\\,300"));
+  CHECK_EQ(round("round-mode=figures,round-precision=2", "0.001234"), std::string("0.0012"));
 }

@@ -2,8 +2,9 @@
 % The commands of the physics package, written from its documentation, for
 % what a plot label uses: automatic brackets, vectors, derivatives, Dirac
 % notation, matrices and the quick text. The sin, cos, ... redefinitions of
-% its `trig` option, \Re and \Im with braces, and the matrix generators
-% (\imat, \xmat, \zmat, \dmat, \admat) are not included.
+% its `trig` option (the long names \sine and kin are, as the names of the functions), \Re and \Im are upright
+% without the braces its `trig` option puts on them, and the matrix generators (\imat, \xmat, \zmat, \dmat,
+% \admat) are not included.
 %
 % Loading it replaces \qty (siunitx's), \bra, \ket and \braket (braket's)
 % and \div (the division sign) with its own, as the package does.
@@ -19,6 +20,51 @@
 \ProcessOptions\relax
 
 \ProvideDocumentCommand{\varE}{}{\mathcal{E}}
+% The functions by their long names, and the inverse ones as asin (and kin) or arcsin.
+\newcommand{\sine}{\sin}
+\newcommand{\cosine}{\cos}
+\newcommand{\tangent}{\tan}
+\newcommand{\cosecant}{\csc}
+\newcommand{\secant}{\sec}
+\newcommand{\cotangent}{\cot}
+\newcommand{\arcsine}{\arcsin}
+\newcommand{\arccosine}{\arccos}
+\newcommand{\arctangent}{\arctan}
+\DeclareMathOperator{\asin}{asin}
+\DeclareMathOperator{\acos}{acos}
+\DeclareMathOperator{\atan}{atan}
+\DeclareMathOperator{\acsc}{acsc}
+\DeclareMathOperator{\asec}{asec}
+\DeclareMathOperator{\acot}{acot}
+\newcommand{\asine}{\asin}
+\newcommand{\acosine}{\acos}
+\newcommand{\atangent}{\atan}
+\newcommand{\acosecant}{\acsc}
+\newcommand{\asecant}{\asec}
+\newcommand{\acotangent}{\acot}
+\DeclareMathOperator{\arccsc}{arccsc}
+\DeclareMathOperator{\arcsec}{arcsec}
+\DeclareMathOperator{\arccot}{arccot}
+\newcommand{\arccosecant}{\arccsc}
+\newcommand{\arcsecant}{\arcsec}
+\newcommand{\arccotangent}{\arccot}
+\newcommand{\hypsine}{\sinh}
+\newcommand{\hypcosine}{\cosh}
+\newcommand{\hyptangent}{\tanh}
+\DeclareMathOperator{\csch}{csch}
+\DeclareMathOperator{\sech}{sech}
+\newcommand{\hypcosecant}{\csch}
+\newcommand{\hypsecant}{\sech}
+\newcommand{\hypcotangent}{\coth}
+\newcommand{\exponential}{\exp}
+\newcommand{\logarithm}{\log}
+\newcommand{\naturallogarithm}{\ln}
+\newcommand{\determinant}{\det}
+\newcommand{\Probability}{\Pr}
+\let\real\Re
+\let\imaginary\Im
+\DeclareDocumentCommand{\Re}{}{\operatorname{Re}}
+\DeclareDocumentCommand{\Im}{}{\operatorname{Im}}
 \ProvideDocumentCommand{\ordersymbol}{}{\mathcal{O}}
 \ProvideDocumentCommand{\lparen}{}{(}
 \ProvideDocumentCommand{\rparen}{}{)}

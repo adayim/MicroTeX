@@ -50,18 +50,18 @@ TEST(tikz_the_recorder_keeps_a_stroked_path_with_its_width_cap_and_join) {
 
 namespace {
 
-// At a size of 100 a centimetre is some 28 px: lengths compare to a pixel.
+// At a size of 10 a TeX point is a pixel and a centimetre 28.45 of them: lengths compare to a pixel.
 check::Layout pic(const std::string& body, InputMode mode = InputMode::math) {
   Options opt(mode);
   opt.path = false;
-  opt.textSize = 100;
+  opt.textSize = 10;
   return check::render("\\begin{tikzpicture}" + body + "\\end{tikzpicture}", opt);
 }
 
 check::Layout plain(const std::string& tex) {
   Options opt(InputMode::math);
   opt.path = false;
-  opt.textSize = 100;
+  opt.textSize = 10;
   return check::render(tex, opt);
 }
 
@@ -1182,4 +1182,21 @@ TEST(tikz_a_bracket_or_brace_left_open_at_the_end_of_a_picture_does_not_hang) {
     const auto closed = check::render(std::string("\\begin{tikzpicture}") + tail + "\\end{tikzpicture}");
     CHECK(closed.width >= 0);
   }
+}
+
+TEST(tikz_a_rectangle_in_a_turned_scope_is_turned_and_scalebox_with_two_factors_draws_outlines) {
+  // pdfTeX: `rotate=30` in a scope turns the square with it, the picture holds the turned square (38.3 by 38.3 for 1cm
+  // at 28.45 pt); it was the box of the diagonal, 10 by 39.
+  const auto turned = pic(R"(\begin{scope}[rotate=30]\draw (0,0) rectangle (1,1);\end{scope})");
+  CHECK(near(static_cast<float>(turned.width), static_cast<float>(turned.height), 3.f));
+  const auto straight = pic(R"(\draw (0,0) rectangle (1,1);)");
+  CHECK(turned.width > straight.width + 5);
+  // A scale that differs both ways cannot be a glyph's: it is an outline.
+  Options opt(InputMode::math);
+  opt.path = false;
+  opt.textSize = 20;
+  const auto both = check::render(R"(\scalebox{2}[1]{x})", opt);
+  CHECK_EQ(check::of(both, DrawRecord::GLYPH).size(), std::size_t(0));
+  CHECK(check::of(both, DrawRecord::PATH).size() > 0);
+  CHECK_EQ(check::of(check::render(R"(\scalebox{2}{x})", opt), DrawRecord::GLYPH).size(), std::size_t(1));
 }

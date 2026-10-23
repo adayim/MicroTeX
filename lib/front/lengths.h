@@ -32,6 +32,9 @@ public:
     _values["arrayrulewidth"] = {0.04f, UnitType::em};
     _values["baselineskip"] = {1.2f, UnitType::em};
     _values["columnsep"] = {1.f, UnitType::em};
+    // array.sty's: the height every row's strut is given, and the space between the rules of \hline\hline.
+    _values["extrarowheight"] = {0.f, UnitType::pt};
+    _values["doublerulesep"] = {0.2f, UnitType::em};
   }
 
   bool get(const std::string& name, Dimen& out) const {
@@ -48,8 +51,22 @@ public:
 
   void set(const std::string& name, const Dimen& value) {
     const auto it = _values.find(name);
-    _log.push_back({name, it != _values.end(), it != _values.end() ? it->second : Dimen{}});
+    _log.push_back({name, it != _values.end(), it != _values.end() ? it->second : Dimen{}, false, std::string()});
     _values[name] = value;
+  }
+
+  /** A setting that is a word, not a length (`\rowcolors`'s), scoped by the same groups. */
+  void setWord(const std::string& name, const std::string& value) {
+    const auto it = _words.find(name);
+    _log.push_back({name, it != _words.end(), Dimen{}, true, it != _words.end() ? it->second : std::string()});
+    _words[name] = value;
+  }
+
+  bool getWord(const std::string& name, std::string& out) const {
+    const auto it = _words.find(name);
+    if (it == _words.end()) return false;
+    out = it->second;
+    return true;
   }
 
   std::size_t mark() const { return _log.size(); }
@@ -58,7 +75,13 @@ public:
   void release(std::size_t mark) {
     while (_log.size() > mark) {
       const Undo& u = _log.back();
-      if (u.had) {
+      if (u.word) {
+        if (u.had) {
+          _words[u.name] = u.oldWord;
+        } else {
+          _words.erase(u.name);
+        }
+      } else if (u.had) {
         _values[u.name] = u.old;
       } else {
         _values.erase(u.name);
@@ -72,8 +95,11 @@ private:
     std::string name;
     bool had;
     Dimen old;
+    bool word;
+    std::string oldWord;
   };
   std::map<std::string, Dimen> _values;
+  std::map<std::string, std::string> _words;
   std::vector<Undo> _log;
 };
 

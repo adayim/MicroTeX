@@ -17,9 +17,22 @@ namespace microtex::front::siunitx {
  *  text that stands for it. */
 using UserUnits = std::map<std::string, std::string>;
 
+/** What siunitx's options say of a number: `round-mode` (`places` or `figures`) with `round-precision` (and
+ *  `round-pad`), and `uncertainty-mode=separate`, which keeps a `+-` as it is where the compact one writes it as the
+ *  digits of the value (1.0(1)). The rest of the options change how it looks, which is left out. */
+struct Options {
+  enum class Round { none, places, figures } round = Round::none;
+  int precision = 2;
+  bool pad = true;
+  bool separate = false;
+};
+
+/** The options of `[round-mode=places, round-precision=1]`, over those in `base`. */
+Options parseOptions(const std::string& text, Options base = Options());
+
 /** `text` as a number, in LaTeX for math mode. A problem is said in
  *  `problem` and the text is returned as it is written. */
-std::string number(const std::string& text, std::string& problem);
+std::string number(const std::string& text, std::string& problem, const Options& options = Options());
 
 /** `text` as a unit, in LaTeX for math mode. */
 std::string unit(const std::string& text, const UserUnits& declared, std::string& problem);

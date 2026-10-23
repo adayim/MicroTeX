@@ -1,14 +1,46 @@
 \ProvidesPackage{mathtools}[2026/10/11 mathtools: colon forms, brackets over and under, \shortintertext]
-\newenvironment{rcases}{\left.\def\arraystretch{1.2}\begin{array}{@{}ll@{\,}}}{\end{array}\right\}}
-\newenvironment{dcases}{\left\{\def\arraystretch{1.2}\begin{array}{@{}>{\displaystyle}l>{\displaystyle}l@{\,}}}{\end{array}\right.}
+\newenvironment{rcases}{\left.\def\arraystretch{1.2}\begin{array}{@{}l@{\quad}l@{}}}{\end{array}\right\}}
+\newenvironment{dcases}{\left\{\def\arraystretch{1.2}\begin{array}{@{}>{\displaystyle}l@{\quad}>{\displaystyle}l@{}}}{\end{array}\right.}
 \newcommand{\shortintertext}[1]{\intertext{#1}}
 \NewDocumentCommand{\MoveEqLeft}{O{2}}{\kern#1em&\kern-#1em}
 \newcommand{\overbrack}[1]{\overbracket{#1}}
 \newcommand{\underbrack}[1]{\underbracket{#1}}
 \newcommand{\ordinarycolon}{:}
-\newcommand{\dblcolon}{\mathrel{::}}
 \newcommand{\vcentcolon}{\mathrel{:}}
-\newcommand{\Eqcolon}{\mathrel{=::}}
-\newcommand{\Eqqcolon}{\mathrel{=::}}
-\newcommand{\Colonapprox}{\mathrel{::\approx}}
-\newcommand{\Colonsim}{\mathrel{::\sim}}
+% The colon forms are a colon (or two, 0.9mu apart) pulled 1.2mu against the symbol next to them; \Eqcolon is
+% \Eqqcolon, as in mathtools without its legacycolonsymbols option.
+\newcommand{\dblcolon}{\mathrel{\vcentcolon\mkern-.9mu\vcentcolon}}
+\newcommand{\Eqcolon}{\mathrel{=\mkern-1.2mu\dblcolon}}
+\newcommand{\Eqqcolon}{\mathrel{=\mkern-1.2mu\dblcolon}}
+\newcommand{\Colonapprox}{\mathrel{\dblcolon\mkern-1.2mu\approx}}
+\newcommand{\Colonsim}{\mathrel{\dblcolon\mkern-1.2mu\sim}}
+\newcommand{\Approxcolon}{\mathrel{\approx\mkern-1.2mu\dblcolon}}
+\newcommand{\Simcolon}{\mathrel{\sim\mkern-1.2mu\dblcolon}}
+\newcommand{\colondash}{\mathrel{\vcentcolon\mkern-1.2mu-}}
+\newcommand{\Colondash}{\mathrel{\dblcolon\mkern-1.2mu-}}
+\newcommand{\Dashcolon}{\mathrel{-\mkern-1.2mu\dblcolon}}
+% \splitfrac, \splitdfrac: the numerator's two lines, the first pushed to the left and the second to the right (by a
+% quad here: a grob has no glue to stretch).
+\newcommand{\splitfrac}[2]{\genfrac{}{}{0pt}{1}{\textstyle #1\quad}{\textstyle\quad\mathstrut #2}}
+\newcommand{\splitdfrac}[2]{\genfrac{}{}{0pt}{0}{#1\quad}{\quad\mathstrut #2}}
+\newcommand{\noeqref}[1]{}
+\newcommand{\refeq}[1]{\ref{#1}}
+\newcommand{\crampedsubstack}[1]{\substack{#1}}
+% Approximations: the limits of \adjustlimits are not aligned and \smashoperator does not smash.
+\newcommand{\adjustlimits}[6]{\mathop{#1}\limits#2{#3}\mathop{#4}\limits#5{#6}}
+\newcommand{\smashoperator}[2][lr]{#2}
+\newcommand{\xlongrightarrow}[2][]{\xrightarrow[#1]{#2}}
+\newcommand{\xlongleftarrow}[2][]{\xleftarrow[#1]{#2}}
+% The small matrices with their delimiters, as mathtools writes them, and the gathered lines flush left or right.
+\newenvironment{psmallmatrix}{\left(\begin{smallmatrix}}{\end{smallmatrix}\right)}
+\newenvironment{bsmallmatrix}{\left[\begin{smallmatrix}}{\end{smallmatrix}\right]}
+\newenvironment{Bsmallmatrix}{\left\{\begin{smallmatrix}}{\end{smallmatrix}\right\}}
+\newenvironment{vsmallmatrix}{\left\lvert\begin{smallmatrix}}{\end{smallmatrix}\right\rvert}
+\newenvironment{Vsmallmatrix}{\left\lVert\begin{smallmatrix}}{\end{smallmatrix}\right\rVert}
+\newenvironment{lgathered}[1][c]{\begin{array}{@{}>{\displaystyle}l@{}}}{\end{array}}
+\newenvironment{rgathered}[1][c]{\begin{array}{@{}>{\displaystyle}r@{}}}{\end{array}}
+% \cramped is its argument (the cramped style, whose exponents stand lower, is not drawn); \mathmbox is a box of its
+% own; \mathtoolsset is read and left out (its options are about numbering and spacing).
+\newcommand{\cramped}[2][]{{#2}}
+\newcommand{\mathmbox}[1]{\mbox{$#1$}}
+\newcommand{\mathtoolsset}[1]{}

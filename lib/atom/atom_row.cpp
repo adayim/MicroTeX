@@ -73,6 +73,12 @@ bitset<16> RowAtom::_ligKernSet = bitset<16>()
   .set(static_cast<i8>(AtomType::punctuation));
 // clang-format on
 
+sptr<Atom> RowAtom::withItalic(const sptr<Atom>& atom) {
+  const auto* c = dynamic_cast<const CharSymbol*>(atom.get());
+  if (c == nullptr || !c->isMathMode()) return atom;
+  return sptrOf<RowAtom>(atom);
+}
+
 RowAtom::RowAtom(const sptr<Atom>& atom)
     : _breakable(true), _previousAtom(nullptr), _lookAtLastAtom(false) {
   if (atom != nullptr) {
@@ -413,19 +419,15 @@ sptr<Box> RowAtom::createBox(Env& env) {
       }
     }
 
-    // 7. Add italic
+    // 7. Add italic. After a math character with no script of its own TeX sets a kern of the
+    // character's italic correction (TeXbook, Appendix G, rule 17), so F is wider than its glyph
+    // and f( stands further apart. A character with a script is a ScriptsAtom, which places the
+    // correction itself.
     curr->setPreviousAtom(_previousAtom);
     auto box = curr->createBox(env);
-    /* FIXME
-     * In most cases we don't care the italic corrections
-     * on math environment, although it is looks crappy
-    if (auto cb = dynamic_cast<CharBox*>(box.get());
-      cb != nullptr
-      && curr->isMathMode()
-      && nextAtom != nullptr
-      && nextAtom->isChar()) {
+    if (auto cb = dynamic_cast<CharBox*>(box.get()); cb != nullptr && curr->isMathMode()) {
       kern += cb->italic();
-    }*/
+    }
 
     // 8. Append atom's box and kerning to horizontal box
     hbox->add(box);

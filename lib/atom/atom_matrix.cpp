@@ -177,6 +177,12 @@ void MatrixAtom::parsePositions(string opt, vector<Alignment>& lpos) {
           lpos.resize(_matrix->cols());
         }
         _matrix->insertAtomIntoCol(lpos.size(), specAtom(a));
+        if (const auto at = a.text.find("\\gmextracolsep{"); at != string::npos) {
+          const auto from = at + 15, to = a.text.find('}', from);
+          const string len = to == string::npos ? string() : a.text.substr(from, to - from);
+          // (\fill is tabular*'s, handled by its width)
+          if (!len.empty() && len[0] != '\\') _extraColSep[static_cast<int>(lpos.size())] = Units::getDimen(len);
+        }
 
         lpos.push_back(Alignment::none);
         pos = a.end - 1;
@@ -359,7 +365,9 @@ vector<float> MatrixAtom::getColumnSep(Env& env, float width) {
       arr[0] = 0;
       arr[cols] = arr[0];
       Hsep = _hsep.createBox(env);
-      for (i = 1; i < cols; i++) arr[i] = Hsep->_width;
+      // smallmatrix's columns are a \thickspace (5mu of the text around it, not of the script style its cells are set in)
+      const float gap = _matType == MatrixType::smallMatrix ? 5.f / 18.f * _baseEm : Hsep->_width;
+      for (i = 1; i < cols; i++) arr[i] = gap;
       return arr;
     }
     case MatrixType::aligned:
@@ -573,8 +581,22 @@ MatrixAtom::MatrixAtom(bool isPartial, const sptr<ArrayFormula>& arr, MatrixType
   }
 }
 
+sptr<Box> DecimalAtom::createBox(Env& env) {
+  const auto part = [&](const sptr<Atom>& atom) {
+    return atom == nullptr ? sptr<Box>(sptrOf<StrutBox>(0.f, 0.f, 0.f, 0.f)) : RowAtom::withItalic(atom)->createBox(env);
+  };
+  _beforeBox = part(_before);
+  _sepBox = part(_sep);
+  _afterBox = part(_after);
+  auto box = sptrOf<HBox>();
+  box->add(_beforeBox);
+  box->add(_sepBox);
+  box->add(_afterBox);
+  return box;
+}
+
 sptr<Box> MatrixAtom::cellBox(const sptr<Atom>& atom, int col, Env& env) const {
-  sptr<Atom> content = atom;
+  sptr<Atom> content = RowAtom::withItalic(atom);
   const auto font = _colFonts.find(col);
   if (font != _colFonts.end()) content = sptrOf<FontStyleAtom>(font->second, false, content);
   const auto suffix = _colSuffixes.find(col);
@@ -668,7 +690,8 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       // that width so the column is sized by the spec and not by its
       // content. BoxSplitter is the same breaker \\ and max_width use.
       const auto pw = _colWidths.find(j);
-      if (pw != _colWidths.end() && atom != nullptr) {
+      // (A rule's row is the rule alone, whatever the first column is: `\hline` before a p{} cell.)
+      if (pw != _colWidths.end() && atom != nullptr && boxarr[i][j]->_type != AtomType::hline) {
         const float w = Units::fsize(pw->second, env);
         if (w > 0) {
           auto cell = boxarr[i][j];
@@ -696,6 +719,56 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
         mca->setRowColumn(i, j);
         multiCols.push_back(atom);
       }
+    }
+  }
+
+  // A rule's row is known by its first cell. A column spec that begins with `@{...}` puts that material in front of
+  // it in every row (stargazer's `@{\extracolsep{5pt}}lcc`), so the rule has to come back to the front, or the row
+  // is set as one with text in it: a strut taller, for each \hline.
+  for (int i = 0; i < rows; i++) {
+    if (boxarr[i][0] == nullptr || boxarr[i][0]->_type == AtomType::hline) continue;
+    for (int j = 1; j < cols; j++) {
+      if (boxarr[i][j] != nullptr && boxarr[i][j]->_type == AtomType::hline) {
+        std::swap(boxarr[i][0], boxarr[i][j]);
+        // (the atoms too: a rule is drawn from its own atom)
+        auto& cells = _matrix->_array[i];
+        if (static_cast<int>(cells.size()) > j) std::swap(cells[0], cells[j]);
+        break;
+      }
+    }
+  }
+
+  // dcolumn's D columns: the cells put in line at their separators, the part before flush right and the part after
+  // flush left, so the column is as wide as the widest of each.
+  for (int j = 0; j < cols; j++) {
+    float before = 0.f, sep = 0.f, after = 0.f;
+    bool any = false;
+    for (int i = 0; i < rows; i++) {
+      if (j >= static_cast<int>(_matrix->_array[i].size())) continue;
+      const auto* d = dynamic_cast<const DecimalAtom*>(_matrix->_array[i][j].get());
+      if (d == nullptr || d->_beforeBox == nullptr) continue;
+      any = true;
+      before = max(before, d->_beforeBox->_width);
+      sep = max(sep, d->_sepBox->_width);
+      after = max(after, d->_afterBox->_width);
+    }
+    if (!any) continue;
+    for (int i = 0; i < rows; i++) {
+      if (j >= static_cast<int>(_matrix->_array[i].size())) continue;
+      const auto* d = dynamic_cast<const DecimalAtom*>(_matrix->_array[i][j].get());
+      if (d == nullptr || d->_beforeBox == nullptr) continue;
+      auto line = sptrOf<HBox>();
+      line->add(StrutBox::create(before - d->_beforeBox->_width));
+      line->add(d->_beforeBox);
+      line->add(d->_sepBox);
+      line->add(StrutBox::create(sep - d->_sepBox->_width));
+      line->add(d->_afterBox);
+      line->add(StrutBox::create(after - d->_afterBox->_width));
+      boxarr[i][j] = line;
+    }
+    colWidth[j] = 0.f;
+    for (int i = 0; i < rows; i++) {
+      if (boxarr[i][j] != nullptr && boxarr[i][j]->_type != AtomType::multiColumn) colWidth[j] = max(colWidth[j], boxarr[i][j]->_width);
     }
   }
 
@@ -820,7 +893,8 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           cell->_depth += extra;
           lineDepth[i] = max(lineDepth[i], cell->_depth);
         }
-        lineHeight[i] = max(lineHeight[i], 0.7f * strut);
+        const float extraRow = _matrix->_extraRow.isValid() ? Units::fsize(_matrix->_extraRow, env) : 0.f;
+        lineHeight[i] = max(lineHeight[i], 0.7f * strut + extraRow);
         lineDepth[i] = max(lineDepth[i], 0.3f * strut);
       }
     } else {
@@ -832,6 +906,18 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       }
       const float lineskip = (jot ? 0.4f : 0.15f) * _baseEm;
       const float lineskiplimit = (jot ? 0.3f : 0.15f) * _baseEm;
+      // amsmath's alignments are \halign rows that each begin with a \strut@ (0.7 and 0.3 of the 12pt baselineskip of a 10pt
+      // page), so the first row stands that high and the last that deep whatever they hold (LuaLaTeX: `aligned` of one row
+      // is 8.5pt above its baseline and 3.5 below, as an array's is). The spacing between rows is unchanged: with the strut
+      // a row is never shorter than the baselineskip leaves room for.
+      if (jot) {
+        const float strut = 1.2f * _baseEm;
+        for (int i = 0; i < rows; i++) {
+          if (isRule(i)) continue;
+          lineHeight[i] = max(lineHeight[i], 0.7f * strut);
+          lineDepth[i] = max(lineDepth[i], 0.3f * strut);
+        }
+      }
       for (int i = 0; i + 1 < rows; i++) {
         if (isRule(i) || isRule(i + 1)) continue;
         const float glue = baselineskip - lineDepth[i] - lineHeight[i + 1];
@@ -871,6 +957,12 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
   // The horizontal separator's width
   vector<float> Hsep = getColumnSep(env, matW);
+  for (const auto& [col, len] : _extraColSep) {
+    const float extra = SpaceAtom(len.unit, len.val, 0.f, 0.f).createBox(env)->_width;
+    for (int j = col + 2; j < cols; j++) {
+      if (_position[j - 1] != Alignment::none && _position[j] != Alignment::none) Hsep[j] += extra;
+    }
+  }
   // tabular*'s \extracolsep{\fill}: what its width has left over goes
   // between the columns.
   if (_spread && given != POS_INF && cols > 1) {

@@ -54,7 +54,7 @@
 \newcommand{\maketitle}{{\def\thefootnote{\fnsymbol{footnote}}\begin{center}\ifx\@title\@empty\else{\LARGE \@title \par}\vspace{1.5em}\fi\ifx\@author\@empty\else{\large \begin{tabular}[t]{c}\@author\end{tabular}\par}\vspace{1em}\fi\ifx\@date\@empty\else{\large \@date}\fi\end{center}\par\vspace{1.5em}}\setcounter{footnote}{0}\global\let\maketitle\relax}
 \newcommand{\flushleft}{}
 \newcommand{\arraybackslash}{}
-\newcommand{\extracolsep}[1]{}
+\newcommand{\extracolsep}[1]{\gmextracolsep{#1}}
 \newcommand{\flushright}{}
 \newcommand{\smallskip}{\vspace{0.3em}}
 \newcommand{\medskip}{\vspace{0.6em}}
@@ -98,6 +98,24 @@
 \newcommand{\space}{\ }
 \newcommand{\allowbreak}{}
 \newcommand{\nobreak}{}
+% A grob is not paged: a page break is nothing, as is the choice of where a paragraph may break (sloppy, fussy) and of
+% the space after a full stop.
+\newcommand{\newpage}{}
+\newcommand{\clearpage}{}
+\newcommand{\cleardoublepage}{}
+\NewDocumentCommand{\pagebreak}{o}{}
+\NewDocumentCommand{\nopagebreak}{o}{}
+\NewDocumentCommand{\nolinebreak}{o}{}
+\newcommand{\sloppy}{}
+\newcommand{\fussy}{}
+\newcommand{\frenchspacing}{}
+\newcommand{\nonfrenchspacing}{}
+\newcommand{\ignorespaces}{}
+\newcommand{\hfil}{\quad}
+\newcommand{\hss}{}
+\newcommand{\normalcolor}{\color{black}}
+% ulem's \normalem (so that \emph is italic, not underlined) is what \emph already is here.
+\newcommand{\normalem}{}
 \newcommand{\long}{}
 \newcommand{\hbox}[1]{\mbox{#1}}
 \newcommand{\bigm}[1]{\mathrel{\big#1}}
@@ -179,6 +197,15 @@
 
 % \parbox[position][height][inner position]{width}{text}: a minipage inline.
 \NewDocumentCommand{\parbox}{O{c}oom+m}{\begin{minipage}[#1]\IfNoValueTF{#2}{}{[#2]\IfNoValueTF{#3}{}{[#3]}}{#4}#5\end{minipage}}
+% \makebox[width][position]{text}: the text on one line in a box of that width, flush left (l), right (r), centred (c, the
+% default) or spread (s: centred here, a grob has no glue to stretch); text wider than the box stands out of it, as in
+% TeX (\makebox[0pt][l]{text} is \rlap). \framebox is the same inside a \fbox.
+\newcommand{\gmmakeboxl}[2]{\rlap{#2}\hspace*{#1}}
+\newcommand{\gmmakeboxr}[2]{\hspace*{#1}\llap{#2}}
+\newcommand{\gmmakeboxc}[2]{{\newlength{\gmmbw}\setlength{\gmmbw}{#1}\hspace*{0.5\gmmbw}\clap{#2}\hspace*{0.5\gmmbw}}}
+\newcommand{\gmmakeboxs}[2]{\gmmakeboxc{#1}{#2}}
+\NewDocumentCommand{\makebox}{oom}{\IfNoValueTF{#1}{\mbox{#3}}{\IfNoValueTF{#2}{\gmmakeboxc{#1}{#3}}{\csname gmmakebox#2\endcsname{#1}{#3}}}}
+\NewDocumentCommand{\framebox}{oom}{\IfNoValueTF{#1}{\fbox{#3}}{\IfNoValueTF{#2}{\fbox{\makebox[#1]{#3}}}{\fbox{\makebox[#1][#2]{#3}}}}}
 
 % \newcounter{c}[within]: makes the counter and its \thec; the lowering keeps
 % the value. \refstepcounter steps it and names it for the next \label.
@@ -224,6 +251,7 @@
 \RequirePackage{mleftright}
 \RequirePackage{esdiff}
 \RequirePackage{relsize}
+\RequirePackage{upgreek}
 \RequirePackage{slashed}
 \RequirePackage{tensor}
 \RequirePackage{katex}

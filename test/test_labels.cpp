@@ -112,7 +112,7 @@ TEST(labels_a_row_gap_adds_its_space_below_the_line_in_both_modes) {
     const auto gap = ys("a\\\\[10pt]b");
     CHECK_EQ(plain.size(), std::size_t(2));
     CHECK_EQ(gap.size(), std::size_t(2));
-    CHECK(std::fabs((gap[1] - gap[0]) - (plain[1] - plain[0]) - 9.96) < 0.01);
+    CHECK(std::fabs((gap[1] - gap[0]) - (plain[1] - plain[0]) - 20) < 0.01);  // 10pt, at 20px
   }
 }
 
@@ -142,11 +142,11 @@ TEST(labels_a_tie_at_the_start_of_a_line_is_a_space_that_stays) {
 
 TEST(labels_a_number_or_a_dimension_takes_one_optional_space_as_in_tex) {
   // The space ends the dimension and goes with it; a second one is a space.
-  const auto word = textsOf("\\kern100bp word");
+  const auto word = textsOf("\\kern50pt word");
   CHECK_EQ(word.size(), std::size_t(1));
   CHECK_EQ(word[0].text, std::string("word"));
   CHECK_EQ(word[0].x, 100.0f);
-  CHECK_EQ(strings(textsOf("\\kern100bp\\ word")), check::Strings({" word"}));
+  CHECK_EQ(strings(textsOf("\\kern50pt\\ word")), check::Strings({" word"}));
   // In a label, a line end there still breaks the line.
   const auto lines = textsOf("a\\kern10bp\nb");
   CHECK_EQ(strings(lines), check::Strings({"a", "b"}));

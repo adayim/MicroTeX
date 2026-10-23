@@ -46,10 +46,12 @@ private:
 
 class ImageAtom : public Atom {
 public:
-    // `width` and `height` arrive as bare numbers in big points. They are
-    // kept as text and handed to Units::getDimen with a "bp" suffix, so the
-    // conversion to the engine's 1000-per-em design units is MicroTeX's own
-    // -- the same route RuleAtom::createBox takes.
+    // `width` and `height` arrive as bare numbers in the device's big
+    // points, already worked out by the host at the size of the text (a
+    // length in a TeX unit is magnified with it there; one in px is not).
+    // They are kept as text and handed to Units::getDimen with a "px"
+    // suffix, so the conversion to the engine's 1000-per-em design units
+    // is MicroTeX's own -- the same route RuleAtom::createBox takes.
     ImageAtom(std::string ref, std::string width, std::string height)
         : _ref(std::move(ref)), _width(std::move(width)), _height(std::move(height)) {}
 

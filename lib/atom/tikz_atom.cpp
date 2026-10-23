@@ -1939,9 +1939,18 @@ void Layout::layoutPath(const PathItem& item) {
         if (!res(op.p, w)) break;
         const P a = at, b = w.p;
         begin(a);
-        lineTo({b.x, a.y});
+        // The sides are those of the picture's own axes: turned or slanted with them, where `a` and `b` are corners
+        // of the page's axes (`rotate=30` in a scope: a tilted square, not the box of its diagonal).
+        const double det = m.a * m.d - m.b * m.c;
+        const auto local = [&](P p) {
+          if (std::fabs(det) < 1e-12) return p;
+          const double x = p.x - m.e, y = p.y - m.f;
+          return P{(m.d * x - m.c * y) / det, (-m.b * x + m.a * y) / det};
+        };
+        const P la = local(a), lb = local(b);
+        lineTo(m.apply({lb.x, la.y}));
         lineTo(b);
-        lineTo({a.x, b.y});
+        lineTo(m.apply({la.x, lb.y}));
         cur.closed = true;
         // A node on a rectangle (`rectangle node{x} (3,1)`, `rectangle (3,1) node[midway]{x}`) goes on its diagonal: half way
         // is the centre.

@@ -1,0 +1,26 @@
+% packages: tabularray,booktabs,xcolor,graphicx
+\begin{table}
+\centering
+\begin{talltblr}[         %% tabularray outer open
+caption={Models of mpg},
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]},
+hline{2}={1-3}{solid, black, 0.05em},
+hline{8}={1-3}{solid, black, 0.05em},
+hline{1}={1-3}{solid, black, 0.08em},
+hline{10}={1-3}{solid, black, 0.08em},
+column{2-3}={}{halign=c},
+column{1}={}{halign=l},
+}                     %% tabularray inner close
+& Simple & Full \\
+(Intercept) & \num{37.285} & \num{37.227} \\
+& (\num{1.878}) & (\num{1.599}) \\
+wt & \num{-5.344} & \num{-3.878} \\
+& (\num{0.559}) & (\num{0.633}) \\
+hp &  & \num{-0.032} \\
+&  & (\num{0.009}) \\
+Num.Obs. & \num{32} & \num{32} \\
+R2 & \num{0.753} & \num{0.827} \\
+\end{talltblr}
+\end{table}

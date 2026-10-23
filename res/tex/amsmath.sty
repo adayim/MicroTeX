@@ -4,18 +4,18 @@
 \newenvironment{Bmatrix}{\left\{\begin{matrix}}{\end{matrix}\right\}}
 \newenvironment{vmatrix}{\left|\begin{matrix}}{\end{matrix}\right|}
 \newenvironment{Vmatrix}{\left\|\begin{matrix}}{\end{matrix}\right\|}
-\newenvironment{cases}{\left\{\def\arraystretch{1.2}\begin{array}{@{}ll@{\,}}}{\end{array}\right.}
+\newenvironment{cases}{\left\{\def\arraystretch{1.2}\begin{array}{@{}l@{\quad}l@{}}}{\end{array}\right.}
 \newenvironment{subarray}[1]{\scriptstyle\gmrows{sub}\begin{array}{@{}#1@{}}}{\end{array}}
 \newenvironment{subequations}{\gmsubeqbegin}{\gmsubeqend}
 \newenvironment{split}{\gmrows{jot}\begin{array}{r@{\;}l}}{\end{array}}
 \newcommand{\operatorname}[1]{\mathop{\mathrm{#1}}\nolimits }
-\newcommand{\substack}[1]{{\scriptstyle\gmrows{sub}\begin{array}{@{}c@{}}#1\end{array}}}
+\newcommand{\substack}[1]{\vcenter{\scriptstyle\gmrows{sub}\begin{array}{@{}c@{}}#1\end{array}}}
 \newcommand{\mspace}[1]{\hspace{#1}}
 \newcommand{\leftroot}[1]{}
 \newcommand{\uproot}[1]{}
-\newcommand{\dfrac}[2]{\genfrac{}{}{1}{}{#1}{#2}}
-\newcommand{\tfrac}[2]{\genfrac{}{}{1}{1}{#1}{#2}}
-\newcommand{\dbinom}[2]{\genfrac{(}{)}{0pt}{}{#1}{#2}}
+\newcommand{\dfrac}[2]{\genfrac{}{}{}{0}{#1}{#2}}
+\newcommand{\tfrac}[2]{\genfrac{}{}{}{1}{#1}{#2}}
+\newcommand{\dbinom}[2]{\genfrac{(}{)}{0pt}{0}{#1}{#2}}
 \newcommand{\tbinom}[2]{\genfrac{(}{)}{0pt}{1}{#1}{#2}}
 \newcommand{\pmod}[1]{\pod{\mathrm{mod}\mkern6mu #1}}
 \newcommand{\mod}[1]{\mathchoice{\mkern18mu}{\mkern12mu}{\mkern12mu}{\mkern12mu}\mathrm{mod}\,\,#1}
@@ -24,3 +24,7 @@
 \newcommand{\>}{\:}
 \newcommand{\operatornamewithlimits}[1]{\operatorname*{#1}}
 \newcommand{\dotsm}{\cdots}
+\NewDocumentCommand{\allowdisplaybreaks}{o}{}
+\newcommand{\overunderset}[3]{\overset{#1}{\underset{#2}{#3}}}
+\newcommand{\nobreakdash}{}
+\@namedef{theequation}{\arabic{equation}}

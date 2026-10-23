@@ -4,6 +4,7 @@
 #include "atom/atom_scripts.h"
 #include "atom/atom_stack.h"
 #include "atom/atom_zstack.h"
+#include "core/glue.h"
 
 using namespace microtex;
 
@@ -12,10 +13,20 @@ SideSetsAtom::SideSetsAtom(const sptr<Atom>& base, const sptr<Atom>& left, const
   _left = left == nullptr ? sptrOf<EmptyAtom>() : left;
   _right = right == nullptr ? sptrOf<EmptyAtom>() : right;
   _type = AtomType::bigOperator;
-  _limitsType = LimitsType::noLimits;
+  // a \mathop: limits in display style, scripts at the side in text style
+  _limitsType = LimitsType::normal;
 }
 
 sptr<Box> SideSetsAtom::createBox(Env& env) {
+  // amsmath's empty \hbox before the \mathop, then the thin space between the two, in the style around them (LuaLaTeX:
+  // `a=\sideset{}{'}\sum b` 44.24pt, `a\sideset{}{'}\sum b` 30.90: the space is there after a relation too)
+  const auto hbox = sptrOf<HBox>();
+  hbox->add(Glue::get(AtomType::ordinary, AtomType::bigOperator, env));
+  hbox->add(env.withStyle(TexStyle::display, [&](Env& display) { return createBoxInStyle(display); }));
+  return hbox;
+}
+
+sptr<Box> SideSetsAtom::createBoxInStyle(Env& env) {
   _base->_limitsType = LimitsType::noLimits;
   sptr<Box> l, m, r;
   sptr<PlaceholderAtom> pa;

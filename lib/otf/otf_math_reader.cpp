@@ -12,6 +12,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -31,9 +32,9 @@
 // otf2clm.py), and no CLM bytes in between: fonts used to be written to that
 // format here and read straight back.
 //
-// Class kerning and ligatures are left empty; scripts-variants are also
-// empty because OT MATH has no native source for them (FontForge derives
-// these from GSUB `ssty`).
+// Class kerning and ligatures are left empty. The glyphs a script and a
+// scriptscript are set in come from GSUB `ssty`, as TeX engines with an
+// OpenType math font take them (parse_gsub_ssty).
 // =============================================================================
 
 namespace {
@@ -173,6 +174,8 @@ struct GlyphMath {
     Assembly h_assembly;
     Assembly v_assembly;
     MathKernPoints kerns;
+    /** The glyphs of this one in script and in scriptscript style (GSUB `ssty`); empty for none. */
+    std::vector<u16> s_variants;
 };
 
 // Read a MathGlyphConstruction record (variants + optional assembly) at `mgc_off`.
@@ -323,6 +326,86 @@ u16 parse_math_variants(const BeReader& math, std::size_t mv_off,
     if (hcov_rel != 0) apply(mv_off + hcov_rel, hglyph_count, hconst_arr, false);
 
     return min_connector_overlap;
+}
+
+// ---------- GSUB `ssty`: the glyphs of scripts ---------------------------------
+// A letter in a subscript is not the full-size one scaled down: TeX set it in
+// cmr7 or cmr5, wider and heavier, and an OpenType math font keeps those
+// designs under the GSUB feature `ssty` (Latin Modern Math, STIX Two). The
+// feature is an alternate substitution whose first alternate is for script
+// style and second for scriptscript, or a single substitution for both. Reads
+// every lookup the feature names; a table that does not parse is not used.
+
+void parse_gsub_ssty(const u8* gsub_bytes, std::size_t gsub_len, u16 num_glyphs,
+                     std::vector<GlyphMath>& per_glyph) {
+    if (gsub_bytes == nullptr || gsub_len < 10) return;
+    const BeReader r{gsub_bytes, gsub_len};
+    std::map<u16, std::pair<u16, u16>> found;  // glyph -> (script, scriptscript)
+    const auto put = [&](u16 g, u16 script, u16 scriptscript) {
+        if (g < num_glyphs && script < num_glyphs && scriptscript < num_glyphs) {
+            found.emplace(g, std::make_pair(script, scriptscript));
+        }
+    };
+    try {
+        if (r.u16be(0) != 1) return;
+        const std::size_t feature_list = r.u16be(6), lookup_list = r.u16be(8);
+        if (feature_list == 0 || lookup_list == 0) return;
+        std::set<u16> lookups;
+        const u16 n_features = r.u16be(feature_list);
+        for (u16 i = 0; i < n_features; ++i) {
+            const std::size_t rec = feature_list + 2 + static_cast<std::size_t>(i) * 6;
+            if (r.u32be(rec) != FT_MAKE_TAG('s', 's', 't', 'y')) continue;
+            const std::size_t feature = feature_list + r.u16be(rec + 4);
+            const u16 n = r.u16be(feature + 2);
+            for (u16 j = 0; j < n; ++j) lookups.insert(r.u16be(feature + 4 + static_cast<std::size_t>(j) * 2));
+        }
+        const u16 n_lookups = r.u16be(lookup_list);
+        for (const u16 li : lookups) {
+            if (li >= n_lookups) continue;
+            const std::size_t lookup = lookup_list + r.u16be(lookup_list + 2 + static_cast<std::size_t>(li) * 2);
+            const u16 type = r.u16be(lookup);
+            const u16 n_sub = r.u16be(lookup + 4);
+            for (u16 k = 0; k < n_sub; ++k) {
+                std::size_t sub = lookup + r.u16be(lookup + 6 + static_cast<std::size_t>(k) * 2);
+                u16 t = type;
+                if (t == 7) {  // extension: the real subtable is further on
+                    if (r.u16be(sub) != 1) continue;
+                    t = r.u16be(sub + 2);
+                    sub += r.u32be(sub + 4);
+                }
+                const u16 format = r.u16be(sub);
+                if (t == 1 && (format == 1 || format == 2)) {
+                    const auto cov = read_coverage(r, sub + r.u16be(sub + 2));
+                    for (const auto& [g, idx] : cov) {
+                        u16 to;
+                        if (format == 1) {
+                            to = static_cast<u16>(g + r.i16be(sub + 4));
+                        } else {
+                            if (idx >= r.u16be(sub + 4)) continue;
+                            to = r.u16be(sub + 6 + static_cast<std::size_t>(idx) * 2);
+                        }
+                        put(g, to, to);
+                    }
+                } else if (t == 3 && format == 1) {
+                    const auto cov = read_coverage(r, sub + r.u16be(sub + 2));
+                    const u16 n_sets = r.u16be(sub + 4);
+                    for (const auto& [g, idx] : cov) {
+                        if (idx >= n_sets) continue;
+                        const std::size_t set = sub + r.u16be(sub + 6 + static_cast<std::size_t>(idx) * 2);
+                        const u16 n = r.u16be(set);
+                        if (n == 0) continue;
+                        const u16 first = r.u16be(set + 2);
+                        put(g, first, n > 1 ? r.u16be(set + 4) : first);
+                    }
+                }
+            }
+        }
+    } catch (const std::out_of_range&) {
+        return;
+    }
+    for (const auto& [g, v] : found) {
+        if (g < per_glyph.size()) per_glyph[g].s_variants = {v.first, v.second};
+    }
 }
 
 // ---------- Top-level MATH parser --------------------------------------------
@@ -684,6 +767,11 @@ Otf* OtfBuilder::build(const std::string& path, int index) {
         math_bytes.empty() ? nullptr : math_bytes.data(),
         math_bytes.size(), num_glyphs);
     const bool is_math = math.present;
+    if (is_math) {
+        const auto gsub_bytes = read_sfnt_table(face, TTAG_GSUB);
+        parse_gsub_ssty(gsub_bytes.empty() ? nullptr : gsub_bytes.data(), gsub_bytes.size(), num_glyphs,
+                        math.per_glyph);
+    }
 
     // Every field has a safe default, so a font abandoned half-built by an
     // exception is freed by its own destructor.
@@ -782,6 +870,7 @@ Otf* OtfBuilder::build(const std::string& path, int index) {
             gmath->_topAccentAttachment = gm.top_accent;
             gmath->_horizontalVariants = variants(gm.h_variants);
             gmath->_verticalVariants = variants(gm.v_variants);
+            gmath->_scriptsVariants = variants(gm.s_variants);
             gmath->_horizontalAssembly = assembly(gm.h_assembly);
             gmath->_verticalAssembly = assembly(gm.v_assembly);
             auto* record = new MathKernRecord(0);

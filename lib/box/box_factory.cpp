@@ -39,7 +39,8 @@ static sptr<Box> createDelim(
   Env& env,
   const float len,
   bool isVertical,
-  bool round = false
+  bool round = false,
+  float slack = 0.f
 ) {
   const sptr<SymbolAtom> atom = delimiterSymbol(sym);
   if (atom == nullptr) {
@@ -56,7 +57,7 @@ static sptr<Box> createDelim(
     if (i >= variantCount) return nullptr;
     const auto& n = isVertical ? chr.vLarger(i) : chr.hLarger(i);
     const auto l = isVertical ? n.height() + n.depth() : n.width();
-    wider = l >= len || (round && len - l <= tolerance);
+    wider = l >= len || (round && len - l <= tolerance) || len - l <= slack;
     if (i == variantCount - 1 || wider) return sptrOf<CharBox>(n);
     return v(i + 1);
   };
@@ -154,8 +155,8 @@ static sptr<Box> createDelim(
   return box;
 }
 
-sptr<Box> createHDelim(const std::string& sym, Env& env, float width, bool round) {
-  return createDelim(sym, env, width, false, round);
+sptr<Box> createHDelim(const std::string& sym, Env& env, float width, bool round, float slack) {
+  return createDelim(sym, env, width, false, round, slack);
 }
 
 sptr<Box> createVDelim(const std::string& sym, Env& env, float height, bool round) {

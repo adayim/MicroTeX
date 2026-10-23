@@ -8,8 +8,8 @@
 namespace microtex {
 
 sptr<Box> ImageAtom::createBox(Env& env) {
-    const float w = Units::fsize(Units::getDimen(_width + "bp"), env);
-    const float h = Units::fsize(Units::getDimen(_height + "bp"), env);
+    const float w = Units::fsize(Units::getDimen(_width + "px"), env);
+    const float h = Units::fsize(Units::getDimen(_height + "px"), env);
     return sptr<Box>(new ImageBox(_ref, w, h));
 }
 

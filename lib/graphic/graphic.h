@@ -180,6 +180,10 @@ public:
    */
   virtual void rotate(float angle, float px, float py) = 0;
 
+  /** Whether what is drawn now is turned (or sheared) by the transformation. A host that cannot draw a glyph
+   *  turned asks for its outline instead, as CharBox::draw does. */
+  virtual bool isRotated() const { return false; }
+
   /** Reset transformations */
   virtual void reset() = 0;
 

@@ -1,0 +1,28 @@
+% packages: booktabs,siunitx
+
+\begin{table}
+\begin{center}
+\sisetup{parse-numbers=false, table-text-alignment=right}
+\begin{tabular}{l S[table-format=2.5] S[table-format=2.5] S[table-format=2.5]}
+\toprule
+ & {Model 1} & {Model 2} & {Model 3} \\
+\midrule
+(Intercept) & 37.29^{***} & 37.23^{***} & 27.61^{**}  \\
+            & (1.88)      & (1.60)      & (8.42)      \\
+wt          & -5.34^{***} & -3.88^{***} & -4.36^{***} \\
+            & (0.56)      & (0.63)      & (0.75)      \\
+hp          &             & -0.03^{**}  & -0.02       \\
+            &             & (0.01)      & (0.01)      \\
+qsec        &             &             & 0.51        \\
+            &             &             & (0.44)      \\
+\midrule
+R$^2$       & 0.75        & 0.83        & 0.83        \\
+Adj. R$^2$  & 0.74        & 0.81        & 0.82        \\
+Num. obs.   & 32          & 32          & 32          \\
+\bottomrule
+\multicolumn{4}{l}{\scriptsize{$^{***}p<0.001$; $^{**}p<0.01$; $^{*}p<0.05$}}
+\end{tabular}
+\caption{Statistical models}
+\label{table:coefficients}
+\end{center}
+\end{table}

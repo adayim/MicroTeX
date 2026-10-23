@@ -86,6 +86,8 @@ public:
   /** LaTeX's \arraystretch: the rows are this much further apart than their
    *  content makes them. */
   float _stretch = 1.f;
+  /** array.sty's \extrarowheight: more height in the strut of every row. */
+  Dimen _extraRow;
   /** How the rows stand apart, when `\gmrows` said so for this array (split's
    *  definition does): "jot", amsmath's alignments', or "sub", \substack's.
    *  Else an array's. */

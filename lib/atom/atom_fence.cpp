@@ -6,6 +6,7 @@
 #include "box/box_single.h"
 #include "core/glue.h"
 #include "env/env.h"
+#include "env/units.h"
 #include "utils/exceptions.h"
 
 using namespace microtex;
@@ -23,7 +24,7 @@ void checkDelimiter(const std::string& name) {
 }  // namespace
 
 FencedAtom::FencedAtom(const sptr<Atom>& b, std::string l, std::string r)
-    : _base(b), _l(std::move(l)), _r(std::move(r)) {
+    : _base(RowAtom::withItalic(b)), _l(std::move(l)), _r(std::move(r)) {
   checkDelimiter(_l);
   checkDelimiter(_r);
 }
@@ -34,7 +35,7 @@ FencedAtom::FencedAtom(
   std::string r,
   std::vector<sptr<MiddleAtom>> m
 )
-    : _base(b), _l(std::move(l)), _r(std::move(r)), _m(std::move(m)) {
+    : _base(RowAtom::withItalic(b)), _l(std::move(l)), _r(std::move(r)), _m(std::move(m)) {
   checkDelimiter(_l);
   checkDelimiter(_r);
 }
@@ -63,8 +64,10 @@ sptr<Box> FencedAtom::createBox(Env& env) {
   };
 
   const auto base = _base->createBox(env);
-  center(base);
-  const auto h = base->vlen();
+  if (!_fractionDelims) center(base);
+  // (a fraction's delimiter is the first variant at least that size, as TeX's var_delimiter has it: no rounding; the sizes are LuaTeX's \Umathfractiondelsize for an OpenType math font, which the MATH table does not
+  // carry: 2.4em in display style, 1.01em otherwise, the same for Latin Modern Math and STIX Two Math)
+  const auto h = _fractionDelims ? (env.style() < TexStyle::text ? 2.4f : 1.01f) * env.em() : base->vlen();
 
   for (const auto& m : _m) {
     m->_height = h;
@@ -75,9 +78,13 @@ sptr<Box> FencedAtom::createBox(Env& env) {
   }
 
   auto hbox = sptrOf<HBox>();
+  // \nulldelimiterspace, 1.2pt of the 10pt page: a length, so it does not shrink in a script
+  const auto nullSpace = [&] { return sptrOf<StrutBox>(Units::fsize(Dimen{1.2f, UnitType::pt}, env), 0.f, 0.f, 0.f); };
 
-  if (!_l.empty() && _l != ".") {
-    auto l = microtex::createVDelim(_l, env, h, true);
+  if (_l.empty() || _l == ".") {
+    if (_nullSpace) hbox->add(nullSpace());
+  } else {
+    auto l = microtex::createVDelim(_l, env, h, !_fractionDelims);
     center(l);
     hbox->add(l);
     if (!base->isSpace()) {
@@ -87,11 +94,13 @@ sptr<Box> FencedAtom::createBox(Env& env) {
 
   hbox->add(base);
 
-  if (!_r.empty() && _r != ".") {
+  if (_r.empty() || _r == ".") {
+    if (_nullSpace) hbox->add(nullSpace());
+  } else {
     if (!base->isSpace()) {
       hbox->add(Glue::get(_base->rightType(), AtomType::closing, env));
     }
-    auto r = microtex::createVDelim(_r, env, h, true);
+    auto r = microtex::createVDelim(_r, env, h, !_fractionDelims);
     center(r);
     hbox->add(r);
   }

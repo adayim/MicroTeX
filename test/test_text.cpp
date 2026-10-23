@@ -118,3 +118,20 @@ TEST(text_a_runaway_inside_an_optional_argument_is_stopped) {
     CHECK_THROWS(check::render(tex), "macro defined in terms of itself");
   }
 }
+
+// \makebox[w][pos]{text} is a box of width w whatever the text: wider text stands out of it, as in TeX, and is not wrapped
+// (LuaLaTeX, 10pt: `\makebox[0pt][l]{two words}x` is the width of x, `\makebox[2em][r]{some label}x` 2em and x).
+TEST(text_a_makebox_is_as_wide_as_asked_and_its_text_is_not_wrapped) {
+  Options opt(InputMode::mixed);
+  opt.textSize = 100;
+  const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
+  const int x = width("x");
+  CHECK(std::abs(width(R"(\makebox[0pt][l]{two words}x)") - x) <= 2);
+  CHECK(std::abs(width(R"(\makebox[0pt][r]{two words}x)") - x) <= 2);
+  CHECK(std::abs(width(R"(\makebox[0pt]{two words}x)") - x) <= 2);
+  CHECK(std::abs(width(R"(\makebox[2em][r]{some label}x)") - x - 200) <= 2);
+  CHECK(std::abs(width(R"(\makebox[5em][l]{ab}x)") - x - 500) <= 2);
+  CHECK(std::abs(width(R"(\makebox[3em][s]{a b}x)") - x - 300) <= 2);
+  // One line: nothing is taller than the text itself.
+  CHECK_EQ(check::render(R"(\makebox[2em][r]{some label}x)", opt).height, check::render("some labelx", opt).height);
+}
