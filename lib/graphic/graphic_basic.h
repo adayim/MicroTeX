@@ -32,7 +32,11 @@ static constexpr color MAGENTA = magenta;
 
 /** Construct a 32 bit true color with its alpha, red, green and blue channel*/
 inline color MICROTEX_EXPORT argb(int a, int r, int g, int b) {
-  return (a << 24) | (r << 16) | (g << 8) | b;
+  // Clamp to a byte: an out-of-range channel (e.g. a \definecolor{}{gray}{1.2}
+  // or a negative component) must not bleed into the neighbouring channel's
+  // bits, and shifting a negative int is undefined behavior.
+  const auto byte = [](int v) { return static_cast<unsigned>(v < 0 ? 0 : (v > 255 ? 255 : v)); };
+  return (byte(a) << 24) | (byte(r) << 16) | (byte(g) << 8) | byte(b);
 }
 
 inline color MICROTEX_EXPORT rgb(int r, int g, int b) {

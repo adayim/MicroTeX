@@ -102,7 +102,9 @@ void HBox::replaceFirst(const sptr<Box>& from, const sptr<Box>& to) {
   }
   if (!replaced) return;
   _width -= from->_width - to->_width;
-  auto mh = 0.f, md = 0.f;
+  // NEG_INF, not 0.f: a child's height/depth here can legitimately be negative (see
+  // HBox::recalculate above), and starting the fold at 0 would floor it wrongly.
+  auto mh = NEG_INF, md = NEG_INF;
   for (auto& i : _children) {
     mh = std::max(mh, i->_height - i->_shift);
     md = std::max(md, i->_depth + i->_shift);

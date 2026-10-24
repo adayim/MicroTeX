@@ -195,8 +195,24 @@ struct SegInfo {
   bool valid = false;
   bool cubic = false;
   P from, c1, c2, to;
-  P at(double t) const { return cubic ? bezier(from, c1, c2, to, t) : from + (to - from) * t; }
+  // An `arc` op: its own centre, radii and start/end angle (degrees), so `at`/`direction` follow
+  // the exact curve rather than the straight line between its endpoints. (A circle or ellipse has
+  // no segment: TikZ puts its node at the centre.)
+  bool isArc = false;
+  P centre;
+  double rx = 0, ry = 0, a0 = 0, a1 = 0;
+  P at(double t) const {
+    if (isArc) {
+      const double a = radians(a0 + (a1 - a0) * t);
+      return centre + P{rx * std::cos(a), ry * std::sin(a)};
+    }
+    return cubic ? bezier(from, c1, c2, to, t) : from + (to - from) * t;
+  }
   P direction(double t) const {
+    if (isArc) {
+      const double a = radians(a0 + (a1 - a0) * t);
+      return unit(P{-rx * std::sin(a), ry * std::cos(a)} * (a1 >= a0 ? 1.0 : -1.0));
+    }
     if (!cubic) return unit(to - from);
     const double h = 1e-3;
     return unit(at(std::min(1.0, t + h)) - at(std::max(0.0, t - h)));
@@ -1974,6 +1990,7 @@ void Layout::layoutPath(const PathItem& item) {
           see(g.to);
         }
         cur.closed = true;
+        // A node on a circle or ellipse is at its centre whatever `pos` says (pdfTeX), so no segment is recorded.
         at = centre;
         break;
       }
@@ -1990,7 +2007,10 @@ void Layout::layoutPath(const PathItem& item) {
           see(cur.segs[k].c2);
           see(cur.segs[k].to);
         }
-        at = centre + P{rx * std::cos(radians(op.a1)), ry * std::sin(radians(op.a1))};
+        const P end = centre + P{rx * std::cos(radians(op.a1)), ry * std::sin(radians(op.a1))};
+        segs[i] = {true, false, at, {}, {}, end, true, centre, rx, ry, op.a0, op.a1};
+        lastSeg = static_cast<int>(i);
+        at = end;
         nominal = at;
         break;
       }

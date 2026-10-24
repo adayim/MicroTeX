@@ -314,6 +314,25 @@ TEST(tikz_a_node_on_a_path_sits_at_a_position_along_it) {
   CHECK(near(x(end) - x(start), cm(4), 2.5f));
 }
 
+// `pos` on an arc is a fraction of the arc; on a circle or an ellipse pgf has no segment and the node stays at the
+// centre (pdfTeX: `\draw circle (1cm) node[pos=.5]` is at the centre, `arc (0:180:1cm) node[pos=.5]` at the top).
+TEST(tikz_pos_on_an_arc_follows_the_arc_and_on_a_circle_is_the_centre) {
+  // Where the text stands from the lower left corner of the first stroke.
+  const auto at = [](const check::Layout& l) {
+    const auto t = check::of(l, DrawRecord::TEXT);
+    const auto e = extentOf(strokes(l)[0]);
+    return std::make_pair(t.empty() ? -1e9f : t[0].x - e.x0, t.empty() ? -1e9f : t[0].y - e.y0);
+  };
+  const auto centre = at(pic(R"(\draw (0,0) circle (1cm) node {m};)"));
+  const auto onCircle = at(pic(R"(\draw (0,0) circle (1cm) node[pos=0.5] {m};)"));
+  CHECK(near(onCircle.first, centre.first));
+  CHECK(near(onCircle.second, centre.second));
+  const auto top = at(pic(R"(\draw (0,0) arc (0:180:1cm); \node at (-1cm,1cm) {m};)"));
+  const auto onArc = at(pic(R"(\draw (0,0) arc (0:180:1cm) node[pos=0.5] {m};)"));
+  CHECK(near(onArc.first, top.first));
+  CHECK(near(onArc.second, top.second));
+}
+
 // `->` is a tip of its own and the line stops short of it; `-latex` is filled and the line stops 9d short (d = 0.4pt).
 TEST(tikz_an_arrow_tip_is_a_shape_of_its_own_and_the_line_stops_where_it_begins) {
   const auto plainLine = strokes(pic(R"(\draw (0,0) -- (2,0);)"));
