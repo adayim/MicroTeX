@@ -194,15 +194,16 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_Bbb, "Bbb"),
   mac(1, macro_mathds, "mathds"),
   mac(1, macro_bold, "bold"),
-  mac(1, macro_bold, "boldsymbol"),
+  mac(1, macro_bm, "boldsymbol"),
   // \bm (from the bm package) and \pmb (from amsbsy) are the canonical
   // bold-math commands in modern LaTeX. Both alias to the same
   // bold-font switch as \boldsymbol so real-world source compiles
   // without needing user-side rewrites. The visual output is identical
   // to \mathbf for the glyphs we ship; that's a closer match to LaTeX
   // semantics than the previous behaviour of leaving them undefined.
-  mac(1, macro_bold, "bm"),
-  mac(1, macro_bold, "pmb"),
+  mac(1, macro_bm, "bm"),
+  mac(1, macro_bm, "pmb"),
+  mac(1, macro_symbf, "symbf"),
   // endregion
   // region nested styles
   mac(1, macro_text, "mbox"),

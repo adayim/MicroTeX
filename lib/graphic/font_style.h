@@ -17,6 +17,8 @@ enum class FontStyle : u16 {
   bb = 0b100000,    // double-struck
   sf = 0b1000000,   // sans-serif
   tt = 0b10000000,  // type-writer (monospaced)
+  bm = 0b100000000, // bold of the default math alphabets (\bm, \boldsymbol): letters bold italic, digits and capital Greek bold upright
+  symbf = 0b1000000000, // unicode-math's \symbf in TeX's math style: bold upright Latin, capital Greek and digits, bold italic small Greek
   // composed styles
   bfit = bf | it,
   bfcal = bf | cal,

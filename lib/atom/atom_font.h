@@ -29,6 +29,25 @@ public:
 
   AtomType rightType() const override { return _atom->rightType(); }
 
+  // The character this atom sets when it holds nothing else, through any number of font
+  // commands. TeX sets `\mathbf{x}` as a character, so its scripts and its italic correction
+  // are a character's. Null for anything else, and for a big operator, whose scripts are limits.
+  const Atom* loneMathChar() const;
+
+  const sptr<Atom>& inner() const { return _atom; }
+
+  // Calls f in the font style this atom sets its contents in.
+  template <typename F>
+  auto inStyle(Env& env, F&& f) const -> decltype(f(env)) {
+    if (_nested) {
+      // Added to the style around it, as createBox() does.
+      const FontStyle around = _mathMode ? env.mathFontStyle() : env.textFontStyle();
+      const auto both = static_cast<FontStyle>(static_cast<u16>(around) | static_cast<u16>(_style));
+      return env.withFontStyle(both, _mathMode, std::forward<F>(f));
+    }
+    return env.withFontStyle(_style, _mathMode, std::forward<F>(f));
+  }
+
   // \text, \textbf, \textit, \textsf, \texttt and \textrm are all built
   // from this one type, so forwarding here is what lets a row see the
   // text of a sibling group at all.

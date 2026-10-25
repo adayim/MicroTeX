@@ -199,7 +199,7 @@ struct Table {
     add({"mathnormal", "mathrm", "mathbf", "mathit", "mathcal", "mathscr", "mathfrak",
          "mathbb", "mathsf", "mathtt", "mathbfit", "mathbfcal", "mathbffrak", "mathsfbf",
          "mathbfsf", "mathsfit", "mathsfbfit", "mathbfsfit", "Bbb", "mathds", "bold",
-         "boldsymbol", "bm", "pmb"},
+         "boldsymbol", "bm", "pmb", "symbf"},
         "c");
     add({"mbox", "text", "textit", "textbf", "textsf", "texttt", "textrm", "textnormal"}, "t");
     // \intertext ends the row it is in, as a rule does.

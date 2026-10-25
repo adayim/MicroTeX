@@ -225,6 +225,10 @@ map<FontStyle, sptr<const MathVersion>> _mathVersions{
   version(FontStyle::bb, 0x1D7D8, 0x1D552, 0x1D538, 0x03B1, 0x0391),
   version(FontStyle::sf, 0x1D7E2, 0x1D5BA, 0x1D5A0, 0x03B1, 0x0391),
   version(FontStyle::tt, 0x1D7F6, 0x1D68A, 0x1D670, 0x03B1, 0x0391),
+  // \bm and \boldsymbol: each class in the bold of the shape TeX's own style gives it
+  version(FontStyle::bm, 0x1D7CE, 0x1D482, 0x1D468, 0x1D736, 0x1D6A8),
+  // unicode-math's \symbf, which keeps the slant TeX's style gives small Greek
+  version(FontStyle::symbf, 0x1D7CE, 0x1D41A, 0x1D400, 0x1D736, 0x1D6A8),
  // composed styles
   version(FontStyle::bfit, '0', 0x1D482, 0x1D468, 0x1D736, 0x1D71C),
   version(FontStyle::bfcal, '0', 0x1D4EA, 0x1D4D0, 0x03B1, 0x0391),
@@ -291,6 +295,9 @@ c32 MathVersion::map(const c32 codepoint) const {
       FontStyle fontStyle = _fontStyle;
       if (fontStyle == FontStyle::none) {
         fontStyle = fontStyleOfOrphan(_mathStyle, orphan.type);
+      } else if (fontStyle == FontStyle::bm || fontStyle == FontStyle::symbf) {
+        fontStyle = fontStyleOfOrphan(_mathStyle, orphan.type) == FontStyle::it ? FontStyle::bfit
+                                                                                 : FontStyle::bf;
       }
       const auto it = orphan.styles.find(fontStyle);
       if (it == orphan.styles.end()) {

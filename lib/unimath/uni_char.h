@@ -67,6 +67,13 @@ struct Char final {
   /** The italic correction of this char-glyph */
   float italic() const;
 
+  /**
+   * Test if the glyph is a slanted letter (a math italic or bold italic alphabet). LuaLaTeX adds a
+   * glyph's italic correction after a character in a font command only for these, not for the upright
+   * `f` the font also has a value for.
+   */
+  bool isSlanted() const;
+
   /** Get the position (shift) to attach top accent */
   float topAccentAttachment() const;
 

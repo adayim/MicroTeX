@@ -62,6 +62,15 @@ float Char::depth() const {
   return glyph()->metrics().depth() * scale;
 }
 
+bool Char::isSlanted() const {
+  const c32 u = mappedCode;
+  return (u >= 0x1D434 && u <= 0x1D49B)    // italic and bold italic Latin
+         || (u >= 0x1D6E2 && u <= 0x1D755)  // italic and bold italic Greek
+         || (u >= 0x1D608 && u <= 0x1D66F)  // sans-serif italic and bold italic Latin
+         || (u >= 0x1D790 && u <= 0x1D7C9)  // sans-serif bold italic Greek
+         || u == 0x210E || u == 0x1D6A4 || u == 0x1D6A5;  // italic h, dotless i and j
+}
+
 float Char::italic() const {
   auto italic = glyph()->math().italicsCorrection();
   return italic == Otf::undefinedMathValue ? 0.f : italic * scale;

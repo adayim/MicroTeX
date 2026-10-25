@@ -1,0 +1,31 @@
+\ProvidesPackage{unicode-math}[2026/10/25 unicode-math's names for the math alphabets]
+% The \sym... and \math... names unicode-math has (LuaLaTeX and XeTeX), each for
+% the alphabet the engine already draws. \symbf, which keeps the slant TeX's
+% math style gives small Greek letters, is the engine's own; \setmathfont and
+% the rest of the package's fonts are the engine's too. A document that makes
+% one of these names its own takes the place of it, as with katex.
+\newcommand{\symnormal}[1]{\mathnormal{#1}}
+\newcommand{\symup}[1]{\mathrm{#1}}
+\newcommand{\symrm}[1]{\mathrm{#1}}
+\newcommand{\symit}[1]{\mathit{#1}}
+\newcommand{\symbfup}[1]{\mathbf{#1}}
+\newcommand{\symbfit}[1]{\mathbfit{#1}}
+\newcommand{\symsf}[1]{\mathsf{#1}}
+\newcommand{\symsfup}[1]{\mathsf{#1}}
+\newcommand{\symsfit}[1]{\mathsfit{#1}}
+\newcommand{\symbfsf}[1]{\mathsfbf{#1}}
+\newcommand{\symbfsfup}[1]{\mathsfbf{#1}}
+\newcommand{\symbfsfit}[1]{\mathsfbfit{#1}}
+\newcommand{\symtt}[1]{\mathtt{#1}}
+\newcommand{\symbb}[1]{\mathbb{#1}}
+\newcommand{\symscr}[1]{\mathscr{#1}}
+\newcommand{\symbfscr}[1]{\mathbfcal{#1}}
+\newcommand{\symcal}[1]{\mathcal{#1}}
+\newcommand{\symbfcal}[1]{\mathbfcal{#1}}
+\newcommand{\symfrak}[1]{\mathfrak{#1}}
+\newcommand{\symbffrak}[1]{\mathbffrak{#1}}
+\newcommand{\mathup}[1]{\mathrm{#1}}
+\newcommand{\mathbfup}[1]{\mathbf{#1}}
+\newcommand{\mathsfup}[1]{\mathsf{#1}}
+\newcommand{\mathbfsfup}[1]{\mathsfbf{#1}}
+\newcommand{\mathbfscr}[1]{\mathbfcal{#1}}

@@ -77,6 +77,9 @@ public:
   /** Test if this char is in math mode. */
   bool isMathMode() const;
 
+  /** Test if this is a font command around one math character: `\mathbf{x}`. */
+  bool isWrappedMathChar() const;
+
   /** This method will only be called if #isChar returns true. */
   Char getChar(Env& env) const;
 

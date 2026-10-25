@@ -967,3 +967,59 @@ TEST(math_sideset_has_a_thin_space_before_its_operator_after_a_relation_too) {
   // after an ordinary atom the space is the one ord-op already had: no more than before
   CHECK(width(R"(a\sideset{}{'}\sum b)") - width(R"(\sideset{}{'}\sum b)") == width("ab") - width("b"));
 }
+
+// \bm and \boldsymbol are the bold of each math alphabet as it stands, not \mathbf: a letter is bold italic, a digit or a
+// capital Greek letter bold upright. pdflatex: `\bm{b}` 5.21pt wide, `\mathbf{b}` 6.39; `\bm{\Sigma}` and `\mathbf{\Sigma}` both
+// 8.31. (LuaLaTeX with unicode-math cannot set \bm -- bm finds no bold shape in Latin Modern Math and draws a plain b -- and
+// its own bold italic is \symbfit.)
+TEST(math_bm_and_boldsymbol_are_bold_italic_for_letters_and_bold_upright_for_digits_and_capital_greek) {
+  const check::Pairs pairs = {
+    {R"(\bm{b})", R"(\mathbfit{b})"}, {R"(\boldsymbol{B})", R"(\mathbfit{B})"},
+    {R"(\bm{xyz})", R"(\mathbfit{xyz})"}, {R"(\bm{\alpha})", R"(\mathbfit{\alpha})"},
+    {R"(\boldsymbol{\mu})", R"(\mathbfit{\mu})"}, {R"(\bm{\Sigma})", R"(\mathbf{\Sigma})"},
+    {R"(\bm{12})", R"(\mathbf{12})"}, {R"(\pmb{b})", R"(\bm{b})"},
+    {R"(\boldsymbol\nabla)", R"(\mathbf{\nabla})"}, {R"(\boldsymbol\cdot)", R"(\mathbf{\cdot})"}};
+  CHECK_PAIRS_WITH(pairs, typeface());
+  CHECK(!check::sameInk(rec(R"(\bm{b})"), rec(R"(\mathbf{b})")));
+  CHECK(quiet(R"(\bm{b}_{XY}+\boldsymbol{\beta}^2)"));
+}
+
+// TeX sets `\mathbf{x}` as a character: its scripts hang from the baseline (the superscript is not raised by the box's height) and
+// carry the glyph's italic correction and kerns, and a row adds the correction after it. `\mathit` is the default math italic
+// here, so a wrapped letter must draw as the bare one. LuaLaTeX, 10pt: `\mathbb{R}^n` 6.83pt high (7.33 before), `\mathrm{f}^2`
+// 8.28 (9.13), `\mathbfit{\tau}` 6.32pt wide (5.12), `\mathbfit{\tau}^2` 10.86 (9.74).
+TEST(math_a_letter_in_a_font_command_is_set_as_a_character_is) {
+  const check::Pairs pairs = {
+    {R"(\mathit{f})", R"(f)"}, {R"(\mathit{f}_1)", R"(f_1)"}, {R"(\mathit{f}^2)", R"(f^2)"},
+    {R"(\mathit{f}_1^2)", R"(f_1^2)"}, {R"(\mathit{\tau}^2)", R"(\tau^2)"}, {R"(\mathit{\gamma}_i)", R"(\gamma_i)"},
+    {R"(\mathit{\mathit{f}}^2)", R"(f^2)"}, {R"(a\mathit{f}b)", R"(afb)"}, {R"(\mathit{\tau}x)", R"(\tau x)"},
+    {R"(\mathit{f}'x)", R"(f'x)"}};
+  CHECK_PAIRS_WITH(pairs, typeface());
+  // A word of more than one letter is a row, as before, and an upright letter (LuaLaTeX adds no correction to \mathrm{f}, 3.06pt)
+  // is the same as in a group.
+  Options opt = typeface();
+  opt.textSize = 100;
+  const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
+  CHECK(width(R"(\mathit{ff})") == width(R"(ff)"));
+  CHECK(width(R"(\mathrm{f})") == width(R"({\mathrm{f}})"));
+}
+
+// unicode-math's names for the alphabets are the engine's: \symbf keeps the slant of small Greek (LuaLaTeX: `\symbf{b}` and
+// `\symbf{\Sigma}` upright, `\symbf{\alpha}` slanted, 7.61pt, as `\symbfit{\alpha}`).
+TEST(math_unicode_maths_sym_names_draw_the_alphabets_they_stand_for) {
+  const check::Pairs pairs = {
+    {R"(\symbf{b})", R"(\mathbf{b})"}, {R"(\symbf{B1})", R"(\mathbf{B1})"}, {R"(\symbf{\Sigma})", R"(\mathbf{\Sigma})"},
+    {R"(\symbf{\alpha})", R"(\mathbfit{\alpha})"}, {R"(\symbfit{b})", R"(\mathbfit{b})"}, {R"(\symup{x})", R"(\mathrm{x})"},
+    {R"(\symit{x})", R"(\mathit{x})"}, {R"(\symsf{x})", R"(\mathsf{x})"}, {R"(\symbfsf{x})", R"(\mathbfsf{x})"},
+    {R"(\symbfsfit{x})", R"(\mathbfsfit{x})"}, {R"(\symtt{x})", R"(\mathtt{x})"}, {R"(\symbb{R})", R"(\mathbb{R})"},
+    {R"(\symcal{B})", R"(\mathcal{B})"}, {R"(\symscr{B})", R"(\mathscr{B})"}, {R"(\symbfscr{B})", R"(\mathbfcal{B})"},
+    {R"(\mathbfscr{B})", R"(\mathbfcal{B})"}, {R"(\symfrak{g})", R"(\mathfrak{g})"}, {R"(\symbffrak{g})", R"(\mathbffrak{g})"},
+    {R"(\mathup{x})", R"(\mathrm{x})"}, {R"(\mathbfup{x})", R"(\mathbf{x})"}, {R"(\symnormal{x})", R"(x)"},
+    {R"(\symbf{x}_1^2)", R"(\mathbf{x}_1^2)"}};
+  CHECK_PAIRS_WITH(pairs, typeface());
+  for (const auto& p : pairs) CHECK(quiet(p.first));
+  // \bm sets Latin letters in italic, \symbf upright.
+  CHECK(!check::sameInk(rec(R"(\symbf{b})"), rec(R"(\bm{b})")));
+  // The real package's options are read and ignored, with no warning.
+  CHECK(quiet(R"(\usepackage[math-style=ISO]{unicode-math}\symbfit{x})", InputMode::document));
+}

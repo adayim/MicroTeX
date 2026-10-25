@@ -83,6 +83,8 @@ public:
 
   inline float italic() const { return _chr.italic(); }
 
+  inline bool slanted() const { return _chr.isSlanted(); }
+
   void draw(Graphics2D& g2, float x, float y) override;
 
   int lastFontId() override;

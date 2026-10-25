@@ -2,7 +2,10 @@
 
 #include "atom/atom_accent.h"
 #include "atom/atom_basic.h"
+#include <functional>
+
 #include "atom/atom_char.h"
+#include "atom/atom_font.h"
 #include "atom/atom_stack.h"
 
 using namespace microtex;
@@ -55,11 +58,21 @@ ScriptResult ScriptsAtom::createScripts(Env& env) {
   bool isText = false, isOperator = false;
   const MathKernRecord* kernRecord = nullptr;
 
-  const auto checkAtom = [&](const sptr<Atom>& atom, Env& targetEnv) {
+  bool wrapped = false;
+  std::function<void(const sptr<Atom>&, Env&)> checkAtom = [&](const sptr<Atom>& atom, Env& targetEnv) {
+    // `\mathbf{x}_i` is a character in TeX, whatever font it is set in: its scripts hang from the
+    // baseline and the glyph's own italic correction and kerns, which depend on the style.
+    if (auto fs = dynamic_cast<FontStyleAtom*>(atom.get()); fs != nullptr && fs->loneMathChar() != nullptr) {
+      wrapped = true;
+      fs->inStyle(targetEnv, [&](Env& e) { checkAtom(fs->inner(), e); return 0; });
+      wrapped = false;
+      return;
+    }
     if (auto cs = dynamic_cast<CharSymbol*>(atom.get()); cs != nullptr) {
       const auto& chr = cs->getChar(targetEnv);
       kernRecord = &(chr.glyph()->math().kernRecord());
-      if (!cs->isText()) delta = chr.italic();
+      // In a font command only a slanted glyph has its correction, as in LuaLaTeX (Char::isSlanted).
+      if (!cs->isText() && (!wrapped || chr.isSlanted())) delta = chr.italic();
       isText = atom->_type != AtomType::bigOperator;
       isOperator = atom->_type == AtomType::bigOperator;
     }

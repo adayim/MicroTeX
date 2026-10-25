@@ -2,6 +2,7 @@
 
 #include "atom/atom_basic.h"
 #include "atom/atom_char.h"
+#include "atom/atom_font.h"
 #include "atom/atom_space.h"
 #include "atom/atom_text.h"
 #include "box/box_group.h"
@@ -21,6 +22,11 @@ bool AtomDecor::isChar() const {
 bool AtomDecor::isMathMode() const {
   if (!isChar()) return false;
   return static_cast<CharSymbol*>(_atom.get())->isMathMode();
+}
+
+bool AtomDecor::isWrappedMathChar() const {
+  const auto* f = dynamic_cast<const FontStyleAtom*>(_atom.get());
+  return f != nullptr && f->loneMathChar() != nullptr;
 }
 
 Char AtomDecor::getChar(Env& env) const {
@@ -75,7 +81,12 @@ bitset<16> RowAtom::_ligKernSet = bitset<16>()
 
 sptr<Atom> RowAtom::withItalic(const sptr<Atom>& atom) {
   const auto* c = dynamic_cast<const CharSymbol*>(atom.get());
-  if (c == nullptr || !c->isMathMode()) return atom;
+  if (c == nullptr) {
+    // A font command round one character is set as the character is.
+    const auto* f = dynamic_cast<const FontStyleAtom*>(atom.get());
+    return f != nullptr && f->loneMathChar() != nullptr ? sptrOf<RowAtom>(atom) : atom;
+  }
+  if (!c->isMathMode()) return atom;
   return sptrOf<RowAtom>(atom);
 }
 
@@ -425,7 +436,8 @@ sptr<Box> RowAtom::createBox(Env& env) {
     // correction itself.
     curr->setPreviousAtom(_previousAtom);
     auto box = curr->createBox(env);
-    if (auto cb = dynamic_cast<CharBox*>(box.get()); cb != nullptr && curr->isMathMode()) {
+    if (auto cb = dynamic_cast<CharBox*>(box.get());
+        cb != nullptr && (curr->isMathMode() || (curr->isWrappedMathChar() && cb->slanted()))) {
       kern += cb->italic();
     }
 

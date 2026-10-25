@@ -76,6 +76,17 @@ inline cmdmacro(bold) {
   return _mathfont(args, FontStyle::bf);
 }
 
+// \boldsymbol, \bm and \pmb: the bold version of each math alphabet as it
+// stands, so a letter is bold italic and a digit or capital Greek bold upright.
+inline cmdmacro(bm) {
+  return _mathfont(args, FontStyle::bm);
+}
+
+// unicode-math's \symbf: bold, keeping the slant TeX's math style gives each class.
+inline cmdmacro(symbf) {
+  return _mathfont(args, FontStyle::symbf);
+}
+
 cmdmacro(intertext);
 
 cmdmacro(mathversion);
