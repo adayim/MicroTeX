@@ -44,3 +44,6 @@
 \newcommand{\cramped}[2][]{{#2}}
 \newcommand{\mathmbox}[1]{\mbox{$#1$}}
 \newcommand{\mathtoolsset}[1]{}
+% \DeclarePairedDelimiter{\cmd}{left}{right}: `\cmd{x}` sets the delimiters at the size they are in, `\cmd[\big]{x}` at the size
+% given, and `\cmd*{x}` as \left...\right does.
+\NewDocumentCommand{\DeclarePairedDelimiter}{mmm}{\NewDocumentCommand#1{s o m}{\IfBooleanTF{##1}{\left#2 ##3\right#3}{\IfNoValueTF{##2}{#2 ##3#3}{##2#2 ##3##2#3}}}}

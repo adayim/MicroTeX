@@ -532,7 +532,7 @@ sptr<Box> MatrixAtom::generateMulticolumn(
 
   if (b->_width >= w) return b;
 
-  return sptrOf<HBox>(b, w, mca->align());
+  return sptrOf<HBox>(b, w, mca->alignFromColumn() && j < static_cast<int>(_position.size()) ? _position[j] : mca->align());
 }
 
 MatrixAtom::MatrixAtom(
@@ -638,7 +638,7 @@ void MatrixAtom::applyCell(WrapperBox& box, int i, int j) {
     for (const auto& s : row->second) s->apply(box);
   }
   // 3. apply cell specifier
-  const string key = toString(i) + toString(j);
+  const string key = ArrayFormula::cellKey(i, j);
   auto cell = _matrix->_cellSpecifiers.find(key);
   if (cell != _matrix->_cellSpecifiers.end()) {
     for (const auto& s : cell->second) s->apply(box);
@@ -661,6 +661,13 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   // multi-column & multi-row atoms
   vector<sptr<Atom>> multiCols;
   vector<sptr<Atom>> multiRows;
+  // The cells that span rows (tabularray's `r=2`), by where they begin: the row and column, how many columns and
+  // rows they cover, and where their text stands in them.
+  struct RowSpan {
+    int row, col, cols, rows;
+    char valign;
+  };
+  vector<RowSpan> rowSpans;
   for (int i = 0; i < rows; i++) {
     lineDepth[i] = 0;
     lineHeight[i] = 0;
@@ -701,7 +708,12 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
         }
       }
 
-      if (boxarr[i][j]->_type != AtomType::multiRow) {
+      // A cell that spans rows is as tall as the rows it covers, not as tall as the first: it does not set the row's
+      // height (the rows are made to hold it below).
+      const auto* spanning = dynamic_cast<const MulticolumnAtom*>(atom.get());
+      if (spanning != nullptr && spanning->rowSpan() > 1) {
+        rowSpans.push_back({i, j, spanning->skipped(), std::min(spanning->rowSpan(), rows - i), spanning->valign()});
+      } else if (boxarr[i][j]->_type != AtomType::multiRow) {
         // Find the highest line (row)
         lineDepth[i] = max(boxarr[i][j]->_depth, lineDepth[i]);
         lineHeight[i] = max(boxarr[i][j]->_height, lineHeight[i]);
@@ -855,6 +867,71 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
     }
   }
 
+  // A caption or a note of the table is set to the width of the table, which it does not make wider: wrapped
+  // there (to the left, as a wrapped caption is, a short one in the middle).
+  {
+    float tableWidth = -1.f;
+    for (const auto& a : multiCols) {
+      auto* mca = static_cast<MulticolumnAtom*>(a.get());
+      if (!mca->wrapToTable()) continue;
+      if (tableWidth < 0.f) {
+        // The columns as they will be: a cell that spans columns (a centred column's cell is one of one) is not in
+        // colWidth yet, and widens what it spans below, as it does after this.
+        vector<float> width(colWidth.begin(), colWidth.begin() + cols);
+        float natural = 0.f;
+        for (const float w : width) natural += w;
+        const vector<float> between = getColumnSep(env, natural);
+        for (const auto& b : multiCols) {
+          const auto* m = static_cast<const MulticolumnAtom*>(b.get());
+          if (m->wrapToTable() || boxarr[m->row()][m->col()] == nullptr) continue;
+          const int first = m->col(), last = std::min(cols, first + m->skipped()) - 1;
+          float spanned = 0.f;
+          for (int j = first; j <= last; j++) spanned += width[j] + (j > first ? between[j] : 0.f);
+          const float more = boxarr[m->row()][first]->_width - spanned;
+          if (more > 0.f) {
+            for (int j = first; j <= last; j++) width[j] += more / static_cast<float>(last - first + 1);
+          }
+        }
+        natural = 0.f;
+        for (const float w : width) natural += w;
+        const vector<float> edge = getColumnSep(env, natural);
+        tableWidth = natural;
+        for (int j = 0; j <= cols; j++) {
+          tableWidth += edge[j];
+          const auto it = _vlines.find(j);
+          if (it != _vlines.end()) tableWidth += it->second->getWidth(env);
+        }
+      }
+      const int r = mca->row(), c = mca->col();
+      // As a paragraph the width of the table sets it: on one line, in the place its alignment says, when it
+      // fits; else broken to the width, flush left (a hanging atom, as a caption's or a note's, hangs).
+      MergeTextGuard guard(true);
+      const sptr<Atom> text = mca->content() == nullptr ? sptr<Atom>(sptrOf<EmptyAtom>()) : mca->content();
+      const sptr<Box> oneLine = env.withTextWidth(POS_INF, [&](Env& e) { return cellBox(text, c, e); });
+      sptr<Box> wrapped;
+      if (oneLine->_width <= tableWidth) {
+        wrapped = alignedCell(oneLine, tableWidth, mca->align());
+      } else {
+        const sptr<Box> cell = env.withTextWidth(tableWidth, [&](Env& e) { return cellBox(text, c, e); });
+        const auto [wasSplit, splitBox] = BoxSplitter::split(cell, tableWidth, env.baselineSkip());
+        (void)wasSplit;
+        // A word that does not fit stays on its line. LaTeX hyphenates one it knows how to, which is not done here.
+        if (mca->report && splitBox->_width > tableWidth + 0.5f) {
+          mca->report("a word of the caption or note is wider than the table: it is not hyphenated, so its line is wider");
+        }
+        wrapped = alignedCell(splitBox, tableWidth, Alignment::left);
+      }
+      wrapped->_type = AtomType::multiColumn;
+      boxarr[r][c] = wrapped;
+      lineHeight[r] = lineDepth[r] = 0;
+      for (int j = 0; j < cols; j++) {
+        if (boxarr[r][j] == nullptr || boxarr[r][j]->_type == AtomType::multiRow) continue;
+        lineHeight[r] = max(boxarr[r][j]->_height, lineHeight[r]);
+        lineDepth[r] = max(boxarr[r][j]->_depth, lineDepth[r]);
+      }
+    }
+  }
+
   // TeX's rows (see RowSpacing). An array gives every row a strut. The
   // alignments of amsmath and smallmatrix set a baselineskip between the
   // baselines; where the rows are too tall for it, a lineskip between them
@@ -866,11 +943,24 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
     const auto isRule = [&](int i) { return boxarr[i][0]->_type == AtomType::hline; };
     if (_spacing == RowSpacing::strut) {
       const float strut = 1.2f * _baseEm * _matrix->_stretch;
+      // A caption or a note (wrapToTable) is a paragraph of the table's width, not a row of cells: it has no strut,
+      // its first line is as tall as its text, and the lines of one such paragraph and the next are a baselineskip apart.
+      const auto paragraphRow = [&](int i) {
+        for (std::size_t j = 0; j < _matrix->_array[i].size(); j++) {
+          const auto* m = dynamic_cast<const MulticolumnAtom*>(_matrix->_array[i][j].get());
+          if (m != nullptr && m->wrapToTable()) return true;
+        }
+        return false;
+      };
+      for (int i = 0; i + 1 < rows; i++) {
+        if (!isRule(i) && !isRule(i + 1) && paragraphRow(i) && paragraphRow(i + 1)) skipBelow[i] = -1.f;  // set below
+      }
       for (int i = 0; i < rows; i++) {
         if (isRule(i)) continue;
+        const bool paragraph = paragraphRow(i);
         // A paragraph in a cell (p{}, X) ends in a strut of the row's, as array's \@finalstrut makes it: the last
         // line is at least 0.3 of a baselineskip deep, so the rule under it stands that far below its text.
-        for (int j = 0; j < cols; j++) {
+        for (int j = 0; !paragraph && j < cols; j++) {
           const auto& cell = boxarr[i][j];
           if (cell == nullptr || cell->_type == AtomType::multiRow) continue;
           // The paragraph is the one box with size in what wraps it (an HBox of it and a strut).
@@ -893,9 +983,20 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           cell->_depth += extra;
           lineDepth[i] = max(lineDepth[i], cell->_depth);
         }
-        const float extraRow = _matrix->_extraRow.isValid() ? Units::fsize(_matrix->_extraRow, env) : 0.f;
-        lineHeight[i] = max(lineHeight[i], 0.7f * strut + extraRow);
-        lineDepth[i] = max(lineDepth[i], 0.3f * strut);
+        if (!paragraph) {
+          const float extraRow = _matrix->_extraRow.isValid() ? Units::fsize(_matrix->_extraRow, env) : 0.f;
+          lineHeight[i] = max(lineHeight[i], 0.7f * strut + extraRow);
+          lineDepth[i] = max(lineDepth[i], 0.3f * strut);
+        }
+        // tabularray's abovesep and belowsep: inside the row, outside its strut.
+        const auto sep = _matrix->_rowSeps.find(i);
+        if (sep != _matrix->_rowSeps.end()) {
+          if (sep->second.first.isValid()) lineHeight[i] += Units::fsize(sep->second.first, env);
+          if (sep->second.second.isValid()) lineDepth[i] += Units::fsize(sep->second.second, env);
+        }
+      }
+      for (int i = 0; i + 1 < rows; i++) {
+        if (skipBelow[i] < 0.f) skipBelow[i] = env.interline(lineDepth[i], lineHeight[i + 1]);
       }
     } else {
       const bool jot = _spacing == RowSpacing::jot;
@@ -983,6 +1084,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
 
   for (auto& i : multiCols) {
     auto* multi = (MulticolumnAtom*)i.get();
+    if (multi->wrapToTable()) continue;  // as wide as the table, not wider
     const int c = multi->col(), r = multi->row(), n = multi->skipped();
     float w = 0;
     int j = 0;
@@ -1017,6 +1119,33 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
   // Recalculate the height of the row
   recalculateLine(rows, boxarr, multiRows, lineHeight, lineDepth, drt, _texRows ? 0.f : Vsep->_height);
 
+  // The rows a spanning cell covers have to hold it: what they lack, the last of them gets.
+  const auto isRuleRow = [&](int r) { return boxarr[r][0] != nullptr && boxarr[r][0]->_type == AtomType::hline; };
+  for (const auto& s : rowSpans) {
+    float have = 0.f;
+    int last = s.row;
+    for (int r = s.row; r < s.row + s.rows; r++) {
+      have += isRuleRow(r) ? drt : lineHeight[r] + padTop[r] + lineDepth[r] + padBot[r];
+      if (!isRuleRow(r)) last = r;
+    }
+    const float need = boxarr[s.row][s.col]->_height + boxarr[s.row][s.col]->_depth;
+    if (need > have) lineDepth[last] += need - have;
+  }
+  // A cell that is under a spanning one is part of it: it has nothing of its own to fill (a row's colour, say).
+  const auto underSpan = [&](int r, int c) {
+    for (const auto& s : rowSpans) {
+      if (r > s.row && r < s.row + s.rows && c >= s.col && c < s.col + s.cols) return true;
+    }
+    return false;
+  };
+  vector<float> rowH(rows, 0.f);
+  struct PendingSpan {
+    sptr<WrapperBox> wb;
+    RowSpan span;
+    float height, depth;
+  };
+  vector<PendingSpan> pendingSpans;
+
   auto vb = sptrOf<VBox>();
   float totalHeight = 0;
   float firstBaseline = 0, lastBaseline = 0;
@@ -1038,12 +1167,14 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
               auto vat = it->second;
               vat->_height = lineHeight[i] + lineDepth[i] + padTop[i] + padBot[i];
               vat->_shift = lineDepth[i] + padBot[i];
+              vat->_row = i;
               auto vatBox = vat->createBox(env);
               hb->add(vatBox);
             }
           }
 
           bool isLastVline = true;
+          bool flush = false;
 
           sptr<WrapperBox> wb;
           int tj = j;
@@ -1057,15 +1188,33 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
               _position[j]  //
             );
           } else {
-            auto b = generateMulticolumn(env, boxarr[i][j], Hsep, colWidth, i, j);
             auto* matom = (MulticolumnAtom*)_matrix->_array[i][j].get();
+            // A caption or note was set to the table's width already, edge to edge.
+            flush = matom->wrapToTable();
+            auto b = flush ? boxarr[i][j] : generateMulticolumn(env, boxarr[i][j], Hsep, colWidth, i, j);
             j += matom->skipped() - 1;
             wb = sptrOf<WrapperBox>(b, b->_width, lineHeight[i], lineDepth[i], Alignment::left);
             isLastVline = matom->hasRightVline();
           }
           float r = j == cols - 1 ? Hsep[j + 1] : Hsep[j + 1] / 2;
+          if (flush) l = r = 0.f;
           wb->addInsets(l, padTop[i], r, padBot[i]);
-          applyCell(*wb, i, j);
+          // What is set for the cell (a colour, a column's specifier) is set for the cell that begins the span: a
+          // spanning cell is the one at its first column (`j` is its last by now).
+          if (!underSpan(i, tj)) applyCell(*wb, i, tj);
+          // A cell that spans rows is made to cover them once the rows are all set (below).
+          for (const auto& s : rowSpans) {
+            if (s.row == i && s.col == tj) {
+              pendingSpans.push_back({wb, s, boxarr[i][tj]->_height, boxarr[i][tj]->_depth});
+            }
+          }
+          // (a cell of one row, told to stand in the middle or at the bottom of a row taller than its text)
+          if (const auto* one = tj < static_cast<int>(_matrix->_array[i].size())
+                                  ? dynamic_cast<const MulticolumnAtom*>(_matrix->_array[i][tj].get())
+                                  : nullptr;
+              one != nullptr && one->rowSpan() == 1 && (one->valign() == 'm' || one->valign() == 'b' || one->valign() == 'f')) {
+            pendingSpans.push_back({wb, {i, tj, one->skipped(), 1, one->valign()}, boxarr[i][tj]->_height, boxarr[i][tj]->_depth});
+          }
           boxarr[i][tj] = wb;
           hb->add(wb);
 
@@ -1074,6 +1223,7 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
             auto vat = it->second;
             vat->_height = lineHeight[i] + lineDepth[i] + padTop[i] + padBot[i];
             vat->_shift = lineDepth[i] + padBot[i];
+              vat->_row = i;
             auto vatBox = vat->createBox(env);
             hb->add(vatBox);
           }
@@ -1091,6 +1241,35 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
           if (isTransparent(at->ruleColor())) at->setColor(LINE_COLOR);   // its own colour, from when it was made
           if (i >= 1 && dynamic_cast<HlineAtom*>(_matrix->_array[i - 1][j].get()) != nullptr) {
             hb->add(sptrOf<StrutBox>(0.f, 2 * drt, 0.f, 0.f));
+          }
+          if (!at->pieces().empty() && cols > 0) {
+            // A rule of several pieces (tabularray's hline{2}={1-2,5}): each from the left edge of its
+            // first cell to the right edge of its last, less what leftpos / rightpos take off the
+            // padding on that side, all in this one row.
+            float done = 0;
+            for (const auto& p : at->pieces()) {
+              const int a = std::min(std::max(p.from, 0), cols - 1);
+              const int b = std::min(std::max(p.to, a), cols - 1);
+              float left = 0;
+              if (a > 0) {
+                for (int c = 0; c < a; c++) left += colWidth[c] + Hsep[c];
+                left += Hsep[a] / 2;
+              }
+              float right = 0;
+              for (int c = 0; c <= b; c++) right += colWidth[c] + Hsep[c];
+              right += b == cols - 1 ? Hsep[cols] : Hsep[b + 1] / 2;
+              const float leftPad = a == 0 ? Hsep[0] : Hsep[a] / 2;
+              const float rightPad = b == cols - 1 ? Hsep[cols] : Hsep[b + 1] / 2;
+              if (p.leftpos < 0) left += -p.leftpos * leftPad;
+              if (p.rightpos < 0) right -= -p.rightpos * rightPad;
+              if (right <= left || left < done) continue;
+              if (left > done) hb->add(sptrOf<StrutBox>(left - done, 0.f, 0.f, 0.f));
+              at->setWidth(right - left);
+              hb->add(at->createBox(env));
+              done = right;
+            }
+            j = cols;
+            break;
           }
           if (at->colStart() >= 0 && cols > 0) {
             // Partial rule: \cline{a-b}. Span left edge of column a to
@@ -1143,12 +1322,35 @@ sptr<Box> MatrixAtom::createBoxInner(Env& env) {
       lastBaseline = at;
       seenRow = true;
     }
+    rowH[i] = hb->_height + hb->_depth;
     vb->add(hb);
+  }
+
+  // Each cell that spans rows now fills the rows it covers and stands in them where its `valign` says.
+  for (const auto& p : pendingSpans) {
+    float whole = 0.f;
+    for (int r = p.span.row; r < p.span.row + p.span.rows; r++) whole += rowH[r];
+    const auto sep = [&](int r, bool above) {
+      const auto it = _matrix->_rowSeps.find(r);
+      if (it == _matrix->_rowSeps.end()) return 0.f;
+      const Dimen& d = above ? it->second.first : it->second.second;
+      return d.isValid() ? Units::fsize(d, env) : 0.f;
+    };
+    const float topEdge = sep(p.span.row, true);
+    const float bottomEdge = whole - sep(p.span.row + p.span.rows - 1, false);
+    const float baseline = lineHeight[p.span.row] + padTop[p.span.row];
+    float shift = 0.f;
+    if (p.span.valign == 'm') {
+      shift = (topEdge + bottomEdge) / 2.f - (baseline + (p.depth - p.height) / 2.f);
+    } else if (p.span.valign == 'b' || p.span.valign == 'f') {
+      shift = bottomEdge - p.depth - baseline;
+    }
+    p.wb->extend(whole - rowH[p.span.row], shift);
   }
 
   totalHeight = vb->_height + vb->_depth;
 
-  const auto axis = env.axisHeight();
+  const auto axis = _matType == MatrixType::smallMatrix ? _baseAxis : env.axisHeight();
   if (_matrix->_vpos != 'c' && seenRow) {
     // tabular[t] and [b]: the baseline of the first row or of the last.
     const float baseline = _matrix->_vpos == 't' ? firstBaseline : lastBaseline;
@@ -1172,6 +1374,11 @@ sptr<Box> MatrixAtom::createBox(Env& env) {
 
 sptr<Box> MatrixAtom::createBoxStyled(Env& env) {
   _baseEm = env.em();
+  _baseAxis = env.axisHeight();
+  for (const auto& [col, style] : _matrix->_vlineStyles) {
+    const auto it = _vlines.find(col);
+    if (it != _vlines.end()) it->second->setStyle(style);
+  }
   _texRows = _spacing == RowSpacing::sub ||
              (_spacing != RowSpacing::content && env.style() < TexStyle::script);
   if (_matType == MatrixType::smallMatrix) {
@@ -1282,14 +1489,19 @@ sptr<Box> HdotsforAtom::createBox(Env& env) {
 }
 
 float VlineAtom::getWidth(Env& env) const {
-  return _n == 0 ? 0 : env.ruleThickness() * (3 * _n - 2);
+  const float drt = _thickness.isValid() ? Units::fsize(_thickness, env) : env.ruleThickness();
+  return _n == 0 ? 0 : drt * (3 * _n - 2);
 }
 
 sptr<Box> VlineAtom::createBox(Env& env) {
   if (_n == 0) return StrutBox::empty();
+  // A row the rule does not run through keeps the room it takes.
+  if (!_rows.empty() && !(_row >= 0 && static_cast<std::size_t>(_row) < _rows.size() && _rows[_row])) {
+    return sptrOf<StrutBox>(getWidth(env), 0.f, 0.f, 0.f);
+  }
 
-  const auto drt = env.ruleThickness();
-  auto rb = sptrOf<RuleBox>(_height, drt, _shift, MatrixAtom::LINE_COLOR, true);
+  const float drt = _thickness.isValid() ? Units::fsize(_thickness, env) : env.ruleThickness();
+  auto rb = sptrOf<RuleBox>(_height, drt, _shift, _hasColour ? _colour : MatrixAtom::LINE_COLOR, true);
   if (_dashed) rb->setDash(Units::fsize(UnitType::em, 0.35f, env));
   auto sep = sptrOf<StrutBox>(2 * drt, 0.f, 0.f, 0.f);
   auto hb = sptrOf<HBox>();

@@ -204,7 +204,16 @@ public:
                  const sptr<Atom>& scriptScript)
       : _choice{display, text, script, scriptScript} {}
 
+  /** The choice is replaced by the list it picks before the spaces are set (tex.web 1151, 760), so it spaces as that list does:
+   *  as the text choice, the four being a list set in four styles (\mathpalette) and so of one kind. */
+  AtomType leftType() const override { return pick() == nullptr ? Atom::leftType() : pick()->leftType(); }
+
+  AtomType rightType() const override { return pick() == nullptr ? Atom::rightType() : pick()->rightType(); }
+
   sptr<Box> createBox(Env& env) override;
+
+private:
+  const sptr<Atom>& pick() const { return _choice[1] != nullptr ? _choice[1] : _choice[0]; }
 };
 
 /** An atom representing long division */

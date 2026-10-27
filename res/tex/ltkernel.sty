@@ -1,0 +1,70 @@
+\ProvidesPackage{ltkernel}[2026/10/28 the registers and constants of the LaTeX kernel that packages are written with]
+% latex.ltx (lines 137-139, 321-329, 344-350, 8790-8802): the small numbers, the scratch registers and the glue every package uses,
+% and \loop. Registers are the expander's (front/expander.cpp: \newcount, \newdimen, \newskip, \newtoks, \advance, \the, \ifdim);
+% this file only names them.
+\chardef\@ne=1
+\chardef\tw@=2
+\chardef\thr@@=3
+\chardef\sixt@@n=16
+\chardef\active=13
+\chardef\@cclv=255
+\chardef\@cclvi=256
+\chardef\@m=1000
+\chardef\@M=10000
+\chardef\@MM=20000
+\newcount\m@ne \m@ne=-1
+\newcount\count@
+\newdimen\z@ \z@=0pt
+\newdimen\p@ \p@=1pt
+\newdimen\maxdimen \maxdimen=16383.99999pt
+\newskip\z@skip \z@skip=0pt plus0pt minus0pt
+\newdimen\dimen@
+\newdimen\dimen@i
+\newdimen\dimen@ii
+\newskip\skip@
+\newcount\@tempcnta
+\newcount\@tempcntb
+\newif\if@tempswa
+\newdimen\@tempdima
+\newdimen\@tempdimb
+\newdimen\@tempdimc
+\newskip\@tempskipa
+\newskip\@tempskipb
+\newtoks\@temptokena
+\newskip\@flushglue \@flushglue=0pt plus 1fil
+% TeX's parameters of the input: kept (a package saves and restores them) and not acted on
+\newcount\endlinechar \endlinechar=13
+\newcount\newlinechar \newlinechar=-1
+\newcount\escapechar \escapechar=92
+\def\space{ }
+% \m@th is \mathsurround\z@ (latex.ltx); a formula here has no math surround
+\def\m@th{}
+\long\def\loop#1\repeat{\def\iterate{#1\relax\expandafter\iterate\fi}\iterate\let\iterate\relax}
+\let\repeat\fi
+% latex.ltx's messages (\PackageError, \PackageWarning, \ClassWarning, \GenericError, \@latex@warning...): the engine has no log, so each
+% is a warning at the line and column of the call, and the info forms say nothing. \gmwarning is the engine's.
+\def\MessageBreak{ }
+\def\on@line{}
+\def\@ehd{}
+\long\def\PackageError#1#2#3{\gmwarning{Package #1 Error: #2.}}
+\long\def\PackageWarning#1#2{\gmwarning{Package #1 Warning: #2.}}
+\long\def\PackageWarningNoLine#1#2{\gmwarning{Package #1 Warning: #2.}}
+\long\def\PackageInfo#1#2{}
+\long\def\ClassError#1#2#3{\gmwarning{Class #1 Error: #2.}}
+\long\def\ClassWarning#1#2{\gmwarning{Class #1 Warning: #2.}}
+\long\def\ClassWarningNoLine#1#2{\gmwarning{Class #1 Warning: #2.}}
+\long\def\ClassInfo#1#2{}
+\long\def\GenericError#1#2#3#4{\gmwarning{#2.}}
+\long\def\GenericWarning#1#2{\gmwarning{#2.}}
+\long\def\GenericInfo#1#2{}
+\long\def\@latex@error#1#2{\gmwarning{LaTeX Error: #1.}}
+\long\def\@latex@warning#1{\gmwarning{LaTeX Warning: #1.}}
+\long\def\@latex@warning@no@line#1{\gmwarning{LaTeX Warning: #1.}}
+\long\def\@latex@info#1{}
+% The format's date (latex.ltx \fmtversion, \@ifl@t@r): a date is YYYY/MM/DD or YYYY-MM-DD, compared as the number YYYYMMDD.
+\def\fmtversion{2025/11/01}
+\def\gm@datenum#1#2#3#4#5#6#7#8#9\gm@nil{#1#2#3#4#6#7#9}
+\long\def\@ifl@t@r#1#2{\ifnum\expandafter\gm@datenum#1\gm@nil<\gm@datenum#2\gm@nil\relax\expandafter\@secondoftwo\else\expandafter\@firstoftwo\fi}
+\long\def\IfFormatAtLeastTF#1{\@ifl@t@r\fmtversion{#1}}
+\long\def\IfFormatAtLeastT#1#2{\@ifl@t@r\fmtversion{#1}{#2}{}}
+\long\def\IfFormatAtLeastF#1#2{\@ifl@t@r\fmtversion{#1}{}{#2}}

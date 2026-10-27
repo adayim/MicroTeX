@@ -259,6 +259,36 @@ TEST(tables_tabular_star_spreads_its_columns_across_its_width_tabularx_its_x_col
   CHECK(r[0].x > 250);
 }
 
+// save_tt()'s documented preamble defines the two commands tinytable uses as `cmd=` values. tabularray keeps such a
+// value unexpanded; expanding it read `cmd=\underline{}` and an extra `}`.
+TEST(tblr_the_preamble_tinytable_documents_does_not_expand_cmd_values) {
+  const std::string preamble =
+    "\\newcommand{\\tinytableTabularrayUnderline}[1]{\\underline{#1}}\n"
+    "\\newcommand{\\tinytableTabularrayStrikeout}[1]{\\sout{#1}}\n";
+  const std::string table =
+    "\\begin{tblr}[   %% outer open\n]{ %% inner open\ncolspec={Q[]Q[]},\nrow{2}={}{cmd=\\tinytableTabularrayUnderline},\n"
+    "row{3}={}{cmd=\\tinytableTabularrayUnderline\\tinytableTabularrayStrikeout, font=\\bfseries},\n}\n"
+    "x & y \\\\\nu & v \\\\\np & q \\\\\n\\end{tblr}";
+  const auto drawn = rec(preamble + table, 300, 10, InputMode::document);
+  CHECK(drawn.warnings.empty());
+  CHECK(!check::of(drawn, DrawRecord::FILL_RECT).empty() || !check::of(drawn, DrawRecord::LINE).empty());
+  // Called with an argument, as a user's own cell, it is still the macro.
+  CHECK(quiet(preamble + "\\begin{tabular}{l}\\tinytableTabularrayUnderline{under}\\end{tabular}"));
+}
+
+// \@makecaption centres a caption that fits the line, so one written before \centering (what tinytable's
+// tabular theme writes) stands where one after it does.
+TEST(tables_a_caption_in_a_float_is_centred_whether_or_not_centering_comes_first) {
+  const std::string table = "\\begin{tabular}{l}x\\end{tabular}\n\\end{table}";
+  const auto before = check::of(
+    rec("\\begin{table}\n\\caption{Cap}\n\\centering\n" + table, 300, 10, InputMode::document), DrawRecord::TEXT);
+  const auto after = check::of(
+    rec("\\begin{table}\n\\centering\n\\caption{Cap}\n" + table, 300, 10, InputMode::document), DrawRecord::TEXT);
+  CHECK(!before.empty() && !after.empty());
+  CHECK(before[0].x > 100);
+  CHECK(std::fabs(before[0].x - after[0].x) <= 1e-3f);
+}
+
 TEST(tables_a_longtable_sets_its_head_and_foot_once_and_its_caption_above) {
   const std::string tex =
     "\\begin{longtable}{lr}\n\\caption{Cap}\\\\\n\\hline A & B \\endfirsthead\n\\hline C & D \\endhead\n"
@@ -403,11 +433,306 @@ TEST(tblr_cells_take_the_colours_fonts_alignment_and_spans_it_sets) {
 }
 
 TEST(tblr_a_talltblr_has_its_caption_above_it_and_what_is_not_understood_is_said) {
-  const std::string tex = "\\begin{talltblr}[caption={Cars}]{colspec={Q[]Q[]}}\na & b \\\\\n\\end{talltblr}";
-  CHECK_EQ(linesOf(tex)[0], std::string("Cars"));
-  const auto w = rec(tblr("colspec={Q[]}, rowsep=3pt, cell{1}{1}={r=2}{}", "a \\\\ b \\\\"));
-  CHECK(check::warns(w, "rowsep"));
-  CHECK(check::warns(w, "row span"));
+  const std::string tex =
+    "\\begin{talltblr}[caption={Cars}]{colspec={Q[]Q[]}}\naaaaaaaaaa & bbbbbbbbbb \\\\\n\\end{talltblr}";
+  CHECK_EQ(linesOf(tex)[0], std::string("Table1:Cars"));  // as tabularray's caption-tag sets it
+  // A caption wider than the table wraps at the table's width instead of widening it.
+  const auto narrow = linesOf("\\begin{talltblr}[caption={Cars of the year}]{colspec={Q[]}}\na \\\\\n\\end{talltblr}");
+  CHECK(narrow.size() > 2u);
+  // The cells of a centred column span one column and were left out of the table's width when the caption was wrapped to it,
+  // so a caption that fits wrapped after "Table" (LuaLaTeX: 34.06pt high with one line, ours 34.13; wrapped it would be 46).
+  const std::string cells = "aaaaaaaaaaaaaaa & bbbbbbbbbbbbbbb \\\\\n\\end{talltblr}";
+  CHECK_EQ(linesOf("\\begin{talltblr}[caption={Cars of}]{colspec={Q[]Q[]}, column{2}={}{halign=c}}\n" + cells).size(),
+           linesOf("\\begin{talltblr}[caption={Cars of}]{colspec={Q[]Q[]}}\n" + cells).size());
+  // A word that is wider than the table cannot be broken (LaTeX would hyphenate one it can): said, and not when the words fit.
+  CHECK(check::warns(rec("\\begin{talltblr}[caption={Cars of the year}]{colspec={Q[]}}\na \\\\\n\\end{talltblr}"), "wider than the table"));
+  CHECK(!check::warns(rec(tex), "wider than the table"));
+  const auto w = rec(tblr("colspec={Q[]Q[]}, frobnicate=3pt, cell{1}{1}={c=2}{}", "a & b \\\\ c & d \\\\"));
+  CHECK(check::warns(w, "frobnicate"));
+  // A cell that spans columns and rows is drawn, once, and the cells it covers are not.
+  const auto block = rec(tblr("colspec={Q[]Q[]Q[]}, cell{1}{1}={c=2, r=2}{bg=red}", "a & & z \\\\ p & q & y \\\\ m & n & x \\\\"), 300, 10,
+                         InputMode::document);
+  CHECK(block.warnings.empty());
+  std::string drawn;
+  for (const std::string& line : check::lines(block)) drawn += line;
+  CHECK(drawn.find('a') != std::string::npos);
+  CHECK(drawn.find('p') == std::string::npos && drawn.find('q') == std::string::npos);
+  CHECK(drawn.find('m') != std::string::npos && drawn.find('z') != std::string::npos);
+  // Its fill is one rectangle as wide as two columns and as tall as two rows.
+  std::vector<DrawRecord> reds;
+  for (const auto& f : check::of(block, DrawRecord::FILL_RECT)) {
+    if (f.col == 0xFFFF0000u) reds.push_back(f);
+  }
+  CHECK_EQ(reds.size(), 1u);
+  if (reds.size() == 1) {
+    const auto single = rec(tblr("colspec={Q[]Q[]Q[]}, cell{1}{1}={}{bg=red}", "a & & z \\\\ p & q & y \\\\ m & n & x \\\\"), 300, 10,
+                            InputMode::document);
+    float oneWide = 0, oneTall = 0;
+    for (const auto& f : check::of(single, DrawRecord::FILL_RECT)) {
+      if (f.col == 0xFFFF0000u) { oneWide = f.width; oneTall = f.height; }
+    }
+    CHECK(reds[0].width > 1.8f * oneWide);
+    CHECK(reds[0].height > 1.8f * oneTall);
+  }
+  // A row span alone is drawn, and says nothing; the cell under it is not drawn.
+  const auto spanned = rec(tblr("colspec={Q[]Q[]}, cell{1}{1}={r=2}{}", "a & b \\\\ x & d \\\\"));
+  CHECK(!check::warns(spanned, "row span"));
+  std::string all;
+  for (const std::string& line : check::lines(spanned)) all += line;
+  CHECK(all.find('a') != std::string::npos);
+  CHECK(all.find('x') == std::string::npos);
+  // rowsep is read: it moves the rows, it does not warn.
+  CHECK(!check::warns(rec(tblr("colspec={Q[]}, rowsep=3pt", "a \\\\ b \\\\")), "rowsep"));
+}
+
+// \fontsize reads its size as TeX does: em is the size around it, the other units are lengths, a bare number points.
+TEST(fontsize_reads_em_and_absolute_units) {
+  const auto width = [](const std::string& size) {
+    return rec("{\\fontsize{" + size + "}{" + size + "}\\selectfont aaaa}", 300, 10, InputMode::mixed).width;
+  };
+  const float plain = rec("{aaaa}", 300, 10, InputMode::mixed).width;
+  CHECK(std::fabs(width("2em") - width("20pt")) < 0.01f);
+  CHECK(std::fabs(width("20") - width("20pt")) < 0.01f);
+  CHECK(std::fabs(width("2em") - 2.f * plain) < 0.05f * plain);
+  CHECK(width("0.5em") < plain);
+  CHECK(std::fabs(width("1in") - width("72.27pt")) < 0.01f);
+  CHECK(!rec("{\\fontsize{2ex}{2ex}\\selectfont a}", 300, 10, InputMode::mixed).warnings.empty());
+}
+
+// A colour set for a cell that spans columns is on that cell, and a cell after one is its own.
+TEST(tblr_the_colours_of_a_spanning_cell_are_on_the_cell_and_on_no_other) {
+  const auto count = [](const std::string& spec, std::uint32_t colour) {
+    const auto r = rec(tblr("colspec={Q[]Q[]Q[]Q[]}, " + spec, "A & & B & \\\\ c & d & e & f \\\\"), 300, 10, InputMode::document);
+    int n = 0;
+    for (const auto& f : check::of(r, DrawRecord::FILL_RECT)) n += f.col == colour ? 1 : 0;
+    return n;
+  };
+  const std::string spans = "cell{1}{1}={c=2}{bg=red}, cell{1}{3}={c=2}{bg=blue}";
+  CHECK_EQ(count(spans, 0xFFFF0000u), 1);  // one rectangle for the cell that spans two columns, not one a column
+  CHECK_EQ(count(spans, 0xFF0000FFu), 1);
+  // The row's colour on a row whose cells span: each cell has it once.
+  CHECK_EQ(count("cell{1}{1}={c=2}{}, cell{1}{3}={c=2}{}, row{1}={}{bg=red}", 0xFFFF0000u), 2);
+  // Where the foreground is set, the text of the spanning cell is that colour.
+  const auto fg = rec(tblr("colspec={Q[]Q[]Q[]Q[]}, cell{1}{3}={c=2}{fg=red}", "A & & B & \\\\ c & d & e & f \\\\"), 300, 10,
+                      InputMode::document);
+  CHECK(check::drawsColour(fg, 0xFFFF0000u));
+}
+
+// The cell a colour is for is found by its row and column, not by their digits run together: row 2 column 12 is
+// not row 12 column 2.
+TEST(tblr_a_colour_is_on_the_cell_it_names_in_a_table_of_twelve_columns_and_rows) {
+  std::string spec = "colspec={Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]}, cell{2}{12}={}{bg=red}";
+  std::string body;
+  for (int r = 0; r < 13; r++) {
+    for (int c = 0; c < 12; c++) body += std::string(c > 0 ? " & " : "") + "x";
+    body += " \\\\ ";
+  }
+  const auto r = rec(tblr(spec, body), 300, 10, InputMode::document);
+  int n = 0;
+  for (const auto& f : check::of(r, DrawRecord::FILL_RECT)) n += f.col == 0xFFFF0000u ? 1 : 0;
+  CHECK_EQ(n, 1);
+}
+
+// A note wider than its table wraps at the table's width and hangs: its second line stands under the text of the
+// first, 0.7em in (tabularray's \hangindent), not under the tag.
+TEST(tblr_a_note_wider_than_the_table_wraps_and_hangs_under_its_text) {
+  const std::string tex =
+    "\\begin{talltblr}[note{a}={one two three four five six}]{colspec={Q[]}, hline{2}={}{0.05em}}\n"
+    "aaaaaaaaaaaa \\\\\n\\end{talltblr}";
+  const auto r = rec(tex, 300, 10, InputMode::document);
+  CHECK(r.warnings.empty());
+  float lastRule = -1e9f;
+  for (const auto& l : check::of(r, DrawRecord::LINE)) lastRule = std::max(lastRule, std::max(l.y1, l.y2));
+  // The note's lines: what is drawn below the table's last rule, line by line.
+  std::vector<float> ys;
+  for (const auto& t : check::of(r, DrawRecord::TEXT)) {
+    if (t.y > lastRule && std::find_if(ys.begin(), ys.end(), [&](float y) { return std::fabs(y - t.y) < 3.f; }) == ys.end()) ys.push_back(t.y);
+  }
+  std::sort(ys.begin(), ys.end());
+  CHECK(ys.size() >= 2);
+  float tagX = 1e9f, laterX = 1e9f;
+  for (const auto& t : check::of(r, DrawRecord::TEXT)) {
+    if (t.y <= lastRule) continue;
+    if (std::fabs(t.y - ys.front()) < 3.f) tagX = std::min(tagX, t.x); else laterX = std::min(laterX, t.x);
+  }
+  // The first line begins with the tag, in a box of 0.7em (7 at 10pt); the lines after it begin under the text.
+  CHECK(std::fabs((laterX - tagX) - 7.f) < 1.f);
+}
+
+// TeX drops the space after a forced line break at the start of the next line, in a cell as anywhere.
+TEST(tables_a_space_after_a_line_break_in_a_cell_does_not_start_the_next_line) {
+  const auto startOfSecondLine = [](const std::string& body, bool tblrCell = false) {
+    const auto r = rec(tblrCell ? "\\begin{tblr}{width=100pt, colspec={X[]}}\n{" + body + "} \\\\\n\\end{tblr}"
+                                : "\\begin{tabular}{p{3cm}}" + body + "\\end{tabular}",
+                       300, 10, InputMode::document);
+    std::vector<float> ys;
+    for (const auto& t : check::of(r, DrawRecord::TEXT)) {
+      if (std::find_if(ys.begin(), ys.end(), [&](float y) { return std::fabs(y - t.y) < 1.f; }) == ys.end()) ys.push_back(t.y);
+    }
+    std::sort(ys.begin(), ys.end());
+    float first = 1e9f, second = 1e9f;
+    for (const auto& t : check::of(r, DrawRecord::TEXT)) {
+      if (ys.size() < 2) break;
+      if (std::fabs(t.y - ys[0]) < 1.f) first = std::min(first, t.x);
+      if (std::fabs(t.y - ys[1]) < 1.f) second = std::min(second, t.x);
+    }
+    return std::make_pair(first, second);
+  };
+  const auto spaced = startOfSecondLine("Sed ut \\\\ perspiciatis");
+  const auto tight = startOfSecondLine("Sed ut \\\\perspiciatis");
+  CHECK(spaced.second < 1e8f);
+  CHECK(std::fabs(spaced.second - spaced.first) < 0.01f);  // flush with the first line
+  CHECK(std::fabs(spaced.second - tight.second) < 0.01f);  // the space is nothing
+  // The same in a tabularray X cell, where the text is in braces.
+  const auto inBraces = startOfSecondLine("Sed ut \\\\ perspiciatis", true);
+  CHECK(inBraces.second < 1e8f);
+  CHECK(std::fabs(inBraces.second - inBraces.first) < 0.01f);
+}
+
+// \NewTableCommand takes the arguments \newcommand does.
+TEST(tabularray_NewTableCommand_defines_a_command_with_the_arguments_newcommand_has) {
+  const auto text = [](const std::string& tex) {
+    std::string all;
+    for (const std::string& line : check::lines(rec(tex, 300, 10, InputMode::mixed))) all += line;
+    return all;
+  };
+  CHECK_EQ(text("\\NewTableCommand{\\foo}[2]{[#1|#2]}\\foo{a}{b}"), std::string("[a|b]"));
+  CHECK_EQ(text("\\NewTblrTableCommand{\\zzcmd}[1][x]{<#1>}\\zzcmd\\ \\zzcmd{y}"), std::string("<x><x>y"));  // [1][x]: an optional argument, `{y}` is not one
+  CHECK(quiet("\\NewTableCommand{\\tinytableDefineColor}[3]{\\definecolor{#1}{#2}{#3}}"
+              "\\tinytableDefineColor{cabc}{HTML}{aabbcc}\\textcolor{cabc}{x}"));
+}
+
+// tabularray takes a table command out of its cell, so the space or line end that follows one at the start of a cell is
+// the start of the cell, and is dropped: the table is as wide as it is without the command.
+TEST(tblr_a_table_command_at_the_start_of_a_cell_leaves_no_space_in_it) {
+  const auto width = [](const std::string& first) {
+    return rec("\\begin{tblr}{colspec={Q[]Q[]}}\n" + first + "\nmpg & cyl \\\\\n21.0 & 6 \\\\\n\\end{tblr}", 300, 10,
+               InputMode::document).width;
+  };
+  CHECK(std::fabs(width("\\tinytableDefineColor{cz}{HTML}{FFA500}") - width("")) < 0.01f);
+  CHECK(std::fabs(width("\\tinytableDefineColor{cz}{HTML}{FFA500}\\tinytableDefineColor{cy}{HTML}{00A5FF}") - width("")) < 0.01f);
+}
+
+// \ignorespaces expands what follows until a token that is not a space (a space after a braced argument is a space).
+TEST(ignorespaces_drops_the_spaces_after_a_macro_and_only_those) {
+  const auto width = [](const std::string& tex) { return rec(tex, 300, 10, InputMode::mixed).width; };
+  const float tight = width("Ab");
+  CHECK(width("A b") > tight + 0.5f);
+  CHECK(std::fabs(width("\\def\\a#1{#1\\ignorespaces}\\a{A}   b") - tight) < 0.01f);
+  CHECK(std::fabs(width("\\def\\s{ }\\def\\a#1{#1\\ignorespaces}\\a{A}\\s\\s b") - tight) < 0.01f);
+  CHECK(width("\\def\\a#1{#1}\\a{A}   b") > tight + 0.5f);
+}
+
+// \newlength refuses a name that is taken, as LaTeX does ("Command \parindent already defined"), and keeps its value.
+TEST(lengths_newlength_says_a_name_that_is_taken_and_keeps_its_value) {
+  const auto twice = rec("\\newlength{\\gmx}\\setlength{\\gmx}{5pt}\\newlength{\\gmx}x", 300, 10, InputMode::document);
+  CHECK(check::warns(twice, "\\gmx is already defined"));
+  CHECK(check::warns(rec("\\newlength{\\parindent}x", 300, 10, InputMode::document), "\\parindent is already defined"));
+  CHECK(rec("\\newlength{\\gmx}x", 300, 10, InputMode::document).warnings.empty());
+  // The value set before the second \newlength is still there: a paragraph's indent shows it.
+  const auto indented = [](const std::string& lead) {
+    return check::of(rec(lead + "\\setlength{\\parindent}{30pt}\\newlength{\\parindent}\n\nx", 300, 10, InputMode::document),
+                     DrawRecord::TEXT);
+  };
+  const auto first = indented("");
+  CHECK(!first.empty());
+  CHECK(first[0].x > 25.f);
+}
+
+// xparse looks past spaces for an optional argument and, when there is none, leaves them: `\f{x} b` keeps its space whatever
+// `\f` ends in (LuaLaTeX, `\NewDocumentCommand\zza{mo}{[#1]}`: `a\zza{x} b` 24.73pt, `a\zza{x}b` 21.40, `a\zza{x}[y] b` 24.73).
+TEST(xparse_a_trailing_optional_argument_that_is_not_there_leaves_the_space_after_the_command) {
+  const auto width = [](const std::string& tex) { return rec(tex, 300, 10, InputMode::mixed).width; };
+  for (const char* spec : {"mo", "ms", "mt="}) {
+    const std::string def = std::string("a\\NewDocumentCommand\\zza{") + spec + "}{[#1]}";
+    CHECK(width(def + "\\zza{x} b") > width(def + "\\zza{x}b") + 0.5f);
+  }
+  // Found, a spaced `[y]` is its argument, as it is in LaTeX.
+  const std::string def = "a\\NewDocumentCommand\\zza{mo}{[#1]}";
+  CHECK(std::fabs(width(def + "\\zza{x} [y] b") - width(def + "\\zza{x}[y] b")) < 0.01f);
+}
+
+// An `si` column keeps the room `table-format` says, and a key of siunitx's that is not read is said.
+TEST(tblr_si_reserves_the_room_of_its_table_format_and_says_the_options_it_does_not_read) {
+  const std::string rows = "1.5 \\\\ 22.25 \\\\";
+  const auto natural = rec(tblr("colspec={Q[]}, column{1}={si={}}", rows), 300, 10, InputMode::document);
+  const auto formatted = rec(tblr("colspec={Q[]}, column{1}={si={table-format=-5.3}}", rows), 300, 10, InputMode::document);
+  CHECK(natural.warnings.empty());
+  CHECK(formatted.warnings.empty());
+  // Room for a sign, five digits, the marker and three decimals: wider than the numbers it holds.
+  CHECK(formatted.width > natural.width + 10.f);
+  // Room for five digits and a sign is more than for three digits without.
+  const auto smaller = rec(tblr("colspec={Q[]}, column{1}={si={table-format=3.3}}", rows), 300, 10, InputMode::document);
+  CHECK(formatted.width > smaller.width);
+  CHECK(smaller.width > natural.width);
+  const auto odd = rec(tblr("colspec={Q[]}, column{1}={si={table-format=3.2, round-mode=places}, a=b}", rows), 300, 10,
+                       InputMode::document);
+  CHECK(!check::warns(odd, "round-mode"));  // read
+  const auto unread = rec(tblr("colspec={Q[]}, column{1}={si={table-format=3.2, group-separator=x}}", rows), 300, 10,
+                          InputMode::document);
+  CHECK(check::warns(unread, "group-separator"));
+  const auto exponent = rec(tblr("colspec={Q[]}, column{1}={si={table-format=1.2e2}}", rows), 300, 10, InputMode::document);
+  CHECK(check::warns(exponent, "exponent"));
+}
+
+// tabularray's `font=` is declarations the cell is set under, whatever they are.
+TEST(tblr_font_sets_the_cell_under_the_declarations_it_names) {
+  const auto plain = rec(tblr("colspec={Q[]}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  const auto big =
+    rec(tblr("colspec={Q[]}, cell{1}{1}={}{font=\\fontsize{2em}{2em}\\selectfont}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  CHECK(big.warnings.empty());
+  CHECK(big.height > plain.height);
+  // The same as writing the declarations in the cell: no space of its own comes with them.
+  const auto typed = rec(tblr("colspec={Q[]}", "{\\fontsize{2em}{2em}\\selectfont a} \\\\ b \\\\"), 300, 10, InputMode::document);
+  CHECK(std::fabs(big.width - typed.width) < 0.01f);
+  const auto bad = rec(tblr("colspec={Q[]}, cell{1}{1}={}{font=\\nosuchdeclaration}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  CHECK(check::warns(bad, "font=\\nosuchdeclaration"));
+  // Small capitals are made from source text, which a built cell has not: said.
+  CHECK(check::warns(rec(tblr("colspec={Q[]}, cell{1}{1}={}{font=\\scshape}", "a \\\\ b \\\\"), 300, 10, InputMode::document),
+                     "small capitals"));
+}
+
+// tabularray reads `cmd=` and `font=` when it sets the cell, with the definitions in force at the `\begin`: a command
+// the document defined before the table is known to them, one defined after it is not.
+TEST(tblr_cmd_and_font_see_the_macros_the_document_defined_before_the_table) {
+  const std::string table = tblr("colspec={Q[]}, cell{1}{1}={}{cmd=\\mybox, font=\\myfont}", "a \\\\ b \\\\");
+  const auto plain = rec(tblr("colspec={Q[]}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  const auto known = rec("\\newcommand{\\mybox}[1]{\\fbox{#1}}\\newcommand{\\myfont}{\\bfseries}\n" + table, 300, 10,
+                         InputMode::document);
+  CHECK(known.warnings.empty());
+  CHECK(known.width > plain.width);  // \fbox's frame
+  // The same with the command written as `\fbox`: the document's macro is that command.
+  const auto direct = rec(tblr("colspec={Q[]}, cell{1}{1}={}{cmd=\\fbox, font=\\bfseries}", "a \\\\ b \\\\"), 300, 10,
+                          InputMode::document);
+  CHECK(std::fabs(known.width - direct.width) < 0.01f);
+  CHECK(std::fabs(known.height - direct.height) < 0.01f);
+  // Defined after the table, TeX has not got it yet either.
+  CHECK(check::warns(rec(table + "\n\\newcommand{\\mybox}[1]{\\fbox{#1}}\\newcommand{\\myfont}{\\bfseries}", 300, 10,
+                         InputMode::document), "cmd=\\mybox"));
+  // A definition inside a group that has ended is gone.
+  CHECK(check::warns(rec("{\\newcommand{\\mybox}[1]{\\fbox{#1}}\\newcommand{\\myfont}{\\bfseries}}\n" + table, 300, 10,
+                         InputMode::document), "cmd=\\mybox"));
+}
+
+// tabularray applies a cell's `cmd=` as `\cmd{text}`, whatever the command is.
+TEST(tblr_cmd_applies_any_command_to_the_cell_and_says_one_it_does_not_know) {
+  const auto plain = rec(tblr("colspec={Q[]}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  const auto boxed = rec(tblr("colspec={Q[]}, cell{1}{1}={}{cmd=\\fbox}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  CHECK(boxed.warnings.empty());
+  // \fbox's frame and padding make the cell, and so the table, bigger.
+  CHECK(boxed.width > plain.width);
+  CHECK(boxed.height > plain.height);
+  const auto unknown = rec(tblr("colspec={Q[]}, cell{1}{1}={}{cmd=\\nosuchcommand}", "a \\\\ b \\\\"), 300, 10, InputMode::document);
+  CHECK(check::warns(unknown, "cmd=\\nosuchcommand"));
+  // The LaTeX of a caption, a note and `preto` is said to be wrong where it is, not left drawn as a red name; and
+  // the caption's own `\enskip` is known.
+  const auto caption = rec("\\begin{talltblr}[caption={Cars \\nosuchcaptioncmd}]{colspec={Q[]}}\na \\\\\n\\end{talltblr}", 300, 10,
+                           InputMode::document);
+  CHECK(check::warns(caption, "caption"));
+  CHECK(check::warns(rec("\\begin{talltblr}[note{a}={\\nosuchnotecmd}]{colspec={Q[]}}\na \\\\\n\\end{talltblr}", 300, 10,
+                         InputMode::document), "note{a}"));
+  CHECK(quiet("\\begin{talltblr}[caption={Cars}]{colspec={Q[]}}\naaaaaaaaaaaaaaaaaaaaaaaa \\\\\n\\end{talltblr}"));
+  CHECK(quiet("a\\enskip b"));
 }
 
 // kableExtra's striped rows are \rowcolor{gray!10}: pdflatex fills them with

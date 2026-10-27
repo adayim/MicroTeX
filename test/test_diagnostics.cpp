@@ -199,7 +199,9 @@ TEST(diagnostics_nesting_past_400_is_an_error_however_it_nests) {
     return out;
   };
   const Options mixed(InputMode::mixed);
-  for (const std::string& tex : {repeat(R"(\emph)", 500), "$" + repeat(R"(\frac)", 500) + "$",
+  // (`\emph\emph\emph..` nested one level a command in the input's own macros; in the format's, as in TeX, each `\emph` is the
+  // argument of the one before and they do not nest, so the braces say it.)
+  for (const std::string& tex : {repeat(R"(\emph{)", 500) + "x" + repeat("}", 500), "$" + repeat(R"(\frac)", 500) + "$",
                                  "a" + repeat(R"(\cite[{)", 500) + "x" + repeat("}]{k}", 500)}) {
     CHECK_THROWS(check::render(tex, mixed), "nested too deeply");
   }

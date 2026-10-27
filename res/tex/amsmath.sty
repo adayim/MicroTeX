@@ -13,6 +13,10 @@
 \newcommand{\mspace}[1]{\hspace{#1}}
 \newcommand{\leftroot}[1]{}
 \newcommand{\uproot}[1]{}
+% amsmath pads the long arrows it names with a thick space on each side (LuaLaTeX: `a \implies b` is 5.6pt wider than `a \Longrightarrow b`)
+\newcommand{\implies}{\;\Longrightarrow\;}
+\newcommand{\impliedby}{\;\Longleftarrow\;}
+\newcommand{\iff}{\;\Longleftrightarrow\;}
 \newcommand{\dfrac}[2]{\genfrac{}{}{}{0}{#1}{#2}}
 \newcommand{\tfrac}[2]{\genfrac{}{}{}{1}{#1}{#2}}
 \newcommand{\dbinom}[2]{\genfrac{(}{)}{0pt}{0}{#1}{#2}}
@@ -28,3 +32,11 @@
 \newcommand{\overunderset}[3]{\overset{#1}{\underset{#2}{#3}}}
 \newcommand{\nobreakdash}{}
 \@namedef{theequation}{\arabic{equation}}
+% What the engine cannot read off the code of these (`\gmenvironmentkind{kind}{names}`): the displays amsmath sets on a line
+% of their own, the ones that number their rows, and the one that is a block of the document, not a group on a line.
+\gmenvironmentkind{display}{align,align*,alignat,alignat*,flalign,flalign*,gather,gather*,multline,multline*}
+\gmenvironmentkind{numbered}{align,alignat,flalign,gather,multline}
+\gmenvironmentkind{block}{subequations}
+% \DeclareMathOperator{\cmd}{text}: `\cmd` is the text upright as an operator whose limits go beside it in a display, and
+% the starred form sets them over and under. A name that is taken is \newcommand's complaint, as in amsmath.
+\NewDocumentCommand{\DeclareMathOperator}{s m m}{\IfBooleanTF{#1}{\newcommand#2{\mathop{\mathrm{#3}}}}{\newcommand#2{\mathop{\mathrm{#3}}\nolimits}}}

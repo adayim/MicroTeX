@@ -1,6 +1,7 @@
 #ifndef MICROTEX_MACRO_ARGS_H
 #define MICROTEX_MACRO_ARGS_H
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,9 @@ public:
 
   /** Say something about the command's input, at the command. */
   virtual void warn(const std::string& message) { (void)message; }
+
+  /** The same, for an atom to say when its box is made, which is after the input is read; empty when nothing would be heard. */
+  virtual std::function<void(const std::string&)> reporter() { return {}; }
 };
 
 typedef sptr<Atom> (*CommandDelegate)(CommandArgs& args);

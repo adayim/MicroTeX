@@ -45,8 +45,10 @@ struct Table {
   std::unordered_map<std::string, EnvSpec> envs;
 
   void add(std::initializer_list<const char*> names, const char* args,
-           Shape shape = Shape::prefix, Bare bare = Bare::none, bool special = false) {
+           Shape shape = Shape::prefix, Bare bare = Bare::none, bool special = false,
+           Role role = Role::none) {
     CommandSpec spec;
+    spec.role = role;
     spec.shape = shape;
     spec.args = parseArgs(args);
     spec.bare = bare;
@@ -61,6 +63,11 @@ struct Table {
     spec.body = body;
     spec.textInText = textInText;
     for (const char* name : names) envs[name] = spec;
+  }
+
+  /** Sets `member` on environments already registered. */
+  void mark(std::initializer_list<const char*> names, bool EnvSpec::*member) {
+    for (const char* name : names) envs.at(name).*member = true;
   }
 
   Table() {
@@ -80,6 +87,8 @@ struct Table {
     // \gmcodeline a line, and in it the text between the commands as \gmlit{hex}, which is set as typed.
     add({"gmlit"}, "r");
     add({"gmcodeline"}, "t");
+    // The cell a tblr's `cmd=` is applied to: `\cmd{\gmcell}`.
+    add({"gmcell"}, "");
     add({"cfrac"}, "Rmm");
     add({"xleftarrow", "xrightarrow", "xleftrightarrow", "xRightarrow", "xLeftarrow",
          "xLeftrightarrow", "xhookleftarrow", "xhookrightarrow", "xmapsto",
@@ -109,17 +118,17 @@ struct Table {
     // where the text sits against its rows, which it is not set to.
     add({"multirow"}, "rRrRc");
     // Rules end the row they are in, as they did in the old parser.
-    add({"hline", "thickhline", "hdashline"}, "", Shape::prefix, Bare::none, true);
-    add({"cline"}, "r", Shape::prefix, Bare::none, true);
+    add({"hline", "thickhline", "hdashline"}, "", Shape::prefix, Bare::none, true, Role::rule);
+    add({"cline"}, "r", Shape::prefix, Bare::none, true, Role::rule);
     // booktabs' rule of a given thickness, and the space above and below.
-    add({"specialrule"}, "ddd", Shape::prefix, Bare::none, true);
+    add({"specialrule"}, "ddd", Shape::prefix, Bare::none, true, Role::rule);
     // booktabs' \addlinespace[len]: space between two rows, as a rule that
     // draws nothing.
-    add({"addlinespace"}, "D", Shape::prefix, Bare::none, true);
+    add({"addlinespace"}, "D", Shape::prefix, Bare::none, true, Role::rule);
     // A longtable's markers: each ends the row it is in, as a rule does, and
     // names the group of rows that ends there.
     add({"endhead", "endfirsthead", "endfoot", "endlastfoot"}, "", Shape::prefix, Bare::none,
-        true);
+        true, Role::rule);
     add({"rowcolor", "columncolor", "arrayrulecolor", "cellcolor"}, "r");
     // xcolor's table option: \rowcolors[commands]{first row}{odd colour}{even colour}, for the tables after it.
     add({"rowcolors"}, "Rrrr");
@@ -169,11 +178,9 @@ struct Table {
     // Links: the look of one, as hyperref's colorlinks and the url package
     // set it (the lowering builds it). A URL reads its specials as text.
     add({"url"}, "u");
-    // Small capitals, as the lowering fakes them; \gmtheorem is the head of
-    // a theorem, which the expander's newtheorem writes.
+    // Small capitals, as the lowering fakes them.
     add({"textsc"}, "t");
     add({"scshape"}, "", Shape::declaration);
-    add({"gmtheorem"}, "rrrrr");
     // The date, as LaTeX prints it (`May 16, 2026`), which \date's default is.
     add({"today"}, "");
     add({"href"}, "uc");
@@ -184,7 +191,7 @@ struct Table {
     add({"lstinline", "Verb"}, "Rv");
     add({"mintinline"}, "Rrv");
     // booktabs' \cmidrule, which the parser reads as \cline.
-    add({"cmidrule"}, "r", Shape::prefix, Bare::none, true);
+    add({"cmidrule"}, "r", Shape::prefix, Bare::none, true, Role::rule);
     add({"left", "middle", "right"}, "l", Shape::prefix, Bare::none, true);
     add({"mathop", "mathpunct", "mathord", "mathrel", "mathinner", "mathbin", "mathopen",
          "mathclose"},
@@ -260,7 +267,7 @@ struct Table {
         true);
     add({"noindent"}, "", Shape::prefix, Bare::none, true);
     // Centres the lines of a document until the end of its group.
-    add({"centering", "raggedleft", "raggedright"}, "", Shape::prefix, Bare::none, true);
+    add({"centering", "raggedleft", "raggedright"}, "", Shape::prefix, Bare::none, true, Role::lineAlignment);
     // A float's caption: a line of text, unnumbered, where it is written.
     add({"caption"}, "Rt", Shape::prefix, Bare::none, true);
     // Commands a single grob cannot carry out: there is no bibliography to
@@ -269,15 +276,15 @@ struct Table {
     // resolve one, instead of coming out red as an unknown command.
     add({"ref", "pageref", "eqref", "subref"}, "r", Shape::prefix, Bare::none, true);
     // cleveref's and hyperref's references, which name the kind of what they refer to.
-    add({"cref", "Cref", "autoref"}, "r", Shape::prefix, Bare::none, true);
-    add({"crefrange", "Crefrange"}, "rr", Shape::prefix, Bare::none, true);
+    add({"cref", "Cref", "autoref"}, "r", Shape::prefix, Bare::none, true, Role::crossReference);
+    add({"crefrange", "Crefrange"}, "rr", Shape::prefix, Bare::none, true, Role::crossReference);
     // The floats say what a \caption numbers: the prelude's figure, table, subfigure and subtable.
     add({"gmfloat", "gmsubfloat"}, "r");
     // multicol's \columnbreak: where the columns of a multicols are cut.
     add({"columnbreak"}, "");
-    add({"cite"}, "Rr", Shape::prefix, Bare::none, true);
+    add({"cite"}, "Rr", Shape::prefix, Bare::none, true, Role::citation);
     // natbib's: \citep[post]{keys} or \citep[pre][post]{keys}.
-    add({"citep", "citet", "citealp"}, "RRr", Shape::prefix, Bare::none, true);
+    add({"citep", "citet", "citealp"}, "RRr", Shape::prefix, Bare::none, true, Role::citation);
     // The page notes (the prelude's \footnote and kin): the mark, then the note.
     add({"gmfootnote", "gmfootnotetext"}, "rt", Shape::prefix, Bare::none, true);
     add({"gmfootnotemark"}, "r");
@@ -292,7 +299,7 @@ struct Table {
     add({"newlength"}, "r");
     add({"setlength", "addtolength"}, "rr");
     add({"setcounter", "addtocounter", "gmnewcounter"}, "rr");
-    add({"stepcounter", "gmcurrentlabel", "value", "arabic", "roman", "Roman", "alph", "Alph", "fnsymbol"}, "r");
+    add({"stepcounter", "gmcurrentlabel", "gmlabelkind", "value", "arabic", "roman", "Roman", "alph", "Alph", "fnsymbol"}, "r");
     // amsmath's subequations, which the prelude writes with these two.
     add({"gmsubeqbegin", "gmsubeqend"}, "");
     add({"hspace", "vspace"}, "d");
@@ -345,6 +352,14 @@ struct Table {
     env({"tcolorbox", "mdframed"}, "R", EnvBody::text);
     // {columns}[header]: multicol's balanced columns.
     env({"multicols"}, "rR", EnvBody::text);
+
+    // --- what the lowering does with them ----------------------------------
+    mark({"itemize", "enumerate", "description", "tablenotes", "verbatim", "verbatim*", "lstlisting", "Verbatim",
+          "Verbatim*", "minted", "alltt", "tcolorbox", "mdframed", "multicols", "quote", "quotation", "verse"},
+         &EnvSpec::apart);
+    mark({"comment"}, &EnvSpec::dropped);
+    mark({"alltt"}, &EnvSpec::commandsAct);
+    mark({"tblr", "talltblr", "longtblr"}, &EnvSpec::tblr);
   }
 };
 
@@ -372,54 +387,48 @@ bool isHeadingLine(const std::string& name) {
   return level >= 0 && level < 3;
 }
 
-bool isFloatEnvironment(const std::string& name) {
-  return name == "table" || name == "table*" || name == "figure" || name == "figure*" || name == "wrapfigure" ||
-         name == "wraptable";
-}
-
 bool isVerbatimEnvironment(const std::string& name) {
-  return name == "verbatim" || name == "verbatim*" || name == "lstlisting" || name == "minted" ||
-         name == "Verbatim" || name == "Verbatim*" || name == "alltt";
+  const EnvSpec* spec = findEnvironment(name);
+  return spec != nullptr && spec->body == EnvBody::verbatim && !spec->dropped;
 }
 
-bool isBlockEnvironment(const std::string& name) {
-  return name == "abstract" || name == "titlepage" || name == "thebibliography" || name == "proof" ||
-         name == "subequations" || name == "threeparttable" || name == "framed" || name == "shaded" || name == "shaded*" || name == "snugshade" ||
-         name == "snugshade*" || isFloatEnvironment(name);
+bool isTextTable(const std::string& name) {
+  const EnvSpec* spec = findEnvironment(name);
+  return spec != nullptr && spec->body == EnvBody::alignment && spec->textInText && !spec->tblr;
+}
+
+bool isSetApart(const std::string& name) {
+  const EnvSpec* spec = findEnvironment(name);
+  return spec != nullptr && spec->apart;
+}
+
+std::vector<std::string> verbatimEnvironmentNames() {
+  std::vector<std::string> names;
+  for (const auto& kv : table().envs) {
+    if (kv.second.body == EnvBody::verbatim && !kv.second.commandsAct) names.push_back(kv.first);
+  }
+  return names;
+}
+
+static bool hasRole(const std::string& name, Role role) {
+  const CommandSpec* spec = findCommand(name);
+  return spec != nullptr && spec->role == role;
 }
 
 bool isCrossReference(const std::string& name) {
-  return name == "cref" || name == "Cref" || name == "autoref" || name == "crefrange" || name == "Crefrange";
+  return hasRole(name, Role::crossReference);
 }
 
 bool isCitation(const std::string& name) {
-  return name == "cite" || name == "citep" || name == "citet" || name == "citealp";
+  return hasRole(name, Role::citation);
 }
 
 bool isRule(const std::string& name) {
-  return name == "hline" || name == "thickhline" || name == "hdashline" || name == "cline" || name == "cmidrule" || name == "specialrule" ||
-         name == "addlinespace" || name == "endhead" || name == "endfirsthead" ||
-         name == "endfoot" || name == "endlastfoot";
+  return hasRole(name, Role::rule);
 }
 
 bool isLineAlignment(const std::string& name) {
-  return name == "centering" || name == "raggedleft" || name == "raggedright";
-}
-
-bool isDisplayEnvironment(const std::string& name) {
-  static const std::set<std::string> display = {
-    // Built by the engine.
-    "align", "alignat", "flalign", "gather", "multline", "numcases", "subnumcases",
-    // Written in LaTeX by the prelude.
-    "displaymath", "equation", "eqnarray"};
-  const bool starred = name.size() > 1 && name.back() == '*';
-  return display.count(starred ? name.substr(0, name.size() - 1) : name) > 0;
-}
-
-bool isNumberedEnvironment(const std::string& name) {
-  static const std::set<std::string> numbered = {"align",    "alignat",   "flalign",    "gather",
-                                                  "multline", "eqnarray",  "numcases", "subnumcases"};
-  return numbered.count(name) > 0;
+  return hasRole(name, Role::lineAlignment);
 }
 
 const CommandSpec* findCommand(const std::string& name) {

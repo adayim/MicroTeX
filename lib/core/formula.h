@@ -8,6 +8,8 @@
 
 #include "atom/atom.h"
 #include "env/units.h"
+#include "core/vline_style.h"
+#include "graphic/graphic_basic.h"
 
 namespace microtex {
 
@@ -80,6 +82,11 @@ public:
   std::map<std::string, std::vector<sptr<CellSpecifier>>> _cellSpecifiers;
   /** `\\[len]`: extra space below a row, by row index. */
   std::map<int, Dimen> _rowGaps;
+  /** tabularray's `abovesep` and `belowsep` of a row, by row index: space inside the row's own
+   *  height and depth, which its rules stand outside of. */
+  std::map<int, std::pair<Dimen, Dimen>> _rowSeps;
+  /** The look of the vertical rules the column specification has, by the number of columns before each. */
+  std::map<int, VlineStyle> _vlineStyles;
   /** An equation's number or `\tag`, by row index: drawn at the right of the
    *  row, at the right margin of the display. */
   std::map<int, sptr<Atom>> _rowTags;
@@ -111,7 +118,13 @@ public:
   /** Extra space below the current row, as `\\[len]` asks for. */
   void addRowGap(const Dimen& gap);
 
+  /** Space above and below the current row's content, as tabularray's rowsep gives it. */
+  void addRowSep(const Dimen& above, const Dimen& below);
+
   void addCellSpecifier(const sptr<CellSpecifier>& spe);
+
+  /** The key of the cell in row `row` and column `col` in `_cellSpecifiers`. */
+  static std::string cellKey(int row, int col);
 
   int rows() const;
 

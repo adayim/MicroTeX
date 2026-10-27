@@ -4,11 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "front/ast.h"
 #include "front/diagnostics.h"
 #include "front/lexer.h"
 #include "front/token.h"
@@ -31,6 +34,10 @@ struct XArg {
   Token close;
   /** What O, R, D and G give when the argument is not there. */
   std::string deflt;
+  /** u's tokens: the argument is what comes before them. */
+  std::vector<Token> delim;
+  /** The `>{...}` processors in front of the argument, as written: what is made of the argument once it is read. */
+  std::vector<std::string> processors;
 };
 
 /**
@@ -67,7 +74,17 @@ struct MacroDef {
   std::string package;
 };
 
+/** The macros and environments an input had defined at some place, as TeX would have them in force there: kept
+ *  for LaTeX that is read later from text, which has to see them (`cmd=\mycmd` in a tabularray, where the
+ *  package applies the command when it sets the cell). */
+struct UserScope {
+  std::unordered_map<std::string, MacroDef> macros;
+  std::unordered_map<std::string, MacroDef> envs;
+};
+
 struct ExpanderOptions {
+  /** Start with these definitions as the input's own (`Expander::userScope()` of the input the text came from). */
+  std::shared_ptr<const UserScope> inherit;
   /** Is `name` a command the parser itself defines, such as \frac?
    *  \newcommand refuses it and \renewcommand accepts it. */
   std::function<bool(const std::string&)> isBuiltinCommand;
@@ -174,10 +191,18 @@ public:
    *  and the options it has. */
   bool verbatimEnvironment(const std::string& name, std::string& base, std::string& options) const;
 
-  /** The `\tikzset` and `\tikzstyle` read so far, as statements: what a tikzpicture begins with. */
-  const std::string& tikzStyles() const;
-  /** The `\tikzcdset` read so far, as `\gmcdset{keys}` statements: what a tikzcd begins with. */
-  const std::string& tikzcdSets() const;
+  /** Whether a package declared that the arguments of environment `name` are data it reads itself
+   *  (EnvironmentKind::keyValue). */
+  bool keyValueEnvironment(const std::string& name) const;
+  /** Every environment the format and packages declared a kind of (`\gmenvironmentkind`), with the kinds as bits. */
+  std::unordered_map<std::string, std::uint8_t> environmentKinds() const;
+  /** What `\gmdeclare{table}{key}{value}` gave, by "table\x1fkey" (the lowering reads cleveref's names there). */
+  std::map<std::string, std::string> declared() const;
+  /** The definitions the input has made so far, for the text a package reads later (see `UserScope`). */
+  std::shared_ptr<const UserScope> userScope() const;
+
+  /** What `\gmprepend{environment}{text}` has gathered so far: the statements an environment's body begins with. */
+  const std::string& prepended(const std::string& environment) const;
   Cat catcode(c32 ch) const;
 
 private:

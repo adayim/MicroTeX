@@ -165,10 +165,53 @@ Options parseOptions(const std::string& text, Options o) {
       o.pad = value != "false";
     } else if (key == "uncertainty-mode") {
       o.separate = value == "separate";
+    } else if (key == "table-format") {
+      // [sign] integers [. decimals] [e exponent]: the numbers are how many places the column keeps for each
+      // (`-6.5` is a sign, six digits, the marker and five digits), not digits of a number.
+      std::size_t k = 0;
+      o.tableSign = k < value.size() && (value[k] == '-' || value[k] == '+') && (++k, true);
+      const auto count = [&] {
+        int n = 0;
+        while (k < value.size() && std::isdigit(static_cast<unsigned char>(value[k]))) {
+          n = std::min(n * 10 + (value[k] - '0'), 1000);
+          k++;
+        }
+        return n;
+      };
+      o.tableIntegers = count();
+      o.tableDecimals = 0;
+      if (k < value.size() && (value[k] == '.' || value[k] == ',')) {
+        k++;
+        o.tableDecimals = count();
+      }
+      o.tableExponent = k < value.size();
     }
     i = j + 1;
   }
   return o;
+}
+
+std::vector<std::string> unreadOptions(const std::string& text) {
+  std::vector<std::string> keys;
+  std::size_t i = 0;
+  while (i < text.size()) {
+    std::size_t j = i;
+    int depth = 0;
+    for (; j < text.size() && !(text[j] == ',' && depth == 0); j++) {
+      if (text[j] == '{') depth++;
+      if (text[j] == '}') depth--;
+    }
+    const std::string item = trim(text.substr(i, j - i));
+    const std::string key = trim(item.substr(0, item.find('=')));
+    if (!key.empty() && !readsOption(key)) keys.push_back(key);
+    i = j + 1;
+  }
+  return keys;
+}
+
+bool readsOption(const std::string& key) {
+  return key == "round-mode" || key == "round-precision" || key == "round-pad" || key == "uncertainty-mode" ||
+         key == "table-format";
 }
 
 std::string number(const std::string& text, std::string& problem, const Options& options) {

@@ -543,6 +543,6 @@ void WrapperBox::draw(Graphics2D& g2, float x, float y) {
     g2.fillRect(x, y - _height, _width, _height + _depth);
   }
   g2.setColor(isTransparent(_fg) ? prev : _fg);
-  _base->draw(g2, x + _l, y + _base->_shift);
+  _base->draw(g2, x + _l, y + _base->_shift + _dy);
   g2.setColor(prev);
 }

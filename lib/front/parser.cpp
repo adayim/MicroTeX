@@ -1443,10 +1443,19 @@ NodeId Parser::parseTextBody(const std::string& name, SourceSpan at) {
 }
 
 NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
-  const SourceSpan at = begin.tok.span;
   // An environment's line ends are its own business, as in TeX.
   const Scoped prose(_prose, false);
   const std::string name = readGroupName();
+  // A package that reads the arguments later sees the definitions of the place `\begin` stands at.
+  auto scope = _in.keyValueEnvironment(name) ? _in.userScope() : nullptr;
+  const NodeId id = parseEnvironmentNamed(begin, mode, name, prose.was);
+  if (scope != nullptr) _ast.setScope(id, std::move(scope));
+  return id;
+}
+
+/** `proseWas`: whether line ends were prose where `\begin` stood. */
+NodeId Parser::parseEnvironmentNamed(const ExpandedToken& begin, Mode mode, const std::string& name, bool proseWas) {
+  const SourceSpan at = begin.tok.span;
   const EnvSpec* spec = findEnvironment(name);
   Node n;
   n.kind = NodeKind::environment;
@@ -1477,7 +1486,7 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
     // paragraph, with its spaces, not a row of math.
     _diags.warn(at, "unknown environment " + name + ": its body is set as text");
     // Text as around it, line ends included.
-    const Scoped text(_prose, prose.was);
+    const Scoped text(_prose, proseWas);
     const NodeId list = parseTextBody(name, at);
     // Transparent, as document's expansion is: its content is set as if
     // the environment were not there.
@@ -1512,7 +1521,7 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
   if (spec != nullptr && spec->body == EnvBody::text) {
     // Paragraphs, in text whatever the mode around it: a blank line in a
     // minipage in a document is a paragraph, as it is outside one.
-    const Scoped text(_prose, prose.was);
+    const Scoped text(_prose, proseWas);
     kids.push_back(parseTextBody(name, at));
     return _ast.add(std::move(n), kids);
   }
@@ -1618,10 +1627,8 @@ NodeId Parser::parseEnvironment(const ExpandedToken& begin, Mode mode) {
       }
       // The body is everything before this \end.
       n.raw = stopRecording(mark, used);
-      // A picture starts from the styles set before it.
-      if (name == "tikzpicture" && !_in.tikzStyles().empty()) n.raw = _in.tikzStyles() + n.raw;
-      // A commutative diagram, from what `\tikzcdset` set before it.
-      if (name == "tikzcd" && !_in.tikzcdSets().empty()) n.raw = _in.tikzcdSets() + n.raw;
+      // What a package asked to be put in front of the environment's body (a picture's styles).
+      if (const std::string& before = _in.prepended(name); !before.empty()) n.raw = before + n.raw;
       return _ast.add(std::move(n), kids);
     }
   }

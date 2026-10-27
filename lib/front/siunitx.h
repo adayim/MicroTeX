@@ -25,10 +25,22 @@ struct Options {
   int precision = 2;
   bool pad = true;
   bool separate = false;
+  /** `table-format=-3.2` of an `S` column: room for a sign, 3 digits before the marker and 2 after it. -1 where
+   *  not given; `tableExponent` says the format has an exponent part, which is not read. */
+  bool tableSign = false;
+  int tableIntegers = -1;
+  int tableDecimals = -1;
+  bool tableExponent = false;
 };
 
 /** The options of `[round-mode=places, round-precision=1]`, over those in `base`. */
 Options parseOptions(const std::string& text, Options base = Options());
+
+/** Whether parseOptions() reads the option `key`: the others change how a number looks, which is left out. */
+bool readsOption(const std::string& key);
+
+/** The keys of `text` that parseOptions() does not read. */
+std::vector<std::string> unreadOptions(const std::string& text);
 
 /** `text` as a number, in LaTeX for math mode. A problem is said in
  *  `problem` and the text is returned as it is written. */

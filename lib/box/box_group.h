@@ -329,6 +329,7 @@ public:
 class WrapperBox : public DecorBox {
 private:
   float _l;
+  float _dy = 0;
   color _fg = 0, _bg = 0;
 
 public:
@@ -350,6 +351,12 @@ public:
   inline void setForeground(color fg) { _fg = fg; }
 
   inline void setBackground(color bg) { _bg = bg; }
+
+  /** A cell that spans rows: its fill goes `extraDepth` further down, over the rows below it, and its text `shift` down. */
+  inline void extend(float extraDepth, float shift) {
+    _depth += extraDepth;
+    _dy = shift;
+  }
 
   void addInsets(float l, float t, float r, float b);
 

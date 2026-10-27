@@ -82,7 +82,9 @@ void ArrayFormula::addCol(int n) {
     _array[_row].push_back(nullptr);
   }
   _root = nullptr;
-  _col += n;
+  // The last column the span covers is left to the next `&` or `\\`, which counts it: the column the next cell is in
+  // is then `_col` (it was one too far right after a span, so what was set for a cell after one was set for the next).
+  _col += n - 1;
 }
 
 void ArrayFormula::insertAtomIntoCol(int col, const sptr<Atom>& atom) {
@@ -118,8 +120,16 @@ void ArrayFormula::addRowGap(const Dimen& gap) {
   _rowGaps[static_cast<int>(_row)] = gap;
 }
 
+void ArrayFormula::addRowSep(const Dimen& above, const Dimen& below) {
+  _rowSeps[static_cast<int>(_row)] = {above, below};
+}
+
+std::string ArrayFormula::cellKey(int row, int col) {
+  return toString(row) + "," + toString(col);  // (not the digits run together: row 1 col 12 is not row 11 col 2)
+}
+
 void ArrayFormula::addCellSpecifier(const sptr<CellSpecifier>& spe) {
-  string str = toString(_row) + toString(_col);
+  const string str = cellKey(static_cast<int>(_row), static_cast<int>(_col));
   auto it = _cellSpecifiers.find(str);
   if (it == _cellSpecifiers.end()) {
     _cellSpecifiers[str] = vector<sptr<CellSpecifier>>();

@@ -32,7 +32,8 @@ namespace microtex::front {
 Ast parseLatex(const std::string& latex, Mode mode, Diagnostics& diagnostics,
                bool lineBreaks = false, bool paragraphs = false, std::uint32_t bodyStart = 0,
                std::uint32_t bodyEnd = UINT32_MAX, bool userMacros = true,
-               const std::vector<std::string>& packages = {});
+               const std::vector<std::string>& packages = {},
+               std::shared_ptr<const UserScope> inherit = nullptr);
 
 /**
  * The atoms of `latex`, read by the new front end as `mode` says, into
@@ -42,6 +43,10 @@ void buildModern(const std::string& latex, InputMode mode, Formula& formula);
 
 /** The diagnostics of the last buildModern(), for the host to report. */
 const Diagnostics& lastDiagnostics();
+
+/** Say something about the input at `at` while its boxes are made, which is after the input is read: a layout that
+ *  finds what a reader could not (an anchor a node has not). Added to lastDiagnostics(), once. */
+void warnLater(const SourceSpan& at, const std::string& message);
 
 /** The packages (front/packages.h) the next buildModern() starts from, after
  *  the format: the input need not ask for them, and what they do besides

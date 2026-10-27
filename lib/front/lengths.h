@@ -35,6 +35,8 @@ public:
     // array.sty's: the height every row's strut is given, and the space between the rules of \hline\hline.
     _values["extrarowheight"] = {0.f, UnitType::pt};
     _values["doublerulesep"] = {0.2f, UnitType::em};
+    // the width the format's \makebox[w][c] keeps while it sets its box (prelude.tex)
+    _values["gmmbw"] = {0.f, UnitType::pt};
   }
 
   bool get(const std::string& name, Dimen& out) const {

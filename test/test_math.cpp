@@ -181,6 +181,32 @@ TEST(math_declarepaireddelimiter_defines_the_plain_starred_and_sized_forms) {
   CHECK(warnsAbout(R"(\DeclarePairedDelimiter{\frac}{(}{)}x)", "already exists"));
 }
 
+// amsmath's \lvert, \rvert, \lVert and \rVert open and close (\mathopen{\vert}...): next to a fraction an ordinary bar took a
+// thin space on each side, 15.56pt for `\lvert\frac{a}{b}\rvert` where LuaLaTeX has 12.30 (\left...\right 12.25).
+TEST(math_lvert_and_its_kin_are_open_and_close_symbols_that_are_still_delimiters) {
+  IDENTICAL(R"(\lvert\frac{a}{b}\rvert)", R"(\mathopen{\vert}\frac{a}{b}\mathclose{\vert})");
+  IDENTICAL(R"(\lVert\frac{a}{b}\rVert)", R"(\mathopen{\Vert}\frac{a}{b}\mathclose{\Vert})");
+  IDENTICAL(R"(\left\lvert\frac{a}{b}\right\rvert)", R"(\left\vert\frac{a}{b}\right\vert)");
+  IDENTICAL(R"(\left\lVert x\right\rVert)", R"(\left\Vert x\right\Vert)");
+}
+
+// amsmath sets \big( as `\left(\vcenter to k\big@size{}\right.`, \big@size being 1.2 times the height and depth of a
+// parenthesis and k 1, 1.5, 2 and 2.5, so the box is never shorter than that strut: LuaLaTeX (Latin Modern Math, 10pt) has
+// 11.96, 17.92, 23.90 and 29.9pt for ( of 9.96pt, and the delimiter inside is the first variant of 0.901 of it (10.94pt for \big).
+TEST(math_big_delimiters_are_as_tall_as_amsmaths_strut) {
+  const auto total = [](const char* tex) { return check::render(tex).height; };
+  const auto paren = total("(");
+  CHECK(paren > 0);
+  const char* sizes[] = {R"(\big()", R"(\Big()", R"(\bigg()", R"(\Bigg()"};
+  const float times[] = {1.2f, 1.8f, 2.4f, 3.f};
+  for (int i = 0; i < 4; i++) {
+    CHECK(total(sizes[i]) >= times[i] * paren - 0.5f);
+    CHECK(total(sizes[i]) <= times[i] * paren * 1.15f);
+  }
+  // \bigl(x\bigr) is the same two delimiters and a letter
+  CHECK_EQ(total(R"(\bigl(x\bigr))"), total(R"(\big(x\big))"));
+}
+
 TEST(math_leftroot_and_uproot_are_read_and_leave_the_root_as_it_is) {
   const std::string tex = R"(\sqrt[\leftroot{2}\uproot{2}3]{x})";
   CHECK(quiet(tex));

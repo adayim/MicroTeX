@@ -2,6 +2,8 @@
 
 #include "core/formula.h"
 #include "front/front.h"
+#include "front/hooks.h"
+#include "front/lower.h"
 #include "macro/macro.h"
 #include "utils/exceptions.h"
 #include "utils/string_utils.h"
@@ -137,6 +139,29 @@ Render* MicroTeX::parse(
   OvalAtom::_multiplier = 0.5f;
   OvalAtom::_diameter = 0.f;
   RowAtom::_breakEverywhere = false;
+  // \settowidth and the others measure what they are given while the input is read: with this parse's fonts, at the size the
+  // layout is fixed in, so that a size is the same number of ems at any text size.
+  front::setBoxMeasurer([mathFont = mathFontName.empty() ? _config->defaultMathFontName : mathFontName,
+                         mainFont = mainFontFamily.empty() ? _config->defaultMainFontFamily : mainFontFamily](
+                          const std::string& text) -> std::optional<front::BoxSize> {
+    try {
+      front::Diagnostics unreported;
+      const auto atom = front::buildFragment(text, false, unreported);
+      if (atom == nullptr) return front::BoxSize{};
+      auto fctx = sptrOf<FontContext>();
+      fctx->selectMathFont(mathFont);
+      fctx->selectMainFont(mainFont);
+      Env env(TexStyle::text, fctx, Env::fixedTextSize());
+      const auto box = RowAtom::withItalic(atom)->createBox(env);
+      const double em = Env::fixedTextSize();
+      return front::BoxSize{box->_width / em, box->_height / em, box->_depth / em};
+    } catch (const std::exception&) {
+      return std::nullopt;
+    }
+  });
+  struct Unmeasure {
+    ~Unmeasure() { front::setBoxMeasurer({}); }
+  } unmeasure;
   auto built = std::make_unique<Formula>();
   front::buildModern(latex, mode, *built);
   Formula& formula = *built;

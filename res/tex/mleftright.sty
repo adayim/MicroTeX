@@ -1,7 +1,11 @@
-\ProvidesPackage{mleftright}[2026/10/12 mleftright: brackets that size themselves]
-% \mleft and \mright are \left and \right. The package leaves out the space
-% that \left...\right puts around what it holds, which is not done here.
-\let\mleft\left
-\let\mright\right
-\newcommand{\mleftright}{}
-\newcommand{\mleftrightrestore}{}
+\ProvidesPackage{mleftright}[2026/10/28 mleftright: \left and \right without the space around what they hold]
+% As the package does it: `\mathopen{}\mathclose\bgroup\left` opens, and `\right` ends with the \egroup saved by \aftergroup, so the
+% whole pair is an ordinary-spaced group (its checks of the group level and type only choose an error message, which is left out).
+\let\mleftright@OrgLeft\left
+\let\mleftright@OrgRight\right
+\newcommand{\mleft}{\mathopen{}\mathclose\bgroup\mleftright@OrgLeft}
+\newcommand{\mright}{\aftergroup\egroup\mleftright@OrgRight}
+\newcommand{\mleftright}{\let\left\mleft\let\right\mright}
+\newcommand{\mleftrightrestore}{%
+  \ifx\left\mleft\let\left\mleftright@OrgLeft\fi
+  \ifx\right\mright\let\right\mleftright@OrgRight\fi}

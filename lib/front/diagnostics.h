@@ -111,6 +111,14 @@ public:
     add(Severity::warning, span, std::move(message));
   }
 
+  /** As warn(), unless the same message is already there for the same place: a box made twice says it once. */
+  void warnOnce(const SourceSpan& span, std::string message) {
+    for (const Diagnostic& d : _items) {
+      if (d.span.offset == span.offset && d.message == message) return;
+    }
+    add(Severity::warning, span, std::move(message));
+  }
+
   void error(const SourceSpan& span, std::string message) {
     add(Severity::error, span, std::move(message));
   }

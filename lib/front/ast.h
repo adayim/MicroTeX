@@ -2,13 +2,38 @@
 #define GRIDMICROTEX_FRONT_AST_H
 
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "front/diagnostics.h"
 #include "utils/types.h"
 
 namespace microtex::front {
+
+struct UserScope;  // expander.h
+
+/** What a package says of an environment it defines (`\gmenvironmentkind{kind}{names}`), which the engine cannot
+ *  read off its code. Bits, so one environment can have several. */
+namespace EnvironmentKind {
+/** Its `[outer]{inner}` is key=value data the package reads itself: left as written (tabularray's). */
+constexpr std::uint8_t keyValue = 1;
+/** Written in LaTeX, and a block of the document in its own right (`proof`, `framed`), not a group on a line of the
+ *  paragraph. */
+constexpr std::uint8_t block = 2;
+/** A float (`table`, `figure`): set where it is written, apart from the paragraphs around it. A block too. */
+constexpr std::uint8_t floating = 4;
+/** A display (`equation`, `align`): set on a line of its own. */
+constexpr std::uint8_t display = 8;
+/** Its rows are numbered (`align`, `gather`). */
+constexpr std::uint8_t numbered = 16;
+/** The kernel's `center`, `flushleft` and `flushright`. */
+constexpr std::uint8_t center = 32;
+constexpr std::uint8_t flushLeft = 64;
+constexpr std::uint8_t flushRight = 128;
+}  // namespace EnvironmentKind
 
 using NodeId = std::uint32_t;
 constexpr NodeId kNoNode = 0xFFFFFFFFu;
@@ -97,6 +122,24 @@ public:
 
   std::size_t size() const { return _nodes.size(); }
 
+  /** What the input had defined where environment `id` began, kept for an environment whose arguments a package reads
+   *  later (tabularray's `cmd=\mycmd`): LaTeX it holds is read with those definitions in force. Null if none. */
+  void setScope(NodeId id, std::shared_ptr<const UserScope> scope) { _scopes[id] = std::move(scope); }
+  std::shared_ptr<const UserScope> scopeOf(NodeId id) const {
+    const auto it = _scopes.find(id);
+    return it == _scopes.end() ? nullptr : it->second;
+  }
+
+  /** What the format and the packages declared of their environments (`EnvironmentKind` bits), as the parse found them. */
+  std::unordered_map<std::string, std::uint8_t> environmentKinds;
+  bool environmentIs(const std::string& name, std::uint8_t kind) const {
+    const auto it = environmentKinds.find(name);
+    return it != environmentKinds.end() && (it->second & kind) != 0;
+  }
+
+  /** What the format and the packages gave the lowering as data (`\gmdeclare{table}{key}{value}`), by "table\x1fkey". */
+  std::map<std::string, std::string> declared;
+
   NodeId root = kNoNode;
   /** How many of the root's first items are a whole file's preamble: read
    *  for what they define, not drawn. */
@@ -105,6 +148,7 @@ public:
 private:
   std::vector<Node> _nodes;
   std::vector<NodeId> _children;
+  std::unordered_map<NodeId, std::shared_ptr<const UserScope>> _scopes;
 };
 
 const char* nodeKindName(NodeKind kind);

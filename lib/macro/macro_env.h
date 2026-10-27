@@ -92,6 +92,9 @@ inline cmdmacro(tblrATATenv) {
   const auto spec = front::parseTblr("", args.text(1));
   auto table = sptrOf<MatrixAtom>(args.isPartial(), arr, front::tblrColumns(spec, arr->cols()), true);
   setColumnSepOf(*table, args);  // tabularray's colsep is 6pt too
+  if (spec.width.isValid()) table->setTableWidth(spec.width, false);  // what its X columns fill
+  // Its rows are a tabular's (a strut each), with abovesep and belowsep of their own: the lowering sets those.
+  table->setRowSpacing(RowSpacing::strut);
   return table;
 }
 

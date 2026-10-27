@@ -1,0 +1,36 @@
+\ProvidesPackage{ltxcmds}[2026/10/28 the small helpers of the ltxcmds package, written over this engine's primitives]
+% ltxcmds (oberdiek) names the kernel's helpers once, the same in every engine, and packages such as mleftright use those
+% names. The real file works around engines that lack \ifcsname and \detokenize; this one is for an engine that has the first,
+% so each name is its plain definition. Not here: the file, version and box helpers (\ltx@iffileloaded, \ltx@ifl@ter,
+% \ltx@IfBoxEmpty) and the local-expansion tricks (\ltx@LocalExpandAfter).
+\chardef\ltx@zero=0
+\chardef\ltx@one=1
+\chardef\ltx@two=2
+\newcount\ltx@minusone \ltx@minusone=-1
+\def\ltx@empty{}
+\def\ltx@space{ }
+\long\def\ltx@firstofone#1{#1}
+\long\def\ltx@firstoftwo#1#2{#1}
+\long\def\ltx@secondoftwo#1#2{#2}
+\long\def\ltx@firstofthree#1#2#3{#1}
+\long\def\ltx@secondofthree#1#2#3{#2}
+\long\def\ltx@thirdofthree#1#2#3{#3}
+\long\def\ltx@gobble#1{}
+\long\def\ltx@gobbletwo#1#2{}
+\long\def\ltx@gobblefour#1#2#3#4{}
+\def\ltx@ifundefined#1{%
+  \ifcsname#1\endcsname
+    \expandafter\ifx\csname#1\endcsname\relax
+      \expandafter\expandafter\expandafter\ltx@firstoftwo
+    \else
+      \expandafter\expandafter\expandafter\ltx@secondoftwo
+    \fi
+  \else
+    \expandafter\ltx@firstoftwo
+  \fi}
+\let\ltx@IfUndefined\ltx@ifundefined
+\long\def\ltx@ifnextchar#1#2#3{\@ifnextchar#1{#2}{#3}}
+% empty: nothing at all (the usual \ifx test: an argument that begins with \relax is taken for empty)
+\long\def\ltx@ifempty#1{\ifx\relax#1\relax\expandafter\ltx@firstoftwo\else\expandafter\ltx@secondoftwo\fi}
+\long\def\ltx@ifblank#1{\ltx@ifempty{#1}}
+\def\ltx@leavevmode{\leavevmode}

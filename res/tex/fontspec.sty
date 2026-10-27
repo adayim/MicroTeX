@@ -1,0 +1,5 @@
+\ProvidesPackage{fontspec}[2026/10/27 the commands of fontspec that make commands]
+% \newfontfamily\cmd[options]{Name}[options] and \newfontface make `\cmd`, which is `\fontspec[options]{Name}[options]`: the
+% font for the rest of the group it is used in (`{\cmd text}`). \setmainfont, \fontspec and the rest are the engine's own.
+\NewDocumentCommand{\newfontfamily}{m o m o}{\newcommand#1{\fontspec\IfValueT{#2}{[#2]}{#3}\IfValueT{#4}{[#4]}}}
+\let\newfontface\newfontfamily

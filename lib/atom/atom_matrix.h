@@ -1,12 +1,16 @@
 #ifndef MICROTEX_ATOM_MATRIX_H
 #define MICROTEX_ATOM_MATRIX_H
 
+#include <functional>
+#include <string>
+
 #include "atom/atom.h"
 #include "atom/atom_char.h"
 #include "atom/atom_row.h"
 #include "atom/atom_space.h"
 #include "box/box_group.h"
 #include "box/box_single.h"
+#include "core/vline_style.h"
 #include "env/units.h"
 #include "graphic/font_style.h"
 
@@ -142,6 +146,8 @@ private:
   // in: that of the text around the matrix, not of the style its cells are in.
   bool _texRows = false;
   float _baseEm = 0;
+  // The axis of the style around the matrix: amsmath's \smallmatrix is `\vcenter`ed there, though its cells are script style.
+  float _baseAxis = 0;
   // The room an equation's numbers take at each side of an align, so that
   // the display stays centred on the page and clear of them. Set by
   // createBoxInner() before the columns are spaced.
@@ -247,10 +253,25 @@ public:
   float _height, _shift;
   // Dashes, not a line (the `:` of a column specification).
   bool _dashed = false;
+  // tabularray's `vline{2}={1-3}{0.4em, red}`: a thickness and colour of its own, and the rows it runs
+  // through (all where empty). `_row` is the row being drawn: the atom is shared by the rows of a table.
+  Dimen _thickness;
+  bool _hasColour = false;
+  color _colour = 0;
+  std::vector<bool> _rows;
+  int _row = -1;
 
   VlineAtom() = delete;
 
   explicit VlineAtom(int n) : _n(n), _height(0), _shift(0) {}
+
+  void setStyle(const VlineStyle& style) {
+    _thickness = style.thickness;
+    _hasColour = style.hasColour;
+    _colour = style.colour;
+    _dashed = style.dashed;
+    _rows = style.rows;
+  }
 
   float getWidth(Env& env) const;
 
@@ -267,18 +288,47 @@ protected:
   int _beforeVlines, _afterVlines;
   int _row, _col;
   sptr<Atom> _cols;
+  // A caption or a note of a table: text set to the width of the table it is in, which it does not widen,
+  // wrapped there, and flush with the table's edges.
+  bool _wrapToTable = false;
+  // A cell that spans rows too (tabularray's `r=2`): how many, and where its text stands in them (`t`, `h`: at
+  // the top, `m`: in the middle, `b`, `f`: at the bottom). The rows below it are not drawn.
+  int _rowSpan = 1;
+  char _valign = 't';
+  bool _alignFromColumn = false;
 
   Alignment parseAlign(const std::string& str);
 
 public:
   MulticolumnAtom() = delete;
 
+  inline void setRowSpan(int rows, char valign) {
+    _rowSpan = rows >= 1 ? rows : 1;
+    _valign = valign;
+  }
+
+  inline int rowSpan() const { return _rowSpan; }
+
+  inline char valign() const { return _valign; }
+
+  inline void setWrapToTable(bool wrap) { _wrapToTable = wrap; }
+
+  /** Says something about the cell, at the table, when it is set (a word wider than the table). */
+  std::function<void(const std::string&)> report;
+
+  inline bool wrapToTable() const { return _wrapToTable; }
+
+  inline const sptr<Atom>& content() const { return _cols; }
+
+  /** An empty `align` is the column's own alignment (a cell of one column, that is set to span rows or to stand in them). */
   MulticolumnAtom(int n, const std::string& align, const sptr<Atom>& cols)
-      : _width(0), _beforeVlines(0), _afterVlines(0), _row(0), _col(0) {
+      : _width(0), _beforeVlines(0), _afterVlines(0), _row(0), _col(0), _alignFromColumn(align.empty()) {
     _n = n >= 1 ? n : 1;
     _cols = cols;
     _align = parseAlign(align);
   }
+
+  inline bool alignFromColumn() const { return _alignFromColumn; }
 
   virtual bool isNeedWidth() const { return false; }
 

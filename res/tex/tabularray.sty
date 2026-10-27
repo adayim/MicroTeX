@@ -1,0 +1,11 @@
+\ProvidesPackage{tabularray}[2026/10/26 the commands of tabularray that are not environments]
+% tabularray: \NewTableCommand{\cmd}[n][default]{code} makes a command for the cells of a table, with the arguments
+% \newcommand has, and takes it out of the cell before the cell is read: what follows one at the start of a cell, a
+% space or the end of a line, is then the start of the cell and is dropped. That is what `\ignorespaces` after the code
+% does here. A table command exists only inside a table in tabularray; here it is an ordinary command, a superset.
+\NewDocumentCommand{\NewTableCommand}{m O{0} o m}{%
+  \IfNoValueTF{#3}{\newcommand#1[#2]{#4\ignorespaces}}{\newcommand#1[#2][#3]{#4\ignorespaces}}}
+\let\NewTblrTableCommand\NewTableCommand
+% tabularray gathers the `[outer]{inner}` of its environments unexpanded and reads them itself, so a value that is a
+% command to be applied later (`cmd=\underline`) must reach the engine as written. The engine draws them natively.
+\gmenvironmentkind{keyvalue}{tblr,talltblr,longtblr}

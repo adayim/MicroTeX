@@ -254,6 +254,11 @@ private:
   bool _clipped = false;
   double _cx0 = 0, _cx1 = 0, _cy0 = 0, _cy1 = 0;
 
+  /** Warn at the picture, once: the layout finds what the reader, which has no sizes, cannot. */
+  void say(const std::string& what) const {
+    if (_pic.report) _pic.report(what);
+  }
+
   double len(const Dimen& d) const { return d.isValid() ? Units::fsize(d, _env) : 0.0; }
   double len(const std::optional<Dimen>& d, double fallback) const { return d ? len(*d) : fallback; }
 
@@ -442,6 +447,7 @@ P Layout::anchorOf(const Geom& g, const std::string& anchor) const {
   char* end = nullptr;
   const double a = std::strtod(anchor.c_str(), &end);
   if (end != anchor.c_str() && *end == '\0') return borderToward(g, g.c + polar(a, 1.0));
+  say("tikz: `" + anchor + "' is not an anchor of this node: its centre is used");
   return g.c;
 }
 
@@ -2131,11 +2137,16 @@ void Layout::layoutPath(const PathItem& item) {
     double area = 0;
     for (std::size_t k = 0; k < region.size(); k++) area += sideOf(P{0, 0}, region[k], region[(k + 1) % region.size()]);
     if (area < 0) std::reverse(region.begin(), region.end());
+    const bool hadRegion = !region.empty();
     for (std::size_t k = 0; k < region.size(); k++) {
       const P e1 = region[(k + 1) % region.size()] - region[k], e2 = region[(k + 2) % region.size()] - region[(k + 1) % region.size()];
       if (e1.x * e2.y - e1.y * e2.x < -1e-7 * length(e1) * length(e2)) region.clear();   // a corner turns the wrong way
       if (region.empty()) break;
     }
+    // TikZ clips to what is inside: a path with no area clips everything away, and a concave one is clipped to as it is.
+    // Neither is done here, and the reader, which sees the corners as typed, cannot always tell.
+    if (!hadRegion) say("tikz: a clip path with no area is not supported: it is not clipped to");
+    else if (region.empty()) say("tikz: a clip path that is not convex is not supported: it is not clipped to");
     _regions[item.clipId] = region;
   }
 

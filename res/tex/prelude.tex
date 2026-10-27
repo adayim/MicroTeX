@@ -39,6 +39,16 @@
 \newenvironment{center}{}{}
 \newenvironment{flushleft}{}{}
 \newenvironment{flushright}{}{}
+% What the engine cannot read off the code of the environments the format defines (`\gmenvironmentkind{kind}{names}`):
+% the kernel's centred and flush blocks, the floats (set where they are written), the displays (a line of their own),
+% and the blocks of the document that a group on a line of the paragraph would spoil.
+\gmenvironmentkind{center}{center}
+\gmenvironmentkind{flushleft}{flushleft}
+\gmenvironmentkind{flushright}{flushright}
+\gmenvironmentkind{float}{table,table*,figure,figure*}
+\gmenvironmentkind{display}{displaymath,equation,equation*,eqnarray,eqnarray*}
+\gmenvironmentkind{numbered}{eqnarray}
+\gmenvironmentkind{block}{abstract,titlepage,thebibliography}
 % The title block, as article.cls sets it (a grob has no page, so not the 2em at the top of one): \title, \author, \date
 % (default \today) are kept, \and starts the next author, \thanks is a footnote whose mark is a symbol, and
 % \maketitle sets the title in \LARGE, the authors and the date in \large, centred, and the footnote counter is 0
@@ -89,6 +99,10 @@
 \newcommand{\textquotedbl}{"}
 \newcommand{\@firstoftwo}[2]{#1}
 \newcommand{\@secondoftwo}[2]{#2}
+% latex.ltx: \leavevmode starts a paragraph when in vertical mode; a label is never in one
+\newcommand{\leavevmode}{}
+% latex.ltx: \mathpalette hands its first argument each of the four styles.
+\newcommand{\mathpalette}[2]{\mathchoice{#1\displaystyle{#2}}{#1\textstyle{#2}}{#1\scriptstyle{#2}}{#1\scriptscriptstyle{#2}}}
 \newcommand{\ldots}{\ensuremath{\mathinner{\mathpunct{.}\mathpunct{.}\mathpunct{.}}}}
 \newcommand{\cdots}{\ensuremath{\mathinner{\mathpunct{\cdot}\mathpunct{\cdot}\mathpunct{\cdot}}}}
 \newcommand{\arraystretch}{1}
@@ -110,7 +124,6 @@
 \newcommand{\fussy}{}
 \newcommand{\frenchspacing}{}
 \newcommand{\nonfrenchspacing}{}
-\newcommand{\ignorespaces}{}
 \newcommand{\hfil}{\quad}
 \newcommand{\hss}{}
 \newcommand{\normalcolor}{\color{black}}
@@ -163,6 +176,9 @@
 \newcommand{\O}{Ø}
 \newcommand{\o}{ø}
 \newcommand{\ss}{ß}
+\newcommand{\SS}{SS}
+\newcommand{\L}{Ł}
+\newcommand{\l}{ł}
 \newcommand{\i}{ı}
 \newcommand{\j}{ȷ}
 \newcommand{\S}{§}
@@ -202,7 +218,8 @@
 % TeX (\makebox[0pt][l]{text} is \rlap). \framebox is the same inside a \fbox.
 \newcommand{\gmmakeboxl}[2]{\rlap{#2}\hspace*{#1}}
 \newcommand{\gmmakeboxr}[2]{\hspace*{#1}\llap{#2}}
-\newcommand{\gmmakeboxc}[2]{{\newlength{\gmmbw}\setlength{\gmmbw}{#1}\hspace*{0.5\gmmbw}\clap{#2}\hspace*{0.5\gmmbw}}}
+\newdimen\gmmbw
+\newcommand{\gmmakeboxc}[2]{{\setlength{\gmmbw}{#1}\hspace*{0.5\gmmbw}\clap{#2}\hspace*{0.5\gmmbw}}}
 \newcommand{\gmmakeboxs}[2]{\gmmakeboxc{#1}{#2}}
 \NewDocumentCommand{\makebox}{oom}{\IfNoValueTF{#1}{\mbox{#3}}{\IfNoValueTF{#2}{\gmmakeboxc{#1}{#3}}{\csname gmmakebox#2\endcsname{#1}{#3}}}}
 \NewDocumentCommand{\framebox}{oom}{\IfNoValueTF{#1}{\fbox{#3}}{\IfNoValueTF{#2}{\fbox{\makebox[#1]{#3}}}{\fbox{\makebox[#1][#2]{#3}}}}}
@@ -210,7 +227,23 @@
 % \newcounter{c}[within]: makes the counter and its \thec; the lowering keeps
 % the value. \refstepcounter steps it and names it for the next \label.
 \NewDocumentCommand{\newcounter}{mo}{\@namedef{the#1}{\arabic{#1}}\gmnewcounter{#1}{\IfNoValueTF{#2}{}{#2}}}
-\newcommand{\refstepcounter}[1]{\stepcounter{#1}\gmcurrentlabel{\csname the#1\endcsname}}
+\newcommand{\refstepcounter}[1]{\stepcounter{#1}\gmcurrentlabel{\csname the#1\endcsname}\gmlabelkind{#1}}
+% The lengths the lowering keeps (front/lengths.h), here too as registers, so that a conditional or a sum can read them; \setlength and
+% \addtolength reach both. Article's values at 10pt, in ems so that they follow the size: the two lists are one list.
+\newdimen\parindent \parindent=1.5em
+\newskip\parskip \parskip=0em
+\newdimen\tabcolsep \tabcolsep=0.6em
+\newdimen\arraycolsep \arraycolsep=0.5em
+\newdimen\fboxsep \fboxsep=0.3em
+\newdimen\fboxrule \fboxrule=0.04em
+\newdimen\arrayrulewidth \arrayrulewidth=0.04em
+\newskip\baselineskip \baselineskip=1.2em
+\newdimen\columnsep \columnsep=1em
+\newdimen\extrarowheight \extrarowheight=0pt
+\newdimen\doublerulesep \doublerulesep=0.2em
+\@namedef{thesection}{\arabic{section}}
+\@namedef{thesubsection}{\thesection.\arabic{subsection}}
+\@namedef{thesubsubsection}{\thesubsection.\arabic{subsubsection}}
 
 % Footnotes: the counter's \thefootnote, and the commands over the engine's page notes (a document sets the notes after
 % its body, a label sets a note's text where it was written). \footnotetext numbers its note as the last mark.
@@ -227,12 +260,24 @@
 % turn when it has none, and \cite{key} draws the same.
 \NewDocumentCommand{\bibitem}{om}{\IfNoValueTF{#1}{\item\gmbibitem{#2}{}}{\item[{[}#1{]}]\gmbibitem{#2}{#1}}}
 
+% The kernel's half-quad: `\enskip` is `\hskip.5em`.
+\newcommand{\enskip}{\hspace{0.5em}}
+
 % The packages every input starts with. A name one of them defines is free for
 % an input to define, unless the input asks for the package.
+\RequirePackage{ltkernel}
 \RequirePackage{amsmath}
 \RequirePackage{amsxtra}
 \RequirePackage{amssymb}
 \RequirePackage{amsthm}
+\RequirePackage{cleveref}
+\RequirePackage{hyperref}
+\RequirePackage{cases}
+\RequirePackage{fontspec}
+\RequirePackage{tikz}
+\RequirePackage{tikz-cd}
+\RequirePackage{xcolor}
+\RequirePackage{colortbl}
 \RequirePackage{mathtools}
 \RequirePackage{braket}
 \RequirePackage{booktabs}
@@ -244,6 +289,7 @@
 \RequirePackage{cmll}
 \RequirePackage{stmaryrd}
 \RequirePackage{graphicx}
+\RequirePackage{tabularray}
 \RequirePackage{tinytable}
 \RequirePackage{bbm}
 \RequirePackage{nicefrac}

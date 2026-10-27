@@ -1,0 +1,27 @@
+% cleveref: how \cref and \Cref name what a label names. The engine draws the references (it knows each label's kind and number
+% only when the whole input is read); this file says what a kind is called, with \gmdeclare, the way cleveref's own commands do.
+%   \crefname{kind}{singular}{plural}    the name \cref uses (cleveref's defaults abbreviate: eq., fig.)
+%   \Crefname{kind}{singular}{plural}    the name \Cref uses
+%   \creflabelformat{kind}{format}       how the number is set: #1 is the number, #2 and #3 the link, so (#2#1#3) is "(1)"
+% The defaults are the ones cleveref has in English, read off its output.
+\NewDocumentCommand{\crefname}{mmm}{\gmdeclare{cref}{#1}{#2}\gmdeclare{crefs}{#1}{#3}}
+\NewDocumentCommand{\Crefname}{mmm}{\gmdeclare{Cref}{#1}{#2}\gmdeclare{Crefs}{#1}{#3}}
+\NewDocumentCommand{\creflabelformat}{mm}{\gmdeclare{reflabel}{#1}{#2}}
+
+\crefname{equation}{eq.}{eqs.}
+\Crefname{equation}{Equation}{Equations}
+\creflabelformat{equation}{(#2#1#3)}
+\crefname{figure}{fig.}{figs.}
+\Crefname{figure}{Figure}{Figures}
+\crefname{table}{table}{tables}
+\Crefname{table}{Table}{Tables}
+\crefname{section}{section}{sections}
+\Crefname{section}{Section}{Sections}
+\crefname{subsection}{section}{sections}
+\Crefname{subsection}{Section}{Sections}
+\crefname{subsubsection}{section}{sections}
+\Crefname{subsubsection}{Section}{Sections}
+\crefname{paragraph}{paragraph}{paragraphs}
+\Crefname{paragraph}{Paragraph}{Paragraphs}
+\crefname{subparagraph}{paragraph}{paragraphs}
+\Crefname{subparagraph}{Paragraph}{Paragraphs}

@@ -1219,3 +1219,24 @@ TEST(tikz_a_rectangle_in_a_turned_scope_is_turned_and_scalebox_with_two_factors_
   CHECK(check::of(both, DrawRecord::PATH).size() > 0);
   CHECK_EQ(check::of(check::render(R"(\scalebox{2}{x})", opt), DrawRecord::GLYPH).size(), std::size_t(1));
 }
+
+// What only the layout can see is said too: it knows a node's shape and its sizes, the reader (which has none) the text. TikZ
+// has no anchor `corner 99` on a rectangle (it stops with an error), and a clip with no area clips everything away.
+TEST(tikz_the_layout_says_what_it_cannot_draw_as_the_reader_does) {
+  const auto anchor = pic(R"(\node (a) {x}; \draw (a.corner 99) -- (2,2);)");
+  CHECK(check::warns(anchor, "corner 99"));
+  CHECK(check::warns(anchor, "not an anchor"));
+  // the anchors a rectangle and a polygon do have are not said
+  CHECK(!check::warns(pic(R"(\node (a) {x}; \draw (a.north east) -- (a.base) -- (a.45) -- (a.mid west) -- (2,2);)"), "anchor"));
+  CHECK(!check::warns(pic(R"(\node[regular polygon, regular polygon sides=5] (a) {x}; \draw (a.corner 3) -- (a.side 2) -- (2,2);)"), "anchor"));
+  // once, however many times it is used
+  const auto twice = pic(R"(\node (a) {x}; \draw (a.apex) -- (2,2); \draw (a.apex) -- (3,3);)");
+  int found = 0;
+  for (const auto& w : twice.warnings) found += w.find("apex") != std::string::npos;
+  CHECK_EQ(found, 1);
+  // a clip the reader cannot judge (its corners are nodes) is judged where the sizes are known
+  const auto nodes = pic(R"(\node (a) at (0,0) {x}; \node (b) at (4,0) {x}; \node (c) at (4,4) {x}; \node (d) at (2,1) {x}; \node (e) at (0,4) {x};
+                           \clip (a) -- (b) -- (c) -- (d) -- (e) -- cycle; \draw (-1,2) -- (5,2);)");
+  CHECK(check::warns(nodes, "not convex"));
+  CHECK(check::warns(pic(R"(\clip (0,0) -- (1,0); \draw (0,0) -- (3,0);)"), "no area"));
+}

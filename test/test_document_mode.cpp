@@ -290,6 +290,31 @@ TEST(docmode_vspace_adds_to_the_baselineskip_between_two_lines) {
 // (scratchpad/col/rc.tex, ra.tex, c.tex; every expected text below is one of its outputs): \cref abbreviates
 // ("eq. (1)", "fig. 1"), \Cref writes the capitalised full name, \autoref hyperref's; labels of one kind are joined
 // "(1), (3) and (5)" and three consecutive ones are "(1) to (3)", kinds are joined "A, B, and C".
+// \crefname, \Crefname and \creflabelformat change what a kind is called and how its number is set, as cleveref's do; every
+// expected text is cleveref's output in LuaLaTeX for this preamble (two runs).
+TEST(docmode_crefname_crefname_and_creflabelformat_rename_a_kind_and_reformat_its_number) {
+  const std::string pre =
+    "\\crefname{figure}{Fig.}{Figs.}\\Crefname{figure}{Figure!}{Figures!}\\creflabelformat{equation}{[#2#1#3]}\n"
+    "\\crefname{table}{tab}{tabs}\n"
+    "\\begin{equation}a\\label{e1}\\end{equation}\\begin{equation}a\\label{e2}\\end{equation}\n"
+    "\\begin{figure}\\caption{F}\\label{f1}\\end{figure}\\begin{figure}\\caption{F}\\label{f2}\\end{figure}\n"
+    "\\begin{table}\\caption{T}\\label{t1}\\end{table}\n\n";
+  const auto drawn = [&](const std::string& ref) {
+    std::string all;
+    for (const auto& r : runs(pre + "XX " + ref, InputMode::document, 600)) all += r.text;
+    all.erase(std::remove(all.begin(), all.end(), ' '), all.end());
+    const auto at = all.rfind("XX");
+    return at == std::string::npos ? all : all.substr(at + 2);
+  };
+  const std::vector<std::pair<std::string, std::string>> cases = {
+    {"\\cref{e1}", "eq.[1]"},          {"\\cref{e1,e2}", "eqs.[1]and[2]"}, {"\\cref{f1}", "Fig.1"},
+    {"\\cref{f1,f2}", "Figs.1and2"},   {"\\Cref{f1}", "Figure!1"},         {"\\Cref{f1,f2}", "Figures!1and2"},
+    {"\\cref{t1}", "tab1"},            {"\\cref{e1,f1}", "eq.[1]andFig.1"}, {"\\crefrange{f1}{f2}", "Figs.1to2"},
+    // hyperref's names are its own
+    {"\\autoref{f1}", "Figure1"}};
+  for (const auto& c : cases) CHECK_EQ(drawn(c.first), c.second);
+}
+
 TEST(docmode_cref_cref_and_autoref_name_the_kind_of_a_label_as_cleveref_and_hyperref_do) {
   const std::string pre =
     "\\newtheorem{thm}{Theorem}\\newtheorem{lem}{Lemma}\n"
@@ -1876,4 +1901,45 @@ TEST(docmode_the_float_counters_exist_and_nocite_is_silent) {
   CHECK_EQ(caption("\\begin{figure}F\\caption{c}\\end{figure}"), std::string("Figure1:c"));
   CHECK(!check::warns(rec("\\setcounter{figure}{4}\\thefigure \\thetable"), "counter"));
   CHECK(check::of(rec("\\nocite{a}\\nocite{*}"), DrawRecord::TEXT).empty());
+}
+
+// latex.ltx: \settowidth, \settoheight, \settodepth and \settototalheight put the size of what is set in a box into a length.
+// Here a run is 0.55 em a character (the test's text measurer), so \settowidth{\gw}{ab} then \hspace{\gw} is as wide as `ab`.
+TEST(docmode_settowidth_sets_a_length_to_the_width_of_its_text) {
+  const auto width = [](const std::string& tex) { return check::render(tex, InputMode::mixed).width; };
+  CHECK_EQ(width("\\newlength{\\gw}\\settowidth{\\gw}{ab}\\hspace{\\gw}x"), width("abx"));
+  CHECK_EQ(width("\\newlength{\\gw}\\settowidth{\\gw}{abc}\\hspace{\\gw}x"), width("abcx"));
+  CHECK_EQ(width("\\newdimen\\gd \\settowidth\\gd{$x^2$}\\hspace{\\gd}"), width("$x^2$"));
+  // a name that is not a length is said
+  CHECK(check::warns(check::render("\\settowidth{\\nolength}{ab}", InputMode::mixed), "is not a length"));
+}
+
+// tex.web 762: \left( ... \right) is as tall as twice the larger reach of its contents above and below the axis (at least 901/1000 of
+// that), not as tall as the contents: x^2 reaches 5.6pt above the axis, so its parentheses are the next size (LuaLaTeX: 8.28pt high
+// and 2.97 deep, where the plain parenthesis is 7.50 and 2.50), while those round `x` stay the plain size.
+TEST(docmode_left_right_delimiters_are_sized_from_the_reach_about_the_axis) {
+  const auto set = [](const std::string& tex) { return check::render(tex, InputMode::math); };
+  CHECK(set("\\left(x^2\\right)").height > set("(x^2)").height);
+  CHECK(set("\\left(x^2\\right)").height > set("\\left(x\\right)").height);
+  CHECK_EQ(set("\\left(x\\right)").height, set("(x)").height);
+}
+
+// amsmath: \smallmatrix is `\vcenter`ed, and a \vcenter is centred on the axis of the style around it, not of the script style its cells
+// are in (LuaLaTeX: 8.18pt above the baseline and 3.18 below, ours was 7.43 and 3.91): the same centre as a matrix of the same rows.
+TEST(docmode_a_smallmatrix_is_centred_on_the_axis_of_its_surroundings) {
+  check::Options opt;
+  opt.textSize = 100;
+  const auto set = [&](const std::string& tex) { return check::render(tex, opt); };
+  const auto small = set("\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}");
+  const auto plain = set("\\begin{matrix}a&b\\\\c&d\\end{matrix}");
+  // (height is the whole box; baseline the share of it above the baseline: the reach above less the reach below is twice the axis)
+  const auto skew = [](const check::Layout& l) { return l.height * l.baseline - (l.height - l.height * l.baseline); };
+  CHECK(std::fabs(skew(small) - skew(plain)) < 1.5f);
+}
+
+// tex.web 1151: a \mathchoice is replaced by the list it picks before the spaces are set, so a relation in it is spaced as one:
+// `a \centernot\longrightarrow b` (centernot's \mathpalette) is 5.6pt wider than an Ord of the same arrow in LuaLaTeX.
+TEST(docmode_a_mathchoice_is_spaced_as_the_list_it_picks) {
+  const auto set = [](const std::string& tex) { return check::render(tex, InputMode::math); };
+  CHECK(check::sameInk(set("a\\mathchoice{\\mathrel{=}}{\\mathrel{=}}{\\mathrel{=}}{\\mathrel{=}}b"), set("a=b")));
 }

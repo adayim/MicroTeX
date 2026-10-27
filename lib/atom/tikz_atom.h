@@ -7,6 +7,7 @@
 // `(a.north)` or `below=of a` is known only once the node it names has been given its size, which
 // takes the font: createBox() resolves everything in the order the picture is written.
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -259,6 +260,8 @@ struct PathItem {
 class TikzAtom : public Atom {
 public:
   std::vector<tikz::PathItem> paths;
+  /** Says something about the picture, at the command that made it, when its box is made (set by the reader). */
+  std::function<void(const std::string&)> report;
 
   TikzAtom();
 

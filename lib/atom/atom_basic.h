@@ -1,6 +1,8 @@
 #ifndef MICROTEX_ATOM_BASIC_H
 #define MICROTEX_ATOM_BASIC_H
 
+#include <vector>
+
 #include "atom/atom.h"
 #include "atom/atom_row.h"
 #include "box/box_single.h"
@@ -152,6 +154,18 @@ private:
   Dimen _above, _below;
 
 public:
+  /** A rule of several pieces in one row, as tabularray's `hline{2}={1-2,5}`: each a 0-indexed
+   *  inclusive column range, its ends `leftpos` and `rightpos` in the first and last cell (1 at the
+   *  cell's edge, a negative number moves the end in by that part of the cell's padding). */
+  struct Piece {
+    int from, to;
+    float leftpos, rightpos;
+  };
+
+private:
+  std::vector<Piece> _pieces;
+
+public:
   HlineAtom() noexcept
       : _width(0), _shift(0), _thicknessScale(1.f),
         _colStart(-1), _colEnd(-1), _color(gArrayRuleColor) {
@@ -185,6 +199,12 @@ public:
 
   /** 0-indexed inclusive column range; -1 (the default) means full width. */
   inline void setColumnRange(int s, int e) { _colStart = s; _colEnd = e; }
+
+  inline void addPiece(int from, int to, float leftpos, float rightpos) {
+    _pieces.push_back({from, to, leftpos, rightpos});
+  }
+
+  inline const std::vector<Piece>& pieces() const { return _pieces; }
 
   inline int colStart() const { return _colStart; }
 

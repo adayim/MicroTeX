@@ -1,0 +1,6 @@
+\ProvidesPackage{tikz}[2026/10/27 the commands of tikz that set styles]
+% \tikzset{keys} and \tikzstyle{name} = [keys] set styles for the pictures after them: kept as statements, as written (TikZ
+% keeps keys unexpanded), that every tikzpicture reads first (`\gmprepend`); nothing is drawn where they stand. The
+% pictures are the engine's own.
+\NewDocumentCommand{\tikzset}{m}{\gmprepend{tikzpicture}{\tikzset{#1}}}
+\NewDocumentCommand{\tikzstyle}{m t= o}{\IfNoValueTF{#3}{\gmprepend{tikzpicture}{\tikzset{#1/.style={}}}}{\gmprepend{tikzpicture}{\tikzset{#1/.style={#3}}}}}

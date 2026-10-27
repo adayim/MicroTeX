@@ -79,6 +79,23 @@ bool isSize(const std::string& n) {
          n == "Huge";
 }
 
+/** TeX points in one of a length unit that does not depend on the font, or 0 for one that does (`em`, `ex`, `mu`). */
+double pointsPer(UnitType u) {
+  switch (u) {
+    case UnitType::pt: return 1.0;
+    case UnitType::point: return 72.27 / 72.0;
+    case UnitType::pica: return 12.0;
+    case UnitType::cm: return 72.27 / 2.54;
+    case UnitType::mm: return 72.27 / 25.4;
+    case UnitType::in: return 72.27;
+    default: return 0.0;
+  }
+}
+
+/** The cell `\gmcell` stands for while a tblr applies a `cmd=` to it: the fragment that holds the command is read
+ *  as input of its own, which can only be handed this by a variable. */
+thread_local sptr<Atom> gTblrCell;
+
 /** `a` at a size a declaration (\large) sets: text that still breaks. */
 sptr<Atom> sized(const sptr<Atom>& a, float factor) {
   auto s = sptrOf<ScaleAtom>(a, factor);
@@ -142,7 +159,6 @@ struct Numbering {
    *  zero when it steps. */
   struct Counter {
     int value = 0;
-    std::string where;
     std::string parent;
   };
   std::map<std::string, Counter> counters{{"footnote", Counter()}, {"figure", Counter()}, {"table", Counter()}};
@@ -335,8 +351,9 @@ public:
 
   CrossRefAtom(std::shared_ptr<std::map<std::string, std::string>> labels,
                std::shared_ptr<std::map<std::string, std::string>> kinds, std::vector<std::string> keys, Form form,
-               bool range)
-      : _labels(std::move(labels)), _kinds(std::move(kinds)), _keys(std::move(keys)), _form(form), _range(range) {}
+               bool range, std::shared_ptr<const std::map<std::string, std::string>> declared)
+      : _labels(std::move(labels)), _kinds(std::move(kinds)), _keys(std::move(keys)), _form(form), _range(range),
+        _declared(std::move(declared)) {}
 
   sptr<Box> createBox(Env& env) override {
     sptr<Atom> text = buildFragment(compose(), false);
@@ -350,51 +367,40 @@ private:
     bool defined = false;
   };
 
-  /** How a kind is named: cleveref's abbreviations for \cref, its full names capitalised for \Cref, hyperref's for
-   *  \autoref. A theorem's is its title (`thm:Title`). */
+  /** How a kind is named, as the packages declared it (`\gmdeclare`: cleveref.sty's \crefname, \Crefname and
+   *  \creflabelformat, and hyperref.sty's autoref names): abbreviations for \cref, full names for \Cref, hyperref's
+   *  for \autoref. A theorem's is its title (`thm:Title`). */
   struct Names {
-    std::string one, many;
-    bool parentheses = false;
+    std::string one, many, format;
+    /** The number as cleveref's label format sets it: `(#2#1#3)` is the number in parentheses (#2 and #3 are the link). */
+    std::string show(const std::string& number) const {
+      if (format.empty()) return number;
+      std::string out;
+      for (std::size_t i = 0; i < format.size(); i++) {
+        if (format[i] == '#' && i + 1 < format.size() && format[i + 1] >= '1' && format[i + 1] <= '3') {
+          if (format[i + 1] == '1') out += number;
+          i++;
+        } else {
+          out += format[i];
+        }
+      }
+      return out;
+    }
   };
 
-  static std::string lower(std::string s) {
-    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
+  std::string declared(const char* table, const std::string& kind) const {
+    const auto it = _declared->find(std::string(table) + "\x1f" + kind);
+    return it == _declared->end() ? std::string() : it->second;
   }
 
   Names namesOf(const std::string& kind) const {
-    struct Row {
-      const char *abbr, *abbrMany, *full, *fullMany, *autoName;
-      bool parentheses;
-    };
-    static const std::map<std::string, Row> table = {
-      {"equation", {"eq.", "eqs.", "Equation", "Equations", "Equation", true}},
-      {"figure", {"fig.", "figs.", "Figure", "Figures", "Figure", false}},
-      {"table", {"table", "tables", "Table", "Tables", "Table", false}},
-      {"section", {"section", "sections", "Section", "Sections", "section", false}},
-      {"subsection", {"section", "sections", "Section", "Sections", "subsection", false}},
-      {"subsubsection", {"section", "sections", "Section", "Sections", "subsubsection", false}},
-      {"paragraph", {"paragraph", "paragraphs", "Paragraph", "Paragraphs", "paragraph", false}},
-      {"subparagraph", {"paragraph", "paragraphs", "Paragraph", "Paragraphs", "subparagraph", false}}};
     Names n;
-    const auto it = table.find(kind);
-    if (it != table.end()) {
-      const Row& r = it->second;
-      n.parentheses = r.parentheses && _form != Form::autoref;  // hyperref prints "Equation 1", cleveref "equation (1)"
-      if (_form == Form::cref) {
-        n.one = r.abbr;
-        n.many = r.abbrMany;
-      } else if (_form == Form::Cref) {
-        n.one = r.full;
-        n.many = r.fullMany;
-      } else {
-        n.one = n.many = r.autoName;
-      }
-    } else if (kind.compare(0, 4, "thm:") == 0) {
-      // \newtheorem{lem}{Lemma}: "lemma 1" and "lemmas 1 and 2"; \Cref and \autoref keep the title as it is.
-      const std::string title = kind.substr(4);
-      n.one = _form == Form::cref ? lower(title) : title;
-      n.many = n.one + "s";
+    if (_form == Form::autoref) {
+      n.one = n.many = declared("autoref", kind);  // hyperref prints "Equation 1", cleveref "equation (1)"
+    } else {
+      n.one = declared(_form == Form::cref ? "cref" : "Cref", kind);
+      n.many = declared(_form == Form::cref ? "crefs" : "Crefs", kind);
+      n.format = declared("reflabel", kind);
     }
     return n;
   }
@@ -462,7 +468,7 @@ private:
     if (_range && items.size() == 2 && items[0].defined && items[1].defined &&
         namesOf(items[0].kind).one == namesOf(items[1].kind).one) {
       const Names names = namesOf(items[0].kind);
-      const auto shown = [&](const Item& i) { return names.parentheses ? "(" + i.number + ")" : i.number; };
+      const auto shown = [&](const Item& i) { return names.show(i.number); };
       std::string out = names.many.empty() ? "" : names.many + "~";
       return out + shown(items[0]) + " to " + shown(items[1]);
     }
@@ -484,7 +490,7 @@ private:
       }
       std::sort(group.begin(), group.end(), before);
       const Names names = namesOf(group[0].kind);
-      const auto shown = [&](const Item& i) { return names.parentheses ? "(" + i.number + ")" : i.number; };
+      const auto shown = [&](const Item& i) { return names.show(i.number); };
       // Three or more in a row are "a to c".
       std::vector<std::string> parts;
       for (std::size_t i = 0; i < group.size();) {
@@ -507,6 +513,7 @@ private:
   std::vector<std::string> _keys;
   Form _form;
   bool _range;
+  std::shared_ptr<const std::map<std::string, std::string>> _declared;
 };
 
 /** \cite and natbib's kin: each key's \bibitem label, looked up when the atom
@@ -695,7 +702,10 @@ private:
         ArrayFormula arr;
         arr.add(f._root);
         endRow(arr, id);
-        lowerList(list, arr, i + 1);
+        // TeX drops the space that follows a break: it would be glue at the start of the next line.
+        std::uint32_t next = i + 1;
+        while (next < n && isSpace(node(child(list, next)))) next++;
+        lowerList(list, arr, next);
         arr.checkDimensions();
         f._root = arr.getAsVRow();
         return;
@@ -731,6 +741,11 @@ private:
         LengthScope scope;
         auto atom = groupAtom(build(child(id, 0)), f);
         if (atom != nullptr) atom->_type = AtomType::ordinary;
+        // tex.web 1186: `{...}` in math is one Ord atom whatever it holds, so `a{-b}` has no space after a and `a{\to b}` none
+        // before the arrow; a row that is only the group's content would take the type of its first and last atoms.
+        if (atom != nullptr && x.mode == Mode::math && dynamic_cast<RowAtom*>(atom.get()) != nullptr) {
+          atom = sptrOf<TypedAtom>(AtomType::ordinary, AtomType::ordinary, atom);
+        }
         f.add(atom);
         return;
       }
@@ -952,7 +967,13 @@ private:
     }
     if (name == "newlength") {
       const std::string key = lengthName(id, 0, false);
-      if (!key.empty()) nums().lengths.define(key);
+      if (key.empty()) return nullptr;
+      // LaTeX's \newlength is \newskip's refusal of a name that is taken ("Command \x already defined"): the length keeps its value.
+      if (nums().lengths.known(key)) {
+        _diags.warn(node(id).span, "\\newlength: \\" + key + " is already defined");
+      } else {
+        nums().lengths.define(key);
+      }
       return nullptr;
     }
     if (name == "setlength" || name == "addtolength") {
@@ -992,6 +1013,11 @@ private:
     if (name == "gmcurrentlabel") {
       nums().current = withCounterValues(id, rawOf(child(id, 0)));
       nums().currentKind.clear();
+      return nullptr;
+    }
+    // What a \label after it names (cleveref's kind: the counter, or the environment of a theorem).
+    if (name == "gmlabelkind") {
+      nums().currentKind = trimmed(rawOf(child(id, 0)));
       return nullptr;
     }
     if (name == "value") {
@@ -1035,7 +1061,8 @@ private:
       const auto form = name == "autoref"                          ? CrossRefAtom::Form::autoref
                         : (name == "Cref" || name == "Crefrange") ? CrossRefAtom::Form::Cref
                                                                    : CrossRefAtom::Form::cref;
-      return sptrOf<CrossRefAtom>(nums().labels, nums().kinds, std::move(keys), form, range);
+      return sptrOf<CrossRefAtom>(nums().labels, nums().kinds, std::move(keys), form, range,
+                                  std::make_shared<const std::map<std::string, std::string>>(_ast.declared));
     }
     if (isCitation(name)) {
       // `\cite[p.~3]{a,b}`: the label of each key's \bibitem, then the note,
@@ -1112,6 +1139,8 @@ private:
       return literalText(std::string(months[local.tm_mon % 12]) + " " + std::to_string(local.tm_mday) + ", " +
                          std::to_string(local.tm_year + 1900));
     }
+    // The cell a `cmd=` is being applied to: where its `{text}` goes (see tblrAlignmentOf()).
+    if (name == "gmcell") return gTblrCell != nullptr ? gTblrCell : sptr<Atom>(sptrOf<EmptyAtom>());
     if (name == "gmfloat") {
       _floatKind = trimmed(rawOf(child(id, 0)));
       _subKind.clear();
@@ -1133,7 +1162,6 @@ private:
       const sptr<Atom> caps = fragment(smallCaps(rawOf(child(id, 0))), false);
       return node(id).mode == Mode::math ? sptrOf<FontStyleAtom>(FontStyle::rm, false, caps) : caps;
     }
-    if (name == "gmtheorem") return fragment(theoremHead(id), false);
     // A run of the code of an alltt, as typed (the parser wrote its characters in hex).
     if (name == "gmlit") return typewriter(unhex(rawOf(child(id, 0))), false);
     if (name == "verb" || name == "lstinline" || name == "mintinline" || name == "Verb") {
@@ -1297,37 +1325,6 @@ private:
     }
     flush();
     return out;
-  }
-
-  /** The head of a theorem: "Theorem 2 (note)." in bold, as amsthm's plain
-   *  style sets it, a remark's in italics. `style`, the counter, the
-   *  counter it is set within, the title and the note are its arguments
-   *  (the expander's \newtheorem writes them). A numbered theorem steps its
-   *  counter, which starts again when the section it is within does, and is
-   *  what a \label after it names. */
-  std::string theoremHead(NodeId id) {
-    const std::string style = rawOf(child(id, 0));
-    const std::string counter = rawOf(child(id, 1));
-    const std::string within = rawOf(child(id, 2));
-    const std::string title = rawOf(child(id, 3));
-    const std::string note = rawOf(child(id, 4));
-    std::string number;
-    if (!counter.empty()) {
-      std::string where;
-      if (within == "section") where = std::to_string(_section[0]);
-      if (within == "subsection") where = std::to_string(_section[0]) + "." + std::to_string(_section[1]);
-      Numbering::Counter& c = nums().counters[counter];
-      if (c.where != where) c.value = 0;
-      c.where = where;
-      number = (where.empty() ? "" : where + ".") + std::to_string(++c.value);
-      nums().current = number;
-      nums().currentKind = "thm:" + title;
-    }
-    const std::string name = title + (number.empty() ? "" : "\\ " + number);
-    const bool italic = style == "remark";
-    std::string head = (italic ? "\\textit{" : "\\textbf{") + name + "}";
-    if (!note.empty()) head += "\\ (" + note + ")";
-    return head + (italic ? "." : "\\textbf{.}");
   }
 
   /** The text of a verbatim environment: a line to a row, flush left, a baselineskip apart (a blank line is a row too, as
@@ -1502,6 +1499,11 @@ private:
 
     void warn(const std::string& message) override {
       if (!_who.empty()) _lx._diags.warn(_at, _who + ": " + message);
+    }
+
+    std::function<void(const std::string&)> reporter() override {
+      if (_who.empty()) return {};
+      return [at = _at, who = _who](const std::string& message) { warnLater(at, who + ": " + message); };
     }
 
     /** Report what alignmentOfText() finds at `at`, as `who`'s. */
@@ -1788,18 +1790,29 @@ private:
         return sptrOf<ColorAtom>(body(), TRANSPARENT, c);
       }
       if (name == "fontsize") {
-        // The size over the 10pt of \normalsize, which a grob's own size
-        // stands for, as \large's 1.2 does.
-        const std::string raw = rawOf(child(id, 0));
-        char* end = nullptr;
-        const float points = std::strtof(raw.c_str(), &end);
+        // The size over the 10pt of \normalsize, which a grob's own size stands for, as \large's 1.2 does.
+        // A bare number is points; `em` is the size around it; the other units of the page are lengths.
+        const std::string raw = trimmed(rawOf(child(id, 0)));
         auto a = body();
         if (a == nullptr) a = sptrOf<EmptyAtom>();
-        if (end == raw.c_str() || !std::isfinite(points) || points <= 0) {
-          _diags.warn(x.span, "\\fontsize: `" + raw + "' is not a positive size; the size is kept");
+        char* end = nullptr;
+        const float number = std::strtof(raw.c_str(), &end);
+        float factor = 0.f;
+        if (end != raw.c_str() && *end == '\0') {
+          factor = number / 10.f;
+        } else {
+          const Dimen d = Units::getDimen(raw);
+          if (d.isValid() && d.unit == UnitType::em) {
+            factor = d.val;
+          } else if (d.isValid() && pointsPer(d.unit) > 0) {
+            factor = static_cast<float>(d.val * pointsPer(d.unit) / 10.0);
+          }
+        }
+        if (!std::isfinite(factor) || factor <= 0) {
+          _diags.warn(x.span, "\\fontsize: `" + raw + "' is not a positive size in em or an absolute unit; the size is kept");
           return a;
         }
-        return sized(a, std::min(points / 10.f, 16384.f));
+        return sized(a, std::min(factor, 16384.f));
       }
       if (name == "relscale") {
         // relsize's: a size relative to the one around it, which still
@@ -2256,6 +2269,9 @@ private:
     if (starred || level > 2) return "";
     _section[level]++;
     for (int i = level + 1; i < 3; i++) _section[i] = 0;
+    // The counters made `within` a section (\newcounter{c}[section], a theorem's) start again with it.
+    static const char* const kNames[] = {"section", "subsection", "subsubsection"};
+    for (int i = level; i < 3; i++) resetCountersWithin(kNames[i]);
     std::string s;
     for (int i = 0; i <= level; i++) {
       if (i > 0) s += '.';
@@ -2386,19 +2402,8 @@ private:
    *  different kinds (an `em` and a `pt`) cannot be added here, and the later one stands. */
   static Dimen addSkips(const Dimen& a, const Dimen& b) {
     if (a.unit == b.unit) return {a.val + b.val, a.unit};
-    const auto points = [](UnitType u) {
-      switch (u) {
-        case UnitType::pt: return 1.0;
-        case UnitType::point: return 72.27 / 72.0;
-        case UnitType::pica: return 12.0;
-        case UnitType::cm: return 72.27 / 2.54;
-        case UnitType::mm: return 72.27 / 25.4;
-        case UnitType::in: return 72.27;
-        default: return 0.0;
-      }
-    };
-    if (points(a.unit) > 0 && points(b.unit) > 0) {
-      return {static_cast<float>(a.val * points(a.unit) + b.val * points(b.unit)), UnitType::pt};
+    if (pointsPer(a.unit) > 0 && pointsPer(b.unit) > 0) {
+      return {static_cast<float>(a.val * pointsPer(a.unit) + b.val * pointsPer(b.unit)), UnitType::pt};
     }
     return b;
   }
@@ -2474,7 +2479,7 @@ private:
   bool isDisplay(NodeId id) const {
     const Node& x = node(id);
     if (x.kind == NodeKind::math) return x.flag;
-    if (x.kind == NodeKind::environment) return isDisplayEnvironment(x.text);
+    if (x.kind == NodeKind::environment) return isDisplay(x.text);
     return x.kind == NodeKind::group && x.aux == 3;
   }
 
@@ -2489,9 +2494,7 @@ private:
   bool isList(NodeId id) const {
     const Node& x = node(id);
     return x.kind == NodeKind::environment &&
-           (x.text == "itemize" || x.text == "enumerate" || x.text == "description" || x.text == "tablenotes" ||
-            isVerbatimEnvironment(x.text) || x.text == "tcolorbox" || x.text == "mdframed" || x.text == "multicols" ||
-            x.text == "quote" || x.text == "quotation" || x.text == "verse");
+           isSetApart(x.text);
   }
 
   /** A space a break takes with it: not `~`, which TeX never drops. */
@@ -2683,7 +2686,7 @@ private:
                             x.text == "noindent" || isLineAlignment(x.text));
         break;
       case NodeKind::environment:
-        found = isList(id) || isDisplayEnvironment(x.text);
+        found = isList(id) || isDisplay(x.text);
         break;
       case NodeKind::math:
         found = x.flag;
@@ -2779,13 +2782,18 @@ private:
           blockLine(l, id, false, x.text == "tcolorbox" || x.text == "mdframed" ? "0.6em" : quoted ? "1em" : "0.8em");
         }
       } else if (l.document && x.kind == NodeKind::command && !x.flag && x.text == "caption") {
-        // On a line of its own, unindented; the parser ended its line.
+        // On a line of its own, unindented; the parser ended its line. In a float it is centred, as \@makecaption
+        // centres one that fits, whether or not \centering came before it.
         lineBreak(l);
         l.indentNext = false;
+        const Alignment was = l.align;
+        if (!_floatKind.empty()) l.align = Alignment::center;
         beforeProse(l);
         _captionOwnLine = true;
         lowerItem(id, prose(l));
         _captionOwnLine = false;
+        endProse(l);  // the line takes its alignment as its text ends
+        l.align = was;
       } else if (l.document && x.kind == NodeKind::command && !x.flag && x.text == "paragraph") {
         // \paragraph starts a paragraph of its own, flush left with LaTeX's
         // 3.25ex above it, and runs into it.
@@ -3086,7 +3094,7 @@ private:
     if (x.text == "tcolorbox" || x.text == "mdframed") return tcolorbox(id);
     if (x.text == "quote" || x.text == "quotation" || x.text == "verse") return quotation(id);
     // The comment package's: what is between its markers is not read.
-    if (x.text == "comment") return nullptr;
+    if (const EnvSpec* dropped = findEnvironment(x.text); dropped != nullptr && dropped->dropped) return nullptr;
     if (isVerbatimEnvironment(x.text)) return verbatimBlock(id);
     const EnvSpec* spec = findEnvironment(x.text);
     const std::string macName = (spec != nullptr ? x.text : std::string("matrix")) + "@@env";
@@ -3136,7 +3144,9 @@ private:
     arr->_rows = std::move(_rows);
     _rows.clear();
     if (env == kNoNode || node(env).kind != NodeKind::environment) return arr;
-    if (isTblrEnvironment(node(env).text)) return tblrAlignmentOf(env);
+    if (const EnvSpec* built = findEnvironment(node(env).text); built != nullptr && built->tblr) {
+      return tblrAlignmentOf(env);
+    }
     // tabular[t], array[b]: LaTeX's vertical position, the first optional argument.
     if ((node(env).text == "tabular" || node(env).text == "array") && count(env) > 0) {
       const std::string where = trimmed(rawOf(child(env, 0)));
@@ -3145,7 +3155,7 @@ private:
     const bool text = node(env).flag;
     // The rows of align, gather, ... are numbered, unless the environment is
     // starred; a multline has one number, on its last line.
-    const bool family = isNumberedEnvironment(node(env).text);
+    const bool family = _ast.environmentIs(node(env).text, EnvironmentKind::numbered);
     const bool automatic = family && !node(env).star;
     const bool once = family && node(env).text == "multline";
     // The cases package's: a case and its explanation, which is text; the
@@ -3355,9 +3365,8 @@ private:
     return out;
   }
 
-  static bool isTextTable(const std::string& name) {
-    return name == "tabular" || name == "tabular*" || name == "tabularx" || name == "longtable";
-  }
+  /** An environment LaTeX sets as a display (equation, align, gather, ...): a line of its own. */
+  bool isDisplay(const std::string& name) const { return _ast.environmentIs(name, EnvironmentKind::display); }
 
   /** A column specification with siunitx's `S` and `S[options]` written as `r`,
    *  and, in `sColumns`, the indices of the columns that were S. The letters
@@ -3515,29 +3524,6 @@ private:
     return true;
   }
 
-  /** The rules of a tblr at one position (above row `at`), those that
-   *  meet joined: one row of the table draws one rule. */
-  static std::vector<TblrRule> rulesAt(const TblrSpec& spec, int at, int rows, int columns) {
-    std::vector<TblrRule> found;
-    for (TblrRule r : spec.horizontal) {
-      if (!r.at.matches(at, rows + 1)) continue;
-      if (r.from == 0) r.from = 1;
-      if (r.to == 0 || r.to > columns) r.to = columns;
-      found.push_back(r);
-    }
-    std::stable_sort(found.begin(), found.end(),
-                     [](const TblrRule& a, const TblrRule& b) { return a.from < b.from; });
-    std::vector<TblrRule> merged;
-    for (const TblrRule& r : found) {
-      if (!merged.empty() && r.from <= merged.back().to + 1) {
-        merged.back().to = std::max(merged.back().to, r.to);
-      } else {
-        merged.push_back(r);
-      }
-    }
-    return merged;
-  }
-
   /** A tblr (tabularray's table, tinytable's) as an alignment: the rules
    *  its spec puts between rows, and the spans, colours, fonts and
    *  alignments it sets for cells. */
@@ -3546,8 +3532,9 @@ private:
     const bool text = node(env).flag;
     const NodeId outerArg = count(env) > 0 ? child(env, 0) : kNoNode;
     const NodeId innerArg = count(env) > 1 ? child(env, 1) : kNoNode;
-    TblrSpec spec = parseTblr(outerArg == kNoNode ? std::string() : rawOf(outerArg),
-                              innerArg == kNoNode ? std::string() : rawOf(innerArg));
+    // tinytable writes a `%` comment after each bracket, which would be part of the first key.
+    TblrSpec spec = parseTblr(outerArg == kNoNode ? std::string() : stripComments(rawOf(outerArg)),
+                              innerArg == kNoNode ? std::string() : stripComments(rawOf(innerArg)));
     std::vector<NodeId> rows;
     for (std::uint32_t r = 0; r < count(env); r++) {
       if (node(child(env, r)).kind == NodeKind::row) rows.push_back(child(env, r));
@@ -3560,23 +3547,50 @@ private:
     for (const NodeId row : rows) columns = std::max(columns, static_cast<int>(count(row)));
     const int n = static_cast<int>(rows.size());
 
+    std::set<std::string> badCommands;  // what is said of a spec's text, once each
+    // LaTeX the spec holds (a caption, a note, `preto`) is read where tabularray reads it, with what the document had
+    // defined at the `\begin` (`scope`), as TeX has it in force then. What is wrong with it is said at the table, not
+    // left drawn as a red name.
+    const auto scope = _ast.scopeOf(env);
+    const auto specText = [&](const std::string& latex, const std::string& what, bool math) {
+      Diagnostics problems;
+      const sptr<Atom> atom = buildFragment(latex, math, problems, scope);
+      for (const Diagnostic& d : problems.items()) {
+        if (badCommands.insert(what + d.message).second) {
+          _diags.warn(node(env).span, "tabularray: " + what + ": " + d.message);
+        }
+      }
+      return atom;
+    };
+
     // A caption, as a longtable's: a line across the table, above it.
-    if (!spec.caption.empty() && columns > 0) {
-      auto caption = sptrOf<FontStyleAtom>(FontStyle::rm, false, fragment(spec.caption, false));
-      arr->add(sptrOf<MulticolumnAtom>(columns, "c", caption));
+    const int captionRows = !spec.caption.empty() && columns > 0 ? 1 : 0;
+    if (captionRows > 0) {
+      // "Table 1: text", the counter stepped, in a float or not (tabularray's caption-tag).
+      const std::string kind = _floatKind;
+      if (_floatKind.empty()) _floatKind = "table";
+      std::string label = captionLabel();
+      _floatKind = kind;
+      // tabularray's caption-tag and caption-sep: `\tablename\hspace{0.25em}\thetable` and `:\enskip`. A caption
+      // too long for the table hangs its lines by the width of that (its `\hangindent`).
+      if (const auto tilde = label.find('~'); tilde != std::string::npos) label.replace(tilde, 1, "\\hspace{0.25em}");
+      if (label.size() >= 2 && label.compare(label.size() - 2, 2, ": ") == 0) label.replace(label.size() - 2, 2, ":\\enskip{}");
+      const sptr<Atom> lead = label.empty() ? sptr<Atom>(sptrOf<EmptyAtom>()) : specText(label, "caption", false);
+      const sptr<Atom> text = specText(spec.caption, "caption", false);
+      auto whole = sptrOf<RowAtom>();
+      whole->add(lead);
+      if (text != nullptr) whole->add(text);
+      auto caption = sptrOf<FontStyleAtom>(FontStyle::rm, false,
+                                           sptrOf<HangingAtom>(whole, lead, text == nullptr ? sptr<Atom>(sptrOf<EmptyAtom>()) : text));
+      auto span = sptrOf<MulticolumnAtom>(columns, "c", caption);
+      span->setWrapToTable(true);
+      span->report = [at = node(env).span](const std::string& m) { warnLater(at, "tabularray: " + m); };
+      arr->add(span);
       if (columns > 1) arr->addCol(columns);
+      // tabularray's `headsep`: 6pt between the caption and the table.
+      arr->addRowSep(Units::getDimen("0pt"), spec.headsep.isValid() ? spec.headsep : Units::getDimen("6pt"));
       arr->addRow();
     }
-
-    const auto rule = [&](int at) {
-      for (const TblrRule& r : rulesAt(spec, at, n, columns)) {
-        auto line = sptrOf<HlineAtom>();
-        if (r.thickness.isValid()) line->setThickness(r.thickness.val, r.thickness.unit);
-        if (r.from > 1 || r.to < columns) line->setColumnRange(r.from - 1, r.to - 1);
-        arr->add(line);
-        arr->addRow();
-      }
-    };
 
     bool noted = false;
     // A colour is applied to every cell it covers: said once per name.
@@ -3589,26 +3603,169 @@ private:
       }
       return static_cast<color>(TRANSPARENT);
     };
+
+    std::vector<std::pair<sptr<HlineAtom>, std::string>> ruleColours;
+    // The cell just lowered (`arr->_root`), set under LaTeX that has `\gmcell` where the cell goes, read with the
+    // definitions the document had at the `\begin` (`scope`).
+    const auto applyToCell = [&](const std::string& latex, const std::string& what) {
+      if (arr->_root == nullptr) return;
+      gTblrCell = arr->_root;
+      Diagnostics problems;
+      const sptr<Atom> applied = buildFragment(latex, !text, problems, scope);
+      gTblrCell.reset();
+      if (applied != nullptr) arr->_root = applied;
+      for (const Diagnostic& d : problems.items()) {
+        if (badCommands.insert(what + d.message).second) {
+          _diags.warn(node(env).span, "tabularray: " + what + ": " + d.message);
+        }
+      }
+    };
+
+    // The rule above row `at`: its pieces share one row. Pieces of another thickness or colour are a row
+    // of their own, which stands a hair lower (a table that mixes them in one rule is rare).
+    const auto rule = [&](int at) {
+      const std::vector<TblrRuleSegment> pieces = tblrRuleSegments(spec, at, n, columns);
+      std::vector<bool> drawn(pieces.size(), false);
+      for (std::size_t k = 0; k < pieces.size(); k++) {
+        if (drawn[k]) continue;
+        auto line = sptrOf<HlineAtom>();
+        const TblrRuleSegment& first = pieces[k];
+        if (first.thickness.isValid()) line->setThickness(first.thickness.val, first.thickness.unit);
+        // tinytable defines its colours in the body's first cell: they are looked up once it is lowered.
+        if (!first.colour.empty()) ruleColours.emplace_back(line, first.colour);
+        line->setDashed(first.dashed);
+        const bool whole = pieces.size() == 1 && first.from <= 1 && first.to >= columns &&
+                           first.leftpos >= 0 && first.rightpos >= 0;
+        for (std::size_t m = k; m < pieces.size(); m++) {
+          const TblrRuleSegment& other = pieces[m];
+          if (other.thickness.isValid() != first.thickness.isValid() || other.colour != first.colour ||
+              other.dashed != first.dashed ||
+              (first.thickness.isValid() &&
+               (other.thickness.val != first.thickness.val || other.thickness.unit != first.thickness.unit))) {
+            continue;
+          }
+          drawn[m] = true;
+          if (!whole) line->addPiece(other.from - 1, other.to - 1, other.leftpos, other.rightpos);
+        }
+        arr->add(line);
+        arr->addRow();
+      }
+    };
+
+    // siunitx's columns (`si={...}`): their numbers are padded after the marker to the most any cell has,
+    // so that the markers line up in a column set flush right.
+    std::map<int, int> siDecimals;
+    std::map<int, char> siMark;
+    std::map<int, siunitx::Options> siOptions;
+    for (int c = 0; c < columns; c++) {
+      const TblrSetting column = tblrCell(spec, 1, c + 1, n, columns);
+      if (!column.siunitx) continue;
+      siDecimals[c] = 0;
+      siOptions[c] = siunitx::parseOptions(column.si);
+      // What siunitx does with its options that this does not: said, once for each.
+      for (const std::string& key : siunitx::unreadOptions(column.si)) {
+        // (what stands round a number is read as text, which is told below where it matters)
+        if (key == "table-align-text-before" || key == "table-align-text-after" || key == "input-symbols") continue;
+        if (badCommands.insert("si" + key).second) {
+          _diags.warn(node(env).span, "tabularray: si option `" + key + "' is not supported: left out");
+        }
+      }
+      if (siOptions[c].tableExponent && badCommands.insert("siexponent").second) {
+        _diags.warn(node(env).span, "tabularray: the exponent part of si's table-format is not supported: left out");
+      }
+      for (const NodeId row : rows) {
+        if (c >= static_cast<int>(count(row))) continue;
+        const std::string raw = trimmed(cellText(child(row, static_cast<std::uint32_t>(c))));
+        const SNumber num = sNumber(raw);
+        if (!num.numeric) {
+          // A number with a symbol round it (`1.5*`, `(2.0)`): siunitx's input-symbols set it apart, as text.
+          std::string bare;
+          for (const char ch : raw) {
+            if (ch != '*' && ch != '(' && ch != ')') bare += ch;
+          }
+          if (bare != raw && sNumber(bare).numeric && badCommands.insert("siinputsymbols").second) {
+            _diags.warn(node(env).span,
+                        "tabularray: a symbol round a number in an si column is set as text, not as siunitx sets it");
+          }
+          continue;
+        }
+        siDecimals[c] = std::max(siDecimals[c], num.decimals);
+        if (num.marker) siMark[c] = num.mark;
+      }
+    }
+    // The array row each table row is, to say which rows a vertical rule runs through.
+    std::vector<int> arrayRowOf;
+    // The cells (row, column; from 0) a row span covers.
+    std::set<std::pair<int, int>> covered;
     for (int k = 0; k < n; k++) {
       const NodeId row = rows[static_cast<std::size_t>(k)];
       rule(k + 1);
+      arrayRowOf.push_back(arr->rows());
       const std::uint32_t cells = count(row);
       for (std::uint32_t c = 0; c < cells;) {
         if (c > 0) arr->addCol();
+        // What a row span covers was written as cells of its own, which are not drawn.
+        if (covered.count({k, static_cast<int>(c)}) > 0) {
+          c++;
+          continue;
+        }
         const NodeId list = child(child(row, c), 0);
-        if (text) {
+        const TblrSetting s = tblrCell(spec, k + 1, static_cast<int>(c) + 1, n, columns);
+        // A number of a siunitx column is set as \num sets it, with its digits in groups, unless the cell is
+        // guarded (a `cmd=` of its own, or `guard`).
+        bool setAsNumber = false;
+        if (siDecimals.count(static_cast<int>(c)) > 0 && !s.hasCmd) {
+          const std::string raw = trimmed(cellText(child(row, c)));
+          std::string problem;
+          if (!raw.empty() && raw.find_first_of("\\{}$") == std::string::npos) {
+            const std::string set = siunitx::number(raw, problem);
+            const SNumber num = sNumber(raw);
+            if (problem.empty() && !set.empty()) {
+              // The room siunitx keeps: what `table-format` says, else what the column's own numbers need.
+              const siunitx::Options& so = siOptions[static_cast<int>(c)];
+              std::string pad, before;
+              const int most = so.tableDecimals >= 0 ? so.tableDecimals : siDecimals[static_cast<int>(c)];
+              if (num.numeric && !num.marker && most > 0) {
+                pad += "\\phantom{" + std::string(1, siMark.count(static_cast<int>(c)) > 0 ? siMark[static_cast<int>(c)] : '.') + "}";
+              }
+              for (int d = num.decimals; num.numeric && d < most; d++) pad += "\\phantom{0}";
+              if (num.numeric && so.tableIntegers >= 0) {
+                int digits = 0;
+                std::size_t at = raw.find_first_of("+-") == 0 ? 1 : 0;
+                for (; at < raw.size() && std::isdigit(static_cast<unsigned char>(raw[at])) != 0; at++) digits++;
+                if (so.tableIntegers > digits) before += "\\hphantom{" + std::string(static_cast<std::size_t>(so.tableIntegers - digits), '0') + "}";
+                if (so.tableSign && raw.find_first_of("+-") != 0) before += "\\hphantom{\\mathord{-}}";
+              }
+              arr->add(fragment("$" + before + set + pad + "$", false));
+              setAsNumber = true;
+            }
+          }
+        }
+        if (setAsNumber) {
+          // done
+        } else if (text) {
           textCell(list, *arr);
         } else {
           lowerList(list, *arr, 0);
         }
-        const TblrSetting s = tblrCell(spec, k + 1, static_cast<int>(c) + 1, n, columns);
-        if (s.rowspan > 1 && !noted) {
-          noted = true;
-          _diags.warn(node(env).span, "tabularray: a row span (r=) is not supported: left out");
+        // `cmd=\a\b` is applied as tabularray applies it, `\a\b{text}`, and `font=` is in force round the whole:
+        // `{<font> \a\b{text}}`, with the cell where `\gmcell` stands.
+        if (!trimmed(s.cmd).empty()) applyToCell(trimmed(s.cmd) + "{\\gmcell}", "cmd=" + trimmed(s.cmd));
+        if (s.hasFont && !trimmed(s.font).empty()) {
+          // (no space before `\gmcell`: tabularray's cell text has none at its start either)
+          applyToCell("{" + trimmed(s.font) + "\\gmcell}", "font=" + trimmed(s.font));
+          // The engine sets small capitals from the source text of what they are in force over, which a cell that
+          // is built already has not: not drawn, and said.
+          if (s.font.find("\\scshape") != std::string::npos && badCommands.insert("scshape").second) {
+            _diags.warn(node(env).span, "tabularray: font=\\scshape: small capitals are not drawn for a table cell: left out");
+          }
         }
-        if (!s.font.empty()) {
-          arr->_root = sptrOf<FontStyleAtom>(FontContext::mainFontStyleOf(s.font), false, arr->_root,
-                                              true);
+        if (!s.prepend.empty() || !s.append.empty()) {
+          auto cellRow = sptrOf<RowAtom>();
+          if (!s.prepend.empty()) cellRow->add(specText(s.prepend, "preto=" + s.prepend, !text));
+          if (arr->_root != nullptr) cellRow->add(arr->_root);
+          if (!s.append.empty()) cellRow->add(specText(s.append, "appto=" + s.append, !text));
+          arr->_root = cellRow;
         }
         if (!s.background.empty()) {
           const color bg = tblrColour(s.background);
@@ -3619,18 +3776,90 @@ private:
           if (!isTransparent(fg)) arr->addCellSpecifier(sptrOf<CellForegroundAtom>(fg));
         }
         const int span = std::min(s.colspan, static_cast<int>(cells - c));
-        if (span > 1 || !s.halign.empty()) {
-          arr->_root = sptrOf<MulticolumnAtom>(std::max(span, 1), s.halign.empty() ? "l" : s.halign,
-                                               arr->_root);
+        const int rowspan = std::min(s.rowspan, n - k);
+        // Where the text stands in the rows it spans, or in a row taller than it: only `m`, `b` and `f` differ from
+        // the cell's own place at the top (`t`) and its first baseline (`h`), which a cell in a row is at already.
+        const bool vertical = s.valign == 'm' || s.valign == 'b' || s.valign == 'f';
+        if (span > 1 || rowspan > 1 || !s.halign.empty() || vertical) {
+          // A cell of its own width keeps its column's alignment (an empty one), where a span has `l` unless told.
+          auto cell = sptrOf<MulticolumnAtom>(std::max(span, 1), s.halign.empty() && span <= 1 ? "" : s.halign.empty() ? "l" : s.halign,
+                                              arr->_root);
+          cell->setRowSpan(rowspan, s.valign == 0 ? 't' : s.valign);
+          arr->_root = cell;
           if (span > 1) arr->addCol(span);
+          // The rows below were written as cells of their own, which are empty and not drawn.
+          for (int dr = 1; dr < rowspan; dr++) {
+            for (int dc = 0; dc < std::max(span, 1); dc++) covered.insert({k + dr, static_cast<int>(c) + dc});
+          }
         }
         // What it spans was written as cells of its own, which are empty.
         c += static_cast<std::uint32_t>(std::max(span, 1));
       }
+      // tabularray's rows have 2pt above and below their strut, unless the spec says otherwise.
+      const TblrSetting sep = tblrCell(spec, k + 1, 1, n, columns);
+      arr->addRowSep(sep.aboveSep.isValid() ? sep.aboveSep : Units::getDimen("2pt"),
+                     sep.belowSep.isValid() ? sep.belowSep : Units::getDimen("2pt"));
       if (!node(row).raw.empty()) arr->addRowGap(Units::getDimen(node(row).raw));
       arr->addRow();
     }
     rule(n + 1);
+    for (const auto& [line, name] : ruleColours) {
+      const color c = tblrColour(name);
+      if (!isTransparent(c)) line->setColor(c);
+    }
+    // Vertical rules: the last written for a place wins, and says which rows it runs through.
+    for (int b = 0; b <= columns; b++) {
+      const TblrRule* last = nullptr;
+      for (const TblrRule& r : spec.vertical) {
+        if (r.at.matches(b + 1, columns + 1)) last = &r;
+      }
+      if (last == nullptr) continue;
+      VlineStyle style;
+      style.thickness = last->thickness;
+      style.dashed = last->dashed;
+      if (!last->colour.empty()) {
+        const color c = tblrColour(last->colour);
+        if (!isTransparent(c)) {
+          style.hasColour = true;
+          style.colour = c;
+        }
+      }
+      // A caption and the notes stand outside the table's rules.
+      if (!last->cols.all || !spec.notes.empty() || captionRows > 0) {
+        style.rows.assign(static_cast<std::size_t>(arr->rows()) + 2, false);
+        if (last->cols.all) {
+          for (int r = captionRows; r < arr->rows(); r++) style.rows[static_cast<std::size_t>(r)] = true;
+        } else {
+          for (int k = 0; k < n; k++) {
+            if (last->cols.matches(k + 1, n)) style.rows[static_cast<std::size_t>(arrayRowOf[static_cast<std::size_t>(k)])] = true;
+          }
+        }
+      }
+      arr->_vlineStyles[b] = std::move(style);
+    }
+    // Notes, as tabularray's `normal` note template sets them: a paragraph each, its tag in a box of
+    // 0.7em at the left, then the text. Left in one line (no wrapping to the table's width yet).
+    for (const TblrNote& note : spec.notes) {
+      const std::string tag = trimmed(note.tag);
+      // The tag in a box of 0.7em (`\hangindent`), the text after it, its wrapped lines under the text.
+      const sptr<Atom> lead = fragment(
+        "\\makebox[0.7em][l]{" + (tag.empty() ? std::string() : "\\textsuperscript{\\textsf{" + tag + "}}") + "}", false);
+      const sptr<Atom> text = specText(note.text, "note{" + tag + "}", false);
+      auto whole = sptrOf<RowAtom>();
+      whole->add(lead);
+      if (text != nullptr) whole->add(text);
+      auto atom = sptrOf<HangingAtom>(whole, lead, text == nullptr ? sptr<Atom>(sptrOf<EmptyAtom>()) : text);
+      auto span = sptrOf<MulticolumnAtom>(std::max(columns, 1), "l", atom);
+      span->setWrapToTable(true);
+      span->report = [at = node(env).span](const std::string& m) { warnLater(at, "tabularray: " + m); };
+      arr->add(span);
+      if (columns > 1) arr->addCol(columns);
+      // tabularray's `footsep` (6pt) above the first, the rest a baselineskip apart.
+      const bool first = &note == &spec.notes.front();
+      arr->addRowSep(first ? (spec.footsep.isValid() ? spec.footsep : Units::getDimen("6pt")) : Units::getDimen("0pt"),
+                     Units::getDimen("0pt"));
+      arr->addRow();
+    }
     for (const std::string& key : spec.unsupported) {
       _diags.warn(node(env).span, "tabularray: `" + key + "' is not supported: left out");
     }
@@ -4046,6 +4275,12 @@ const NumberingState& lastNumbering() {
 }
 
 sptr<Atom> buildFragment(const std::string& latex, bool math) {
+  Diagnostics unreported;
+  return buildFragment(latex, math, unreported);
+}
+
+sptr<Atom> buildFragment(const std::string& latex, bool math, Diagnostics& problems,
+                         std::shared_ptr<const UserScope> scope) {
   if (latex.empty()) return nullptr;
   // A fragment is parsed afresh, its depth from 0, so a fragment inside a
   // fragment (a raw argument in a raw argument) is counted here.
@@ -4055,11 +4290,11 @@ sptr<Atom> buildFragment(const std::string& latex, bool math) {
     Deeper() { depth++; }
     ~Deeper() { depth--; }
   } deeper;
-  Diagnostics unreported;
-  const Ast ast = parseLatex(latex, math ? Mode::math : Mode::text, unreported);
+  const Ast ast = parseLatex(latex, math ? Mode::math : Mode::text, problems, false, false, 0, UINT32_MAX, true, {},
+                             std::move(scope));
   if (ast.root == kNoNode) return nullptr;
   Formula g;
-  Lowerer(ast, unreported).run(g, false, false);
+  Lowerer(ast, problems).run(g, false, false);
   return g._root;
 }
 

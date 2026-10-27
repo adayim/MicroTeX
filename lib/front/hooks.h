@@ -2,6 +2,7 @@
 #define GRIDMICROTEX_FRONT_HOOKS_H
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,6 +53,24 @@ using FontResolver = std::function<std::string(
 void setFontResolver(FontResolver resolver);
 
 const FontResolver& fontResolver();
+
+
+/** The size of a box, in ems of the font it is set in: how far it reaches right of its reference point, above the baseline and
+ *  below it. */
+struct BoxSize {
+  double width = 0, height = 0, depth = 0;
+};
+
+/**
+ * What the layout makes of a piece of LaTeX set on a line by itself (`text` as in \hbox{...}, or `$...$` for math): the size of
+ * its box, for \settowidth and the like to put in a register while the input is read. The engine installs it for the
+ * length of a parse (MicroTeX::parse), with that parse's fonts; outside one there is none and nothing can be measured.
+ */
+using BoxMeasurer = std::function<std::optional<BoxSize>(const std::string& latex)>;
+
+void setBoxMeasurer(BoxMeasurer measurer);
+
+const BoxMeasurer& boxMeasurer();
 
 }  // namespace microtex::front
 

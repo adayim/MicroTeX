@@ -12,3 +12,29 @@
 \newcommand{\pushQED}[1]{}
 \newcommand{\popQED}{}
 \newenvironment{proof}[1][\proofname]{\par\gdef\gm@qedpending{\gm@qedmark}\textit{#1.}\ }{\gm@qedpending\gdef\gm@qedpending{}\par}
+\gmenvironmentkind{block}{proof}
+
+% \theoremstyle{plain|definition|remark} and \newtheorem{env}[shared]{Title}[within], \newtheorem*{env}{Title}: the environment
+% `env` whose head is "Title 1 (note)." (bold; a remark's italic) and whose body is italic in the plain style. The counter is
+% LaTeX's own (\newcounter, reset by `within`, \refstepcounter), and what a \label names is the environment (\gmlabelkind),
+% which cleveref's \cref names by its \crefname, set here as cleveref does from the title.
+\def\gmthmstyle{plain}
+\def\gmsplain{plain}
+\def\gmsremark{remark}
+\newcommand{\theoremstyle}[1]{\def\gmthmstyle{#1}}
+\newcommand{\gmthmhead}[6]{%
+  \ifx\relax#2\relax\else\refstepcounter{#2}\gmlabelkind{#1}\fi
+  #4{#3\ifx\relax#2\relax\else\ \csname the#2\endcsname\fi}%
+  \IfNoValueTF{#6}{}{\ (#6)}#5}
+\newcommand{\gmdefthm}[6]{%
+  \NewDocumentEnvironment{#1}{o}{\par\gmthmhead{#1}{#2}{#3}{#5}{#6}{##1}\ #4}{\par}}
+\newcommand{\gmthm}[3]{%
+  \ifx\gmthmstyle\gmsplain\gmdefthm{#1}{#2}{#3}{\itshape}{\textbf}{\textbf{.}}\else
+  \ifx\gmthmstyle\gmsremark\gmdefthm{#1}{#2}{#3}{}{\textit}{.}\else
+  \gmdefthm{#1}{#2}{#3}{}{\textbf}{\textbf{.}}\fi\fi}
+\NewDocumentCommand{\newtheorem}{s m o m o}{%
+  \IfBooleanTF{#1}{\gmthm{#2}{}{#4}}{%
+    \IfNoValueTF{#3}{%
+      \IfNoValueTF{#5}{\newcounter{#2}}{\newcounter{#2}[#5]\@namedef{the#2}{\csname the#5\endcsname.\arabic{#2}}}%
+      \gmthm{#2}{#2}{#4}}{\gmthm{#2}{#3}{#4}}}%
+  \crefname{#2}{\MakeLowercase{#4}}{\MakeLowercase{#4}s}\Crefname{#2}{#4}{#4s}\gmdeclare{autoref}{#2}{#4}}

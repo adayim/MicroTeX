@@ -38,6 +38,12 @@ void lowerInto(const Ast& ast, Formula& formula, Diagnostics& diagnostics, bool 
  */
 sptr<Atom> buildFragment(const std::string& latex, bool math = true);
 
+/** The same, for LaTeX the input wrote (a package's option that is a command): what is wrong with it is left in
+ *  `problems`, for the caller to say where it came from. `scope`: what the input had defined where the package took
+ *  the text (`Ast::scopeOf()`), which the text is read with, as TeX reads it. */
+sptr<Atom> buildFragment(const std::string& latex, bool math, Diagnostics& problems,
+                         std::shared_ptr<const UserScope> scope = nullptr);
+
 }  // namespace microtex::front
 
 #endif

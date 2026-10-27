@@ -177,7 +177,10 @@ private:
   NodeId parseScriptArgument(Mode mode, SourceSpan at);
   NodeId parseLeftRight(const ExpandedToken& left, Mode mode);
   NodeId parseDelimiter(const std::string& who);
+  /** Reads the name, keeps what the input has defined so far when the environment's arguments are data a package reads
+   *  later (`Expander::keyValueEnvironment`), and reads the rest (`parseEnvironmentNamed`). */
   NodeId parseEnvironment(const ExpandedToken& begin, Mode mode);
+  NodeId parseEnvironmentNamed(const ExpandedToken& begin, Mode mode, const std::string& name, bool proseWas);
   /** An environment's body read as text up to its `\end{name}`, which is
    *  read too (or warned about). */
   NodeId parseTextBody(const std::string& name, SourceSpan at);

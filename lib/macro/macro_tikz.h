@@ -257,6 +257,7 @@ public:
   static constexpr double kMaxPoints = 20000;
 
   Reader(CommandArgs& args, TikzAtom& pic) : _args(args), _pic(pic) {
+    _pic.report = args.reporter();
     // pgf's own styles that a picture may change.
     _styles["edge from parent"] = "draw";
   }

@@ -136,17 +136,6 @@ TblrIndex parseIndex(const std::string& text) {
   return ix;
 }
 
-/** A font switch's code: "bf", "it", "tt", "sf", "rm", or "". */
-std::string fontOf(const std::string& value) {
-  const std::string v = trimmed(value);
-  if (v == "\\bfseries" || v == "\\bf") return "bf";
-  if (v == "\\itshape" || v == "\\it") return "it";
-  if (v == "\\ttfamily" || v == "\\tt") return "tt";
-  if (v == "\\sffamily" || v == "\\sf") return "sf";
-  if (v == "\\rmfamily" || v == "\\normalfont" || v == "\\upshape") return "rm";
-  return "";
-}
-
 std::string alignOf(const std::string& value) {
   const std::string v = trimmed(value);
   if (v == "l" || v == "j") return "l";
@@ -155,12 +144,13 @@ std::string alignOf(const std::string& value) {
   return "";
 }
 
-/** Keys that set the look of a cell the lowering has nothing to do for:
- *  a cell's padding, its vertical place, its width. */
-bool harmless(const std::string& key) {
-  static const std::set<std::string> keys = {"valign", "wd",       "co",      "leftsep", "rightsep",
-                                              "abovesep", "belowsep", "halign*", "mode",    "m"};
-  return keys.count(key) > 0;
+/** A key's value without the braces that group it: `{\hspace{2em}}`. */
+std::string ungrouped(const std::string& value) {
+  const std::string v = trimmed(value);
+  if (v.size() >= 2 && v.front() == '{' && closing(v, 0) == v.size() - 1) {
+    return v.substr(1, v.size() - 2);
+  }
+  return v;
 }
 
 /** The settings of a style or span group: `bg=red, font=\bfseries, c=2`. */
@@ -173,8 +163,12 @@ void parseStyle(const std::string& text, TblrSetting& s, std::vector<std::string
       const std::string a = alignOf(tok);
       if (!a.empty()) {
         s.halign = a;
-      } else if (tok == "m" || tok == "t" || tok == "b" || tok == "h" || tok == "f") {
-        // A vertical place or a fixed height.
+      } else if (tok == "m" || tok == "t" || tok == "b" || tok == "h" || tok == "f" || tok == "p") {
+        s.valign = tok == "p" ? 't' : tok[0];
+      } else if (tok == "guard") {
+        // tabularray's `cmd=` with nothing: the cell's text is not read as a number.
+        s.cmd.clear();
+        s.hasCmd = true;
       } else {
         unsupported.push_back(tok);
       }
@@ -187,19 +181,42 @@ void parseStyle(const std::string& text, TblrSetting& s, std::vector<std::string
     } else if (key == "fg") {
       s.foreground = value;
     } else if (key == "font") {
-      const std::string f = fontOf(value);
-      if (f.empty()) {
-        unsupported.push_back(key);
-      } else {
-        s.font = f;
-      }
+      s.font = value;  // the declarations as written: the lowering sets the cell's text under them
+      s.hasFont = true;
     } else if (key == "halign") {
       const std::string a = alignOf(value);
       if (!a.empty()) s.halign = a;
+    } else if (key == "rowsep" || key == "abovesep" || key == "belowsep") {
+      const Dimen d = Units::getDimen(value);
+      if (d.isValid()) {
+        if (key != "belowsep") s.aboveSep = d;
+        if (key != "abovesep") s.belowSep = d;
+      } else {
+        unsupported.push_back(key);
+      }
+    } else if (key == "si") {
+      s.siunitx = true;
+      s.si = ungrouped(value);  // siunitx's own options: read by the lowering, by siunitx.h
+    } else if (key == "cmd") {
+      // Kept as written: the lowering applies it to the cell as `\cmd{text}`, as tabularray does.
+      s.cmd = value;
+      s.hasCmd = true;
+    } else if (key == "preto") {
+      s.prepend = ungrouped(value);
+    } else if (key == "appto") {
+      s.append = ungrouped(value);
     } else if (key == "c" || key == "r") {
       const int v = std::atoi(value.c_str());
       if (v > 1) (key == "c" ? s.colspan : s.rowspan) = std::min(v, 1 << 12);
-    } else if (!harmless(key)) {
+    } else if (key == "valign") {
+      // t (and p), m, b: the box of the cell; h, f: its first and last baseline, as tabularray reads them.
+      const char v = value.empty() ? 0 : (value[0] == 'p' ? 't' : value[0]);
+      if (std::string("tmbhf").find(v) != std::string::npos && v != 0) {
+        s.valign = v;
+      } else {
+        unsupported.push_back(key + "=" + value);
+      }
+    } else {
       unsupported.push_back(key);
     }
   }
@@ -217,20 +234,18 @@ void parseRule(const Item& item, TblrRule& rule) {
     }
     return true;
   };
+  rule.cols.all = true;
+  // Every range of the list counts: `3-4,7-10,13` is three pieces of one rule.
+  const auto setColumns = [&](const std::string& group) {
+    const TblrIndex cols = parseIndex(group);
+    if (!cols.ranges.empty() || cols.odd || cols.even || cols.all) rule.cols = cols;
+  };
   if (item.groups.size() >= 2) {
-    const TblrIndex cols = parseIndex(item.groups[0]);
-    if (!cols.ranges.empty()) {
-      rule.from = cols.ranges.front().first;
-      rule.to = cols.ranges.front().second;
-    }
+    setColumns(item.groups[0]);
     style = item.groups[1];
   } else if (item.groups.size() == 1) {
     if (isRange(item.groups[0])) {
-      const TblrIndex cols = parseIndex(item.groups[0]);
-      if (!cols.ranges.empty()) {
-        rule.from = cols.ranges.front().first;
-        rule.to = cols.ranges.front().second;
-      }
+      setColumns(item.groups[0]);
     } else {
       style = item.groups[0];
     }
@@ -239,9 +254,26 @@ void parseRule(const Item& item, TblrRule& rule) {
   }
   for (const std::string& raw : splitTop(style)) {
     const std::string tok = trimmed(raw);
-    if (!tok.empty() && (std::isdigit(static_cast<unsigned char>(tok[0])) || tok[0] == '.')) {
+    if (tok.empty()) continue;
+    const std::size_t eq = tok.find('=');
+    if (eq != std::string::npos) {
+      const std::string key = trimmed(tok.substr(0, eq));
+      const std::string value = trimmed(tok.substr(eq + 1));
+      const float pos = static_cast<float>(std::atof(value.c_str()));
+      if (key == "wd") {
+        const Dimen d = Units::getDimen(value);
+        if (d.isValid()) rule.thickness = d;
+      } else if (key == "l" || key == "leftpos" || key == "lr") {
+        rule.leftpos = pos;
+      }
+      if (key == "r" || key == "rightpos" || key == "lr") rule.rightpos = pos;
+    } else if (std::isdigit(static_cast<unsigned char>(tok[0])) || tok[0] == '.') {
       const Dimen d = Units::getDimen(tok);
       if (d.isValid()) rule.thickness = d;
+    } else if (tok == "dashed" || tok == "dotted") {
+      rule.dashed = true;
+    } else if (tok != "solid") {
+      rule.colour = tok;  // what is left is a colour
     }
   }
 }
@@ -339,15 +371,50 @@ bool TblrIndex::matches(int i, int n) const {
   return false;
 }
 
-bool isTblrEnvironment(const std::string& name) {
-  return name == "tblr" || name == "talltblr" || name == "longtblr";
+/** `text` without its `%` comments (to the line end): tinytable writes one after each bracket of a table. */
+static std::string withoutComments(const std::string& text) {
+  if (text.find('%') == std::string::npos) return text;
+  std::string out;
+  for (std::size_t i = 0; i < text.size(); i++) {
+    if (text[i] == '\\' && i + 1 < text.size()) {
+      out += text[i];
+      out += text[++i];
+    } else if (text[i] == '%') {
+      while (i + 1 < text.size() && text[i + 1] != '\n') i++;
+    } else {
+      out += text[i];
+    }
+  }
+  return out;
 }
 
-TblrSpec parseTblr(const std::string& outer, const std::string& inner) {
+TblrSpec parseTblr(const std::string& outerText, const std::string& innerText) {
+  const std::string outer = withoutComments(outerText);
+  const std::string inner = withoutComments(innerText);
   TblrSpec spec;
   for (const std::string& raw : splitTop(outer)) {
+    if (trimmed(raw).empty()) continue;
     const Item item = readItem(raw);
-    if (item.key == "caption") spec.caption = item.groups.empty() ? item.plain : item.groups[0];
+    const std::string value = item.groups.empty() ? item.plain : item.groups[0];
+    if (item.key == "caption") {
+      spec.caption = value;
+    } else if (item.key == "note" && item.hasValue) {
+      if (spec.notes.size() < kMaxItems) {
+        spec.notes.push_back({item.indexes.empty() ? std::string() : trimmed(item.indexes[0]), value});
+      }
+    } else if (item.key == "headsep" || item.key == "footsep") {
+      // The space between the caption and the table, and between the table and its notes (6pt by default).
+      const Dimen d = Units::getDimen(trimmed(value));
+      if (d.isValid()) {
+        (item.key == "headsep" ? spec.headsep : spec.footsep) = d;
+      } else {
+        spec.unsupported.push_back(item.key);
+      }
+    } else if (item.key == "entry" || item.key == "label" || item.key == "presep" || item.key == "postsep") {
+      // The list of tables, the table's label and its place on a page: a grob has none of them.
+    } else if (!item.key.empty()) {
+      spec.unsupported.push_back(item.key);
+    }
   }
   std::size_t count = 0;
   for (const std::string& raw : splitTop(inner)) {
@@ -358,6 +425,9 @@ TblrSpec parseTblr(const std::string& outer, const std::string& inner) {
     const std::string value = item.groups.empty() ? item.plain : item.groups[0];
     if (key == "colspec") {
       spec.columns = columnsOf(value, spec.unsupported, 0);
+    } else if (key == "width") {
+      spec.width = Units::getDimen(trimmed(value));
+      if (!spec.width.isValid()) spec.unsupported.push_back(key);
     } else if (key == "hline" || key == "vline") {
       TblrRule rule;
       rule.at = item.indexes.empty() ? TblrIndex() : parseIndex(item.indexes[0]);
@@ -387,6 +457,13 @@ TblrSpec parseTblr(const std::string& outer, const std::string& inner) {
       if (item.groups.size() >= 2) parseStyle(item.groups[0], s, spec.unsupported);
       parseStyle(item.groups.empty() ? item.plain : item.groups.back(), s, spec.unsupported);
       spec.settings.push_back(s);
+    } else if (key == "rowsep" || key == "abovesep" || key == "belowsep") {
+      // A setting for every row, as `rows={rowsep=3pt}` is.
+      TblrSetting s;
+      s.rows.all = true;
+      s.cols.all = true;
+      parseStyle(key + "=" + value, s, spec.unsupported);
+      spec.settings.push_back(s);
     } else if (!key.empty()) {
       spec.unsupported.push_back(key);
     }
@@ -397,6 +474,7 @@ TblrSpec parseTblr(const std::string& outer, const std::string& inner) {
 std::string tblrColumns(const TblrSpec& spec, int ncols) {
   // The columns, each with the specifiers that go before it and after it.
   std::vector<std::string> columns;
+  std::vector<std::size_t> letterAt;  // where each column's letter is in its string
   std::string pending;
   const std::string& s = spec.columns;
   for (std::size_t i = 0; i < s.size() && columns.size() < (1u << 14); i++) {
@@ -422,19 +500,69 @@ std::string tblrColumns(const TblrSpec& spec, int ncols) {
         i = end;
       }
       columns.push_back(column);
+      letterAt.push_back(std::string::npos);
     } else {
+      letterAt.push_back(pending.size());
       columns.push_back(pending + c);
       pending.clear();
     }
   }
   if (columns.empty()) columns.assign(static_cast<std::size_t>(std::max(ncols, 1)), "l");
+  letterAt.resize(columns.size(), 0);
   const int m = static_cast<int>(columns.size());
+  // A siunitx column is flush right: its numbers are lined up at their marker.
+  for (int j = 0; j < m; j++) {
+    const std::size_t at = letterAt[static_cast<std::size_t>(j)];
+    if (at != std::string::npos && tblrCell(spec, 1, j + 1, 1, m).siunitx) {
+      columns[static_cast<std::size_t>(j)][at] = 'r';
+    }
+  }
   std::string out;
   for (int k = 1; k <= m + 1; k++) {
     bool rule = false;
     for (const TblrRule& r : spec.vertical) rule = rule || r.at.matches(k, m + 1);
     if (rule) out += '|';
     if (k <= m) out += columns[static_cast<std::size_t>(k - 1)];
+  }
+  return out;
+}
+
+std::vector<TblrRuleSegment> tblrRuleSegments(const TblrSpec& spec, int at, int rows, int columns) {
+  std::vector<TblrRuleSegment> out;
+  const auto sameThickness = [](const TblrRule& x, const TblrRule& y) {
+    const Dimen& a = x.thickness;
+    const Dimen& b = y.thickness;
+    if (a.isValid() != b.isValid() || x.colour != y.colour || x.dashed != y.dashed) return false;
+    return !a.isValid() || (a.val == b.val && a.unit == b.unit);
+  };
+  const TblrRule* open = nullptr;
+  for (int j = 1; j <= columns && j <= (1 << 14); j++) {
+    // The last rule written that covers the column wins.
+    const TblrRule* rule = nullptr;
+    for (const TblrRule& r : spec.horizontal) {
+      if (r.at.matches(at, rows + 1) && r.cols.matches(j, columns)) rule = &r;
+    }
+    if (rule == nullptr) {
+      open = nullptr;
+      continue;
+    }
+    // A side drawn short (a negative position) leaves a gap, so the piece ends there.
+    const bool joins = open != nullptr && sameThickness(*open, *rule) &&
+                       open->rightpos >= 0 && rule->leftpos >= 0;
+    if (joins) {
+      out.back().to = j;
+      out.back().rightpos = rule->rightpos;
+    } else {
+      TblrRuleSegment s;
+      s.from = s.to = j;
+      s.leftpos = rule->leftpos;
+      s.rightpos = rule->rightpos;
+      s.thickness = rule->thickness;
+      s.colour = rule->colour;
+      s.dashed = rule->dashed;
+      out.push_back(s);
+    }
+    open = rule;
   }
   return out;
 }
@@ -453,8 +581,25 @@ TblrSetting tblrCell(const TblrSpec& spec, int i, int j, int n, int m) {
     if (s.rowspan > 1) out.rowspan = s.rowspan;
     if (!s.background.empty()) out.background = s.background;
     if (!s.foreground.empty()) out.foreground = s.foreground;
-    if (!s.font.empty()) out.font = s.font;
+    if (s.hasFont) {
+      out.font = s.font;
+      out.hasFont = true;
+    }
     if (!s.halign.empty()) out.halign = s.halign;
+    if (s.valign != 0) out.valign = s.valign;
+    if (s.hasCmd) {
+      out.cmd = s.cmd;
+      out.hasCmd = true;
+    }
+    if (s.siunitx) {
+      out.siunitx = true;
+      out.si = s.si;
+    }
+    if (s.aboveSep.isValid()) out.aboveSep = s.aboveSep;
+    if (s.belowSep.isValid()) out.belowSep = s.belowSep;
+    // As in tabularray, each setting adds to the cell's text rather than replacing it.
+    out.prepend = s.prepend + out.prepend;
+    out.append += s.append;
   }
   return out;
 }

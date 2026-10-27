@@ -102,10 +102,6 @@ map<string, string> Formula::_predefFormulaStrs{
   {"hbar",             "\\hslash"},
   {"mathstrut",        "\\vphantom{(}"},
   {"micro",            "\\mu"},
-  {"rVert",            "\\Vert"},
-  {"lVert",            "\\Vert"},
-  {"lvert",            "\\vert"},
-  {"rvert",            "\\vert"},
   // endregion
   // region Greek
   {"Alpha",            "Α"},

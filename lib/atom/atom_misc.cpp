@@ -11,14 +11,22 @@ using namespace std;
 using namespace microtex;
 
 sptr<Box> BigSymbolAtom::createBox(Env& env) {
-  // \big, \Big, \bigg and \Bigg are 1.2, 1.8, 2.4 and 3 times the size, as TeX sets
-  // them: the first variant of the delimiter that is so tall, else its assembly.
-  static const float kTimes[] = {1.f, 1.2f, 1.8f, 2.4f, 3.f};
-  const float times = kTimes[std::min(std::max(_size, 0), 4)];
-  auto b = microtex::createVDelim(_delim->name(), env, times * Units::fsize(UnitType::em, 1.f, env), false);
+  // amsmath: `\left<delim>\vcenter to k\big@size{}\right.` with k = 1, 1.5, 2, 2.5 and \big@size
+  // 1.2 times the height and depth of a parenthesis. TeX takes the first variant at least
+  // max(\delimiterfactor/1000 of that box, the box less \delimitershortfall (901, 5pt)), else the assembly.
+  static const float kTimes[] = {0.f, 1.f, 1.5f, 2.f, 2.5f};
+  const auto paren = delimiterSymbol("(")->getChar(env);
+  const float box = kTimes[std::min(std::max(_size, 0), 4)] * 1.2f * (paren.height() + paren.depth());
+  const float need = std::max(0.901f * box, box - Units::fsize(UnitType::pt, 5.f, env));
+  auto b = microtex::createVDelim(_delim->name(), env, need, false);
   const auto axis = env.mathConsts().axisHeight() * env.scale();
   b->_shift = -(b->vlen() / 2 - b->_height) - axis;
-  return sptrOf<HBox>(b);
+  // The box is that empty \vcenter too, so it is never shorter than it: \big( is 11.96pt tall in
+  // LuaLaTeX whatever the glyph (10.94) is.
+  auto hb = sptrOf<HBox>(b);
+  hb->_height = std::max(hb->_height, box / 2 + axis);
+  hb->_depth = std::max(hb->_depth, box / 2 - axis);
+  return hb;
 }
 
 LapedAtom::LapedAtom(const sptr<Atom>& a, char type) : _type(type) {

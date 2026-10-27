@@ -13,7 +13,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "front/hooks.h"
 #include "front/packages.h"
+#include "front/registers.h"
 #include "front/mhchem.h"
 #include "front/siunitx.h"
 #include "front/spec.h"
@@ -142,6 +144,16 @@ struct Definitions {
   std::unordered_map<std::string, MacroDef> envs;
   /** The packages read to make them. */
   std::unordered_set<std::string> loaded;
+  /** What the format and the packages declared of their environments (`\gmenvironmentkind`): name -> EnvironmentKind bits. */
+  std::unordered_map<std::string, std::uint8_t> kinds;
+  /** The commands whose first optional argument is a colour model (`\gmcolourmodel`). */
+  std::unordered_set<std::string> colourModel;
+  /** What the format and the packages declared as data for the lowering (`\gmdeclare{table}{key}{value}`), by "table\x1fkey". */
+  std::map<std::string, std::string> declared;
+  /** The registers the format and the packages made (\newcount, \newdimen, \newskip, \newlength) and what they hold. */
+  std::map<RegKey, Reg> regs;
+  std::unordered_map<std::string, RegKey> regNames;
+  int nextRegister = 1000;
   /** What the start packages left behind that is not a definition
    *  (\definecolor, ...): every input reads it first. */
   std::string startOutput;
@@ -194,6 +206,12 @@ struct Expander::Impl {
     fresh->macros = std::move(impl.macros);
     fresh->envs = std::move(impl.envs);
     fresh->loaded = std::move(impl.loaded);
+    fresh->kinds = std::move(impl.kinds);
+    fresh->colourModel = std::move(impl.colourModel);
+    fresh->declared = std::move(impl.declared);
+    fresh->regs = std::move(impl.regs);
+    fresh->regNames = std::move(impl.regNames);
+    fresh->nextRegister = impl.nextRegister;
     for (const Diagnostic& d : found.items()) {
       fresh->problems.push_back(std::to_string(d.span.line) + ":" + std::to_string(d.span.col) + ": " +
                                 d.message);
@@ -225,26 +243,42 @@ struct Expander::Impl {
   /** How deep readArg() is in commands given as arguments with their own. */
   int argDepth = 0;
   int atLetter = 0;
-  /** \theoremstyle's: plain, definition or remark, for the \newtheorems
-   *  after it. */
-  std::string theoremStyle = "plain";
   /** Units a document made with \DeclareSIUnit. */
   siunitx::UserUnits siUnits;
   /** `\sisetup{...}`, as written: the options every later number is read with. */
   std::string siSetup;
-  /** The counter a theorem environment is numbered within (`section`), by
-   *  environment name, for those that share its counter. */
-  std::unordered_map<std::string, std::string> theoremWithin;
   // Set after runaway expansion in recover mode: the input ends there.
   bool halted = false;
+  /** What a package declared with `\gmenvironmentkind` while it was read into these tables, as against the shared ones. */
+  std::unordered_map<std::string, std::uint8_t> kinds;
+  std::uint8_t kindsOf(const std::string& name) const {
+    std::uint8_t found = 0;
+    const auto own = kinds.find(name);
+    if (own != kinds.end()) found |= own->second;
+    if (shared != nullptr) {
+      const auto theirs = shared->kinds.find(name);
+      if (theirs != shared->kinds.end()) found |= theirs->second;
+    }
+    return found;
+  }
+  bool isKeyEnvironment(const std::string& name) const { return (kindsOf(name) & EnvironmentKind::keyValue) != 0; }
+  /** What a package declared with `\gmcolourmodel`, here and in the shared tables. */
+  std::unordered_set<std::string> colourModel;
+  /** What was declared with `\gmdeclare` while these tables were made, as against the shared ones. */
+  std::map<std::string, std::string> declared;
+  // The arguments of an environment whose arguments are key=value data (EnvironmentKind::keyValue), while they pass: 0 not in them,
+  // 1 after `\begin{name}`, 2 in a `[...]`, 3 in a `{...}`. `keyArgsAt` is the group depth they opened at and
+  // `keyArgsLeft` how many groups may still come.
+  int keyArgs = 0;
+  int keyArgsAt = 0;
+  int keyArgsLeft = 0;
   // Between `\foreach` and the `in` after it: the names it loops over are its own, even where the
   // format has a macro of that name (`\i`, `\j`), as pgf takes them.
   bool inForeach = false;
   std::unordered_set<std::string> foreachNames;  // the names some \foreach loops over, read as written from then on
-  // `\tikzset` and `\tikzstyle` so far, as the statements the pictures after them begin with.
-  std::string tikzStyles;
-  // `\tikzcdset` so far, as `\gmcdset{keys}` statements: what a tikzcd begins with.
-  std::string tikzcdSets;
+  // `\gmprepend{environment}{text}` so far: what the environment's body begins with, as the package that made the
+  // statements says (tikz's `\tikzset`, tikz-cd's `\tikzcdset`).
+  std::unordered_map<std::string, std::string> prepended;
   // fancyvrb's \DefineVerbatimEnvironment{name}{Verbatim}{options}: name -> (the environment it is, its options).
   std::unordered_map<std::string, std::pair<std::string, std::string>> verbatimEnvironments;
   // Where the input ends for now (Expander::endInputAt()), and the first
@@ -271,8 +305,16 @@ struct Expander::Impl {
         macros[name] = std::move(def);
       }
     }
+    // What the text this is read from had defined: its own now, over define_macro()'s.
+    if (opts.inherit != nullptr) {
+      for (const auto& [name, def] : opts.inherit->macros) macros[name] = def;
+      for (const auto& [name, def] : opts.inherit->envs) envs[name] = def;
+    }
     if (opts.prelude) {
       shared = &snapshot(opts.packages);
+      regs = shared->regs;
+      regNames = shared->regNames;
+      nextRegister = shared->nextRegister;
       // Asked for, in effect, by whoever set them: no longer free to define.
       for (const std::string& name : opts.packages) requested.insert(name);
       if (!shared->startOutput.empty()) pushExpansion(shared->startOutput, {}, true);
@@ -646,7 +688,7 @@ struct Expander::Impl {
   std::vector<std::string> readArgs(const MacroDef& def, const std::string& who) {
     if (!def.xargs.empty()) {
       std::vector<std::string> given;
-      for (const XArg& a : def.xargs) given.push_back(readXArg(a, who));
+      for (const XArg& a : def.xargs) given.push_back(processed(a, readXArg(a, who), who));
       return given;
     }
     std::vector<std::string> args(static_cast<std::size_t>(def.nparams));
@@ -657,7 +699,10 @@ struct Expander::Impl {
       args[0] = o ? *o : def.optionalDefault;
       i = 1;
     }
-    for (; i < def.nparams; i++) args[static_cast<std::size_t>(i)] = readArg(who);
+    // An undelimited argument is one token in TeX, and that is what a package or the format is written for
+    // (`\AddEnumerateCounter\arabic\@arabic{0}` in enumitem); only the input's own macros keep the lenient reading.
+    const bool greedy = def.package.empty();
+    for (; i < def.nparams; i++) args[static_cast<std::size_t>(i)] = readArg(who, greedy);
     return args;
   }
 
@@ -682,7 +727,7 @@ struct Expander::Impl {
     }
     for (int i = 1; i <= def.nparams && !abandoned; i++) {
       const auto& delim = def.delimiters[static_cast<std::size_t>(i)];
-      args[static_cast<std::size_t>(i) - 1] = delim.empty() ? readArg(who) : readUntil(delim, who);
+      args[static_cast<std::size_t>(i) - 1] = delim.empty() ? readArg(who, def.package.empty()) : readUntil(delim, who);
     }
     tape = nullptr;
     if (abandoned) {
@@ -772,6 +817,10 @@ struct Expander::Impl {
 
   void emit(const ExpToken& t) {
     emitLead(t.lead);
+    if (t.tok.kind == TokKind::character && t.tok.cp == 0xE000) {  // a backslash \string made
+      emitText("\\textbackslash{}", false);
+      return;
+    }
     emitText(t.text, t.tok.kind == TokKind::controlWord);
   }
 
@@ -882,19 +931,23 @@ struct Expander::Impl {
     }
     if (def == nullptr) {
       def = lookup(name);
-      // A macro with a starred twin, `cmd*`, as \DeclarePairedDelimiter makes.
-      if (def != nullptr) {
-        if (const MacroDef* twin = lookup(name + "*")) {
-          ExpToken t = raw();
-          if (isChar(t, '*')) {
-            def = twin;
-          } else {
-            unread(std::move(t));
-          }
-        }
-      }
     }
     if (def == nullptr) return false;
+
+    // In the arguments of an environment that reads key=value data itself (tabularray's `[outer]{inner}`), TeX
+    // gathers the text unexpanded and the package expands what it uses. A macro that takes an argument and is not
+    // given a braced one there (`cmd=\underline, fg=red`) is a command the package applies later: left as written.
+    if (keyArgs >= 2 && def->nparams > 0 && (def->delimiters.empty() || def->delimiters[0].empty())) {
+      ExpToken next = nextNonSpace();
+      const bool called = next.tok.isChar(Cat::beginGroup);
+      unread(std::move(next));
+      if (!called) {
+        ExpToken keep = e;
+        keep.tok.noexpand = true;
+        unread(std::move(keep));
+        return true;
+      }
+    }
 
     const std::string who = "\\" + name;
     // The macro's text, and what it was given, are read so wherever either was written.
@@ -985,6 +1038,11 @@ struct Expander::Impl {
       // Not ours: hand `\begin{name}` on as it came. The name is read
       // again, and expanded, if it holds a macro (`\begin{\env}`).
       for (auto it = consumed.rbegin(); it != consumed.rend(); ++it) unread(std::move(*it));
+      if (begin && isKeyEnvironment(name)) {
+        keyArgs = 4;  // `\begin{name}` passes first
+        keyArgsAt = depth;
+        keyArgsLeft = 2;
+      }
       const std::string stretch = begin ? arrayStretch(name) : "";
       if (!stretch.empty()) {
         // \arraystretch is read where the array begins: what it says goes
@@ -1002,19 +1060,20 @@ struct Expander::Impl {
     // braced one -- an ordinary atom in math -- which spacing depends on.
     if (begin) {
       std::vector<std::string> args = readArgs(*def, "\\begin{" + name + "}");
-      if (opts.recover) openEnvs.push_back({name, e.tok.span, depth});
+      if (opts.recover) openEnvs.push_back({name, e.tok.span, depth - leftOpen});
       const bool atLetterText = def->atLetter || e.atLetter;
       pushExpansion("{" + substitute(def->body, args, atLetterText), e.tok.span, atLetterText);
       ExpToken open = rawUntaped();
       if (!def->package.empty()) {  // a package's or the format's, not the input's
+        const std::uint8_t kind = kindsOf(name);
         const bool transparent =
-          (def->body.empty() && def->endBody.empty()) || isBlockEnvironment(name);
-        open.tok.environment = !transparent             ? (isDisplayEnvironment(name) ? 3 : 1)
-                               : isFloatEnvironment(name) ? 4
-                               : name == "center"        ? 5
-                               : name == "flushleft"     ? 6
-                               : name == "flushright"    ? 7
-                                                          : 2;
+          (def->body.empty() && def->endBody.empty()) || (kind & (EnvironmentKind::block | EnvironmentKind::floating)) != 0;
+        open.tok.environment = !transparent                              ? ((kind & EnvironmentKind::display) != 0 ? 3 : 1)
+                               : (kind & EnvironmentKind::floating) != 0 ? 4
+                               : (kind & EnvironmentKind::center) != 0   ? 5
+                               : (kind & EnvironmentKind::flushLeft) != 0 ? 6
+                               : (kind & EnvironmentKind::flushRight) != 0 ? 7
+                                                                          : 2;
       }
       frames.back().pushback.push_back(std::move(open));
       return true;
@@ -1065,6 +1124,42 @@ struct Expander::Impl {
   };
   std::vector<Undo> undoStack;
 
+  // --- registers: the state (the reading and the commands are below, by \ifnum) ---------------------------------
+
+  /** What a register holds (RegKey: kind and number), and the names \newcount, \newdimen, \newskip and \countdef gave. A
+   *  register is local to the group that sets it, as in TeX, unless \global says otherwise. */
+  std::map<RegKey, Reg> regs;
+  std::unordered_map<std::string, RegKey> regNames;
+  int nextRegister = 1000;
+  struct RegUndo {
+    RegKey key;
+    bool had;
+    Reg old;
+    int depth;
+  };
+  std::vector<RegUndo> regUndo;
+  /** While a number or a length is being read, a register named in it is an operand and never the start of an assignment. */
+  int scanDepth = 0;
+  /** What \aftergroup saved, with the depth of the group it was said in. */
+  std::vector<std::pair<ExpToken, int>> afterGroup;
+  /** \right has been read and its delimiter has not. */
+  bool rightPending = false;
+  /** How many \left groups are open: they are groups for \aftergroup and assignments, but not braces an environment's end can count. */
+  int leftOpen = 0;
+  void releaseAfterGroup() {
+    for (auto it = afterGroup.rbegin(); it != afterGroup.rend() && it->second > depth;) {
+      unread(std::move(it->first));
+      it = decltype(it)(afterGroup.erase(std::next(it).base()));
+    }
+  }
+  /** While the test of \ifnum, \ifdim or \ifodd is read, and the number of conditionals open then (see conditional()). */
+  bool testing_ = false;
+  std::size_t testDepth = 0;
+  /** Inside an \edef's body (expandBody): only what TeX expands is expanded; a command that does something is kept as it is. */
+  int expandOnly = 0;
+  /** Set while the digits of a factor are read, so that `2\gap` reaches the reader as a number and a register. */
+  bool keepRegisterTokens = false;
+
   /** About to define `name` here: note what it means now, so the end of
    *  the group it is defined in puts that back. */
   void defineLocally(const std::string& name, bool environment = false) {
@@ -1089,6 +1184,17 @@ struct Expander::Impl {
 
   /** A group has just ended: what it defined goes with it. */
   void endLocalGroup() {
+    while (!regUndo.empty() && regUndo.back().depth > depth) {
+      const RegUndo u = regUndo.back();
+      regUndo.pop_back();
+      if (u.key.first == 'k') {  // a \catcode
+        cats.set(static_cast<unsigned char>(u.key.second), static_cast<Cat>(u.old.n));
+      } else if (u.had) {
+        regs[u.key] = u.old;
+      } else {
+        regs.erase(u.key);
+      }
+    }
     while (!undoStack.empty() && undoStack.back().depth > depth) {
       const Undo u = std::move(undoStack.back());
       undoStack.pop_back();
@@ -1110,6 +1216,7 @@ struct Expander::Impl {
   struct PackageWorld {
     Impl& s;
     std::vector<Undo> undo;
+    std::vector<RegUndo> regUndoKept;
     int depth;
     std::string package;
     Cat at;
@@ -1121,6 +1228,7 @@ struct Expander::Impl {
     PackageWorld(Impl& impl, const std::string& name)
         : s(impl),
           undo(std::move(impl.undoStack)),
+          regUndoKept(std::move(impl.regUndo)),
           depth(impl.depth),
           package(impl.currentPackage),
           at(impl.cats.get('@')),
@@ -1129,6 +1237,7 @@ struct Expander::Impl {
           lastControlWord(impl.lastControlWord),
           conds(std::move(impl.conds)) {
       impl.undoStack.clear();
+      impl.regUndo.clear();
       impl.conds.clear();
       impl.depth = 0;
       impl.currentPackage = name;
@@ -1140,6 +1249,7 @@ struct Expander::Impl {
 
     ~PackageWorld() {
       s.undoStack = std::move(undo);
+      s.regUndo = std::move(regUndoKept);
       s.depth = depth;
       s.currentPackage = package;
       s.cats.set('@', at);
@@ -1314,111 +1424,92 @@ struct Expander::Impl {
     if (!(kind == "providecommand" && exists)) store(name, std::move(def));
   }
 
-  void declareOperator() {
-    const bool star = takeStar();
-    const std::string name = readCsName("newcommand");
-    const std::string text = readArg("\\DeclareMathOperator");
-    if (isDefined(name)) {
-      fail("newcommand", "Command " + name + " already exists! Use renewcommand instead!");
-    }
-    MacroDef def;
-    def.body = literal("\\mathop{\\mathrm{" + text + "}}" + (star ? "" : "\\nolimits"));
-    store(name, std::move(def));
+  /** \MakeUppercase and \MakeLowercase: the argument, expanded, with its letters changed. What LaTeX leaves alone is left
+   *  alone: control words, math, and the arguments of \label, \ref, \begin and the like (their text is a name). */
+  void changeCase(const ExpToken& e) {
+    const bool upper = e.tok.text == "MakeUppercase";
+    pushExpansion(caseChanged(expandBody(readArg("\\" + e.tok.text), e.tok.span), upper), e.tok.span);
   }
 
-  /** mathtools' \DeclarePairedDelimiter{\cmd}{left}{right}: `\cmd{x}` sets
-   *  the delimiters at the size they are in, `\cmd[\big]{x}` at the size
-   *  given, and `\cmd*{x}` as \left...\right does. The starred form is
-   *  the macro `cmd*`, which expandMacro() looks for after a `*`. */
-  void declarePairedDelimiter(const ExpToken& e) {
-    const std::string name = readCsName("newcommand");
-    const std::string left = readArg("\\DeclarePairedDelimiter");
-    const std::string right = readArg("\\DeclarePairedDelimiter");
-    if (isDefined(name)) {
-      fail("newcommand", "Command " + name + " already exists! Use renewcommand instead!");
+  static std::string caseChanged(const std::string& s, bool upper) {
+    // Letters that LaTeX changes as control words (\ae and \AE, \ss and \SS).
+    // (the upper-case form, the lower-case form): \i and \j are the dotless letters, which change to I and J.
+    static const std::unordered_map<std::string, std::pair<std::string, std::string>> pairs = {
+      {"ae", {"\\AE", "\\ae"}}, {"AE", {"\\AE", "\\ae"}}, {"oe", {"\\OE", "\\oe"}}, {"OE", {"\\OE", "\\oe"}},
+      {"o", {"\\O", "\\o"}},    {"O", {"\\O", "\\o"}},    {"l", {"\\L", "\\l"}},    {"L", {"\\L", "\\l"}},
+      {"ss", {"\\SS", "\\ss"}}, {"SS", {"\\SS", "\\ss"}}, {"i", {"I", "\\i"}},      {"j", {"J", "\\j"}}};
+    static const std::unordered_set<std::string> names = {"label", "ref", "eqref", "pageref", "cite", "citep", "citet",
+                                                          "cref", "Cref", "autoref", "begin", "end", "ensuremath",
+                                                          "url", "href", "includegraphics", "gmdeclare"};
+    const auto letter = [](char c) { return std::isalpha(static_cast<unsigned char>(c)) != 0; };
+    std::string out;
+    for (std::size_t i = 0; i < s.size();) {
+      const char c = s[i];
+      if (c == '$') {
+        // Math is not text: from this $ to the one that closes it (or $$ to $$).
+        const std::size_t length = i + 1 < s.size() && s[i + 1] == '$' ? 2 : 1;
+        const std::size_t close = s.find(length == 2 ? "$$" : "$", i + length);
+        const std::size_t end = close == std::string::npos ? s.size() : close + length;
+        out += s.substr(i, end - i);
+        i = end;
+      } else if (c == '\\' && i + 1 < s.size() && letter(s[i + 1])) {
+        std::size_t j = i + 1;
+        while (j < s.size() && letter(s[j])) j++;
+        const std::string name = s.substr(i + 1, j - i - 1);
+        const auto pair = pairs.find(name);
+        if (pair != pairs.end()) {
+          out += upper ? pair->second.first : pair->second.second;
+        } else {
+          out += s.substr(i, j - i);
+          if (names.count(name) != 0) {
+            // its arguments, `[..]` and `{..}`, as written
+            while (j < s.size() && (s[j] == '[' || s[j] == '{')) {
+              const char open = s[j], close = open == '[' ? ']' : '}';
+              int depth = 0;
+              std::size_t k = j;
+              for (; k < s.size(); k++) {
+                if (s[k] == open) depth++;
+                if (s[k] == close && --depth == 0) break;
+              }
+              k = std::min(k + 1, s.size());
+              out += s.substr(j, k - j);
+              j = k;
+            }
+          }
+        }
+        i = j;
+      } else if (c == '\\') {
+        // A control symbol, and \( ... \) with its math.
+        if (i + 1 < s.size() && s[i + 1] == '(') {
+          const std::size_t close = s.find("\\)", i + 2);
+          const std::size_t end = close == std::string::npos ? s.size() : close + 2;
+          out += s.substr(i, end - i);
+          i = end;
+        } else {
+          out += s.substr(i, std::min<std::size_t>(2, s.size() - i));
+          i += 2;
+        }
+      } else if (static_cast<unsigned char>(c) == 0xC3 && i + 1 < s.size()) {
+        // Latin-1 letters in UTF-8 (U+00C0 to U+00FE, but not x and the division sign): 0xC3 0x80-0x9E upper, 0xA0-0xBE lower.
+        unsigned char next = static_cast<unsigned char>(s[i + 1]);
+        if (upper && next == 0x9F) {  // the sharp s is SS in capitals
+          out += "SS";
+          i += 2;
+          continue;
+        }
+        const bool isUpper = next >= 0x80 && next <= 0x9E && next != 0x97;
+        const bool isLower = next >= 0xA0 && next <= 0xBE && next != 0xB7;
+        if (upper && isLower) next = static_cast<unsigned char>(next - 0x20);
+        if (!upper && isUpper) next = static_cast<unsigned char>(next + 0x20);
+        out += c;
+        out += static_cast<char>(next);
+        i += 2;
+      } else {
+        out += static_cast<char>(upper ? std::toupper(static_cast<unsigned char>(c)) : std::tolower(static_cast<unsigned char>(c)));
+        i++;
+      }
     }
-    const std::string who = "\\" + name;
-    // A space after the left delimiter, which an argument could run into.
-    MacroDef plain;
-    plain.nparams = 2;
-    plain.hasOptional = true;
-    plain.body = splitBody("#1" + left + " #2#1" + right, 2, who, e.tok.span);
-    MacroDef starred;
-    starred.nparams = 1;
-    starred.body = splitBody("\\left" + left + " #1\\right" + right, 1, who + "*", e.tok.span);
-    store(name, std::move(plain));
-    store(name + "*", std::move(starred));
-  }
-
-  /** fontspec's \newfontfamily\cmd[options]{Name}[options] and \newfontface:
-   *  `\cmd` is `\fontspec[options]{Name}[options]`, the font for the rest of
-   *  the group it is used in (`{\cmd text}`). */
-  void declareFontFamily() {
-    const std::string name = readCsName("newcommand");
-    const auto before = readOptional();
-    const std::string font = readArg("\\newfontfamily");
-    const auto after = readOptional();
-    if (isDefined(name)) {
-      fail("newcommand", "Command " + name + " already exists! Use renewcommand instead!");
-    }
-    MacroDef def;
-    def.body = literal("\\fontspec" + (before ? "[" + *before + "]" : std::string()) + "{" + font +
-                       "}" + (after ? "[" + *after + "]" : std::string()));
-    store(name, std::move(def));
-  }
-
-  /** amsthm's \newtheorem{name}[shared]{Title}[within], and the starred one
-   *  with no number: the environment `name`, whose head (the title, its
-   *  number and the optional note) is the lowering's \gmtheorem, which
-   *  holds the counters. The style is \theoremstyle's: plain sets its body
-   *  in italics, the others upright; a remark's head is italic too. */
-  void declareTheorem(const ExpToken& e) {
-    const bool star = takeStar();
-    const auto name = readGroupText();
-    if (!name || name->empty()) {
-      failDefinition("newtheorem", "\\newtheorem: missing the environment name", 2, true);
-    }
-    const auto shared = readOptional();
-    const std::string title = readArg("\\newtheorem", false);
-    const auto within = readOptional();
-    if ((lookupEnv(*name) != nullptr && !isSoftEnv(*name)) ||
-        (opts.isBuiltinEnvironment && opts.isBuiltinEnvironment(*name))) {
-      fail("newtheorem", "Environment " + *name + " already defined!");
-    }
-    const std::string counter = star ? "" : shared ? trim(*shared) : *name;
-    std::string in = within && !shared && !star ? trim(*within) : "";
-    if (shared && !star) {
-      const auto it = theoremWithin.find(counter);
-      in = it == theoremWithin.end() ? "" : it->second;
-    }
-    theoremWithin[*name] = in;
-    MacroDef def;
-    def.nparams = 1;
-    def.hasOptional = true;
-    const std::string begin = "\\par\\gmtheorem{" + theoremStyle + "}{" + counter + "}{" + in +
-                              "}{" + title + "}{#1}\\ " +
-                              (theoremStyle == "plain" ? "\\itshape " : "");
-    def.body = splitBody(begin, 1, "\\begin{" + *name + "}", e.tok.span);
-    def.endBody = splitBody("\\par", 0, "\\end{" + *name + "}", e.tok.span);
-    store(*name, std::move(def), true);
-  }
-
-  /** `\tikzset{keys}` and `\tikzstyle{name} = [keys]`: kept as text, for the tikzpictures after it,
-   *  which read them first (Expander::tikzStyles()); nothing is drawn. */
-  void tikzStyleCommand(const ExpToken& e) {
-    if (e.tok.text == "tikzcdset") {
-      tikzcdSets += "\\gmcdset{" + readArg("\\tikzcdset") + "}";
-      return;
-    }
-    if (e.tok.text == "tikzset") {
-      tikzStyles += "\\tikzset{" + readArg("\\tikzset") + "}";
-      return;
-    }
-    const std::string name = readArg("\\tikzstyle");
-    ExpToken t = nextNonSpace();
-    if (!isChar(t, '=')) unread(std::move(t));
-    const auto keys = readOptional();
-    tikzStyles += "\\tikzset{" + trim(name) + "/.style={" + (keys ? *keys : std::string()) + "}}";
+    return out;
   }
 
   /** fancyvrb's \DefineVerbatimEnvironment{name}{Verbatim}{options} (and \RecustomVerbatimEnvironment): `name` is that
@@ -1449,12 +1540,33 @@ struct Expander::Impl {
     pushExpansion("\\ensuremath{" + out + "}", e.tok.span);
   }
 
+  /** `\gmenvironmentkind{kind}{a,b}`: what a package says of the environments it defines, which the engine cannot
+   *  find out from their code (see EnvironmentKind). A package that does not say it is read as any other. */
+  void declareEnvironmentKind(const ExpToken& e) {
+    static const std::unordered_map<std::string, std::uint8_t> known = {
+      {"keyvalue", EnvironmentKind::keyValue}, {"block", EnvironmentKind::block},
+      {"float", EnvironmentKind::floating},    {"display", EnvironmentKind::display},
+      {"numbered", EnvironmentKind::numbered}, {"center", EnvironmentKind::center},
+      {"flushleft", EnvironmentKind::flushLeft}, {"flushright", EnvironmentKind::flushRight}};
+    const auto kind = readGroupText();
+    const auto names = readGroupText();
+    if (!kind || !names) return;
+    const auto it = known.find(trim(*kind));
+    if (it == known.end()) {
+      diags.warn(e.tok.span, "\\gmenvironmentkind: unknown kind '" + trim(*kind) + "'");
+      return;
+    }
+    std::size_t from = 0;
+    while (from <= names->size()) {
+      const std::size_t comma = std::min(names->find(',', from), names->size());
+      if (const std::string one = trim(names->substr(from, comma - from)); !one.empty()) kinds[one] |= it->second;
+      from = comma + 1;
+    }
+  }
+
   /** The commands that take xcolor's optional colour model (`\textcolor[rgb]{.2,.4,.6}{x}`, colortbl's `\rowcolor[HTML]{EFEFEF}`). */
-  static bool isModelColourCommand(const std::string& n) {
-    static const std::unordered_set<std::string> names = {"textcolor", "color",  "colorbox",   "fcolorbox",
-                                                           "rowcolor",  "cellcolor", "columncolor", "pagecolor",
-                                                           "arrayrulecolor"};
-    return names.count(n) != 0;
+  bool isModelColourCommand(const std::string& n) const {
+    return colourModel.count(n) != 0 || (shared != nullptr && shared->colourModel.count(n) != 0);
   }
 
   /** A colour written in xcolor's model as the `#RRGGBB` every colour argument reads. Anything else is `spec` as it was. */
@@ -1535,15 +1647,16 @@ struct Expander::Impl {
 
   /** Every command the expander runs itself (primitive() below). Keep it in
    *  step: \ifx and \ifdefined take these names to mean something. */
-  static bool isPrimitiveName(const std::string& n) {
+  bool isPrimitiveName(const std::string& n) const {
     static const std::unordered_set<std::string> names = {
-      "newcommand", "renewcommand", "providecommand", "DeclareRobustCommand", "DeclareMathOperator",
-      "DeclarePairedDelimiter", "ce", "pu", "newtheorem", "newfontfamily", "newfontface",
-      "tikzset", "tikzstyle", "tikzcdset", "DefineVerbatimEnvironment", "RecustomVerbatimEnvironment",
-      "theoremstyle", "def", "gdef", "edef", "xdef", "@ifstar", "@ifnextchar", "global",
-      "expandafter", "noexpand", "futurelet", "let", "newenvironment", "renewenvironment",
+      "newcommand", "renewcommand", "providecommand", "DeclareRobustCommand",
+      "ce", "pu", "MakeUppercase", "MakeLowercase", "newcount", "newdimen", "newskip", "newtoks", "countdef", "dimendef", "skipdef", "toksdef", "toks",
+      "chardef", "mathchardef", "catcode", "advance", "multiply", "divide", "the", "number", "newlength", "setlength", "addtolength", "ifdim", "ifodd", "numexpr", "dimexpr", "string", "aftergroup",
+      "gmprepend", "DefineVerbatimEnvironment", "RecustomVerbatimEnvironment",
+      "def", "gdef", "edef", "xdef", "@ifstar", "@ifnextchar", "global",
+      "expandafter", "noexpand", "ignorespaces", "gmenvironmentkind", "gmcolourmodel", "gmdeclare", "gmwarning", "settowidth", "settoheight", "settodepth", "settototalheight", "futurelet", "let", "newenvironment", "renewenvironment",
       "makeatletter", "makeatother", "begingroup", "endgroup", "begin", "end", "usepackage",
-      "RequirePackage", "ProvidesPackage", "NeedsTeXFormat", "relax", "iftrue", "iffalse", "ifx",
+      "RequirePackage", "ProvidesPackage", "NeedsTeXFormat", "relax", "iftrue", "iffalse", "ifx", "if", "ifcat",
       "ifdefined", "ifcsname", "ifnum", "unless", "else", "fi", "csname", "newif",
       "DeclareOption", "ProcessOptions", "ExecuteOptions", "AtBeginDocument", "endinput",
       "@ifpackageloaded", "NewDocumentCommand", "RenewDocumentCommand", "ProvideDocumentCommand",
@@ -1555,7 +1668,7 @@ struct Expander::Impl {
   /** The conditionals: each reads a test and then one of two branches. */
   static bool isCondPrimitive(const std::string& n) {
     return n == "iftrue" || n == "iffalse" || n == "ifx" || n == "ifdefined" || n == "ifcsname" ||
-           n == "ifnum";
+           n == "ifnum" || n == "ifdim" || n == "ifodd" || n == "if" || n == "ifcat";
   }
 
   /** TeX's other conditionals, which this expander does not evaluate. They go
@@ -1564,7 +1677,7 @@ struct Expander::Impl {
    *  there -- and count only as nesting where a branch is skipped. */
   static bool isForeignCond(const std::string& n) {
     static const std::unordered_set<std::string> names = {
-      "if", "ifcat", "ifdim", "ifodd", "ifvmode", "ifhmode", "ifmmode", "ifinner", "ifvoid",
+      "ifvmode", "ifhmode", "ifmmode", "ifinner", "ifvoid",
       "ifhbox", "ifvbox", "ifeof", "ifcase"};
     return names.count(n) != 0;
   }
@@ -1573,7 +1686,7 @@ struct Expander::Impl {
    *  expands rather than runs. */
   static bool isExpandablePrimitive(const std::string& n) {
     return isCondPrimitive(n) || n == "unless" || n == "else" || n == "fi" || n == "csname" ||
-           n == "@ifstar" || n == "@ifnextchar" || n == "@ifpackageloaded";
+           n == "@ifstar" || n == "@ifnextchar" || n == "@ifpackageloaded" || n == "the" || n == "number" || n == "string";
   }
 
   /** A subset of siunitx (front/siunitx.h): the command's arguments are
@@ -1758,11 +1871,23 @@ struct Expander::Impl {
   void ifNextChar(const ExpToken& e, bool star) {
     const std::string who = "\\" + e.tok.text;
     const ExpToken test = star ? ExpToken() : nextNonSpace();
-    const std::string yes = readArg(who, false), no = readArg(who, false);
+    // The kernel (latex.ltx, \@ifnextchar) stores both branches with `\def\reserved@a{#2}\def\reserved@b{#3}`, so each `##` in
+    // them is one `#` when the branch runs: how a macro made inside a branch gets its `#1` (enumitem, soul).
+    const std::string yes = defStored(readArg(who, false)), no = defStored(readArg(who, false));
     ExpToken next = nextNonSpace();
     const bool match = star ? isChar(next, '*') : (next.tok.kind == test.tok.kind && next.text == test.text);
     if (!(match && star)) unread(std::move(next));
     pushExpansion(match ? yes : no, e.tok.span, e.atLetter);
+  }
+
+  /** A token list as `\def` stores it: each `##` is one `#`. */
+  static std::string defStored(const std::string& text) {
+    std::string out;
+    for (std::size_t i = 0; i < text.size(); i++) {
+      out += text[i];
+      if (text[i] == '#' && i + 1 < text.size() && text[i + 1] == '#') i++;
+    }
+    return out;
   }
 
   /** \expandafter\a\b: `\b` is expanded once, then `\a` is read before what it made. */
@@ -1835,6 +1960,7 @@ struct Expander::Impl {
       return "char:" + target;
     }
     if (isPrimitiveName(name)) return "primitive:" + name;
+    if (regNames.count(name) != 0) return "register:" + name;
     if ((opts.isBuiltinCommand && opts.isBuiltinCommand(name)) || findCommand(name) != nullptr ||
         (opts.isKnownName && opts.isKnownName(name))) {
       return "command:" + name;
@@ -1852,6 +1978,25 @@ struct Expander::Impl {
     const ExpToken a = raw();
     const ExpToken b = raw();
     return meaningOf(a) == meaningOf(b);
+  }
+
+  /** \if and \ifcat (tex.web 506-507): the next two tokens, expanded, have the same character code or the same category. A control
+   *  sequence that does not expand is the code 256 and the category of \relax; a space is code 32 and category 10. */
+  bool ifchar(bool byCategory) {
+    const auto codeAndCat = [&]() {
+      // \relax is a token here (nextExpanded would run it, and so drop it)
+      ExpToken t = raw();
+      if (!(t.tok.kind == TokKind::controlWord && t.tok.text == "relax" && lookup("relax") == nullptr)) {
+        unread(std::move(t));
+        t = nextExpanded();
+      }
+      if (t.tok.isControl() || t.tok.kind == TokKind::end) return std::pair<int, int>{256, 16};
+      if (t.tok.kind == TokKind::space) return std::pair<int, int>{32, 10};
+      return std::pair<int, int>{static_cast<int>(t.tok.cp), static_cast<int>(t.tok.cat)};
+    };
+    const auto a = codeAndCat();
+    const auto b = codeAndCat();
+    return byCategory ? a.second == b.second : a.first == b.first;
   }
 
   bool ifdefined() {
@@ -1874,15 +2019,21 @@ struct Expander::Impl {
         diags.warn(t.tok.span, "illegal token in \\csname: it is left out");
         continue;
       }
-      name += t.tok.kind == TokKind::space ? std::string(" ") : std::string(t.text);
+      std::string piece = t.tok.kind == TokKind::space ? std::string(" ") : std::string(t.text);
+      for (std::size_t at = piece.find("\xEE\x80\x80"); at != std::string::npos; at = piece.find("\xEE\x80\x80", at)) {
+        piece.replace(at, 3, "\\");  // what \string made of a backslash
+        at++;
+      }
+      name += piece;
     }
   }
 
   /** The token for the control sequence `name`, which need not be one TeX
    *  could write (`my-cmd`). */
-  ExpToken controlToken(const std::string& name, const SourceSpan& at) {
+  ExpToken controlToken(const std::string& name, const SourceSpan& at, bool atLetter = false) {
     buffers.push_back("\\" + name);
     ExpToken t;
+    t.atLetter = atLetter;  // (what its arguments say is read as the \csname was)
     const bool symbol = name.size() == 1 && cats.get(static_cast<unsigned char>(name[0])) != Cat::letter;
     t.tok.kind = symbol ? TokKind::controlSymbol : TokKind::controlWord;
     t.tok.text = name;
@@ -1905,49 +2056,903 @@ struct Expander::Impl {
       relax.body = literal("\\relax");
       store(name, std::move(relax));
     }
-    unread(controlToken(name, e.tok.span));
+    unread(controlToken(name, e.tok.span, e.atLetter));
   }
 
   bool ifcsname(const SourceSpan& at) { return meaningOf(readCsname(at)) != "undefined"; }
 
-  /** An integer as TeX reads one: signs, digits, and the one space after. */
-  long readNumber(const SourceSpan& at) {
-    const auto next = [&] {
-      ExpToken t = nextExpanded();
-      while (t.tok.kind == TokKind::space) t = nextExpanded();
-      return t;
-    };
-    ExpToken t = next();
+  // --- registers: \count \dimen \skip, \advance, \the, \ifnum \ifdim ----------------------------------------------------
+  //
+  // What TeX does (tex.web 410-479): a number is read with signs and digits (or `"`hex, `'`octal, `` `\c``), a length is a
+  // decimal, a unit and one optional space, glue a length with `plus` and `minus` parts. A register token is an operand
+  // where a number or length is wanted and the start of an assignment elsewhere (\x=5pt, \x 5pt). The sizes are `Dim`s
+  // (registers.h): points, ems and exs kept apart, since the font is the render's. A register the expander cannot give
+  // a value (it was set from a length of the lowering's, as \linewidth) is `unknown`: its uses stay the token, for the
+  // lowering. The LaTeX commands over registers are \newlength, \setlength and \addtolength; the lowering still sets
+  // the lengths of its own (\parindent, \tabcolsep) and is told when a register of ours is `unknown`.
+
+  /** Keeps register tokens read while it lives as operands. */
+  struct ScanGuard {
+    Impl& s;
+    explicit ScanGuard(Impl& impl) : s(impl) { s.scanDepth++; }
+    ~ScanGuard() { s.scanDepth--; }
+  };
+
+  ExpToken nextNonSpaceExpanded() {
+    ExpToken t = nextExpanded();
+    while (t.tok.kind == TokKind::space) t = nextExpanded();
+    return t;
+  }
+
+  /** What was read to find out that something is not there, put back in the order it came. */
+  void giveBack(std::vector<ExpToken>& seen) {
+    for (auto it = seen.rbegin(); it != seen.rend(); ++it) unread(std::move(*it));
+    seen.clear();
+  }
+
+  static bool isDigitOf(const ExpToken& t, int base, int& value) {
+    if (t.tok.kind != TokKind::character) return false;
+    const char32_t c = t.tok.cp;
+    if (c >= '0' && c <= '9') value = static_cast<int>(c - '0');
+    else if (base == 16 && c >= 'A' && c <= 'F') value = static_cast<int>(c - 'A') + 10;
+    else return false;
+    return value < base;
+  }
+
+  /** tex.web scan_int: an optionally signed number. False, with nothing read, when none is there. */
+  bool tryInt(std::int64_t& value) {
+    ScanGuard guard(*this);
+    std::vector<ExpToken> seen;
+    // (register names are kept here, not replaced by what they print: a length is an integer in scaled points, tex.web 413)
+    struct Keep {
+      bool& flag;
+      ~Keep() { flag = false; }
+    } keep{keepRegisterTokens};
+    keepRegisterTokens = true;
+    ExpToken t = nextNonSpaceExpanded();
     bool negative = false;
     while (isChar(t, '+') || isChar(t, '-')) {
       if (isChar(t, '-')) negative = !negative;
-      t = next();
+      seen.push_back(std::move(t));
+      t = nextNonSpaceExpanded();
     }
-    long value = 0;
+    keepRegisterTokens = false;
+    if (t.tok.kind == TokKind::controlWord && lookup(t.tok.text) == nullptr &&
+        (regNames.count(t.tok.text) != 0 || registerKind(t.tok.text) != '\0')) {
+      const auto key = registerOf(t);
+      if (key && key->first != 't' && !regs[*key].unknown) {
+        const std::int64_t n = key->first == 'c' ? regs[*key].n : regs[*key].g.natural.sp();
+        value = negative ? -n : n;
+        return true;
+      }
+      if (key) unread(std::move(t));
+      giveBack(seen);
+      return false;
+    }
+    if (t.tok.kind == TokKind::controlWord && t.tok.text == "catcode" && lookup("catcode") == nullptr) {
+      // \catcode<number>: the category of that character
+      std::int64_t code = 0;
+      if (tryInt(code) && code >= 0 && code < 128) {
+        value = static_cast<std::int64_t>(cats.get(static_cast<unsigned char>(code)));
+        return true;
+      }
+      unread(std::move(t));
+      giveBack(seen);
+      return false;
+    }
+    if (t.tok.kind == TokKind::controlWord && t.tok.text == "numexpr" && lookup("numexpr") == nullptr) {
+      Val v;
+      if (exprValue('i', v)) {
+        value = negative ? -v.n : v.n;
+        return true;
+      }
+      unread(std::move(t));
+      giveBack(seen);
+      return false;
+    }
+    int base = 10;
+    if (isChar(t, '"')) base = 16;
+    if (isChar(t, '\'')) base = 8;
+    std::int64_t v = 0;
     bool any = false;
-    while (t.tok.kind == TokKind::character && t.tok.cp >= '0' && t.tok.cp <= '9') {
-      value = std::min<long>(value * 10 + static_cast<long>(t.tok.cp - '0'), 2147483647L);
+    if (isChar(t, '`')) {
+      // The character code of the next token: `a, `\a, `\%.
+      seen.push_back(std::move(t));
+      ExpToken c = raw();
+      if (c.tok.kind == TokKind::end) {
+        unread(std::move(c));
+        giveBack(seen);
+        return false;
+      }
+      v = c.tok.isControl() ? static_cast<std::int64_t>(static_cast<unsigned char>(c.tok.text.empty() ? ' ' : c.tok.text[0]))
+                            : static_cast<std::int64_t>(c.tok.cp);
+      if (c.tok.kind == TokKind::controlSymbol && c.tok.text == "^") {
+        // `\^^A is the character ^^A, code 1: two carets and a character make that character plus or minus 64 (tex.web 355)
+        ExpToken second = raw();
+        if (second.tok.isChar(Cat::superscript)) {
+          ExpToken third = raw();
+          if (third.tok.kind == TokKind::character && third.tok.cp < 128) {
+            const int x = static_cast<int>(third.tok.cp);
+            v = x < 64 ? x + 64 : x - 64;
+          } else {
+            unread(std::move(third));
+            unread(std::move(second));
+          }
+        } else {
+          unread(std::move(second));
+        }
+      }
       any = true;
       t = nextExpanded();
+    } else {
+      if (base != 10) {
+        seen.push_back(std::move(t));
+        t = nextExpanded();
+      }
+      int d = 0;
+      while (isDigitOf(t, base, d)) {
+        v = std::min<std::int64_t>(v * base + d, 2147483647LL);
+        any = true;
+        t = nextExpanded();
+      }
     }
-    if (!any) diags.warn(at, "missing number, treated as zero");
+    if (!any) {
+      unread(std::move(t));
+      giveBack(seen);
+      return false;
+    }
     if (t.tok.kind != TokKind::space) unread(std::move(t));
-    return negative ? -value : value;
+    value = negative ? -v : v;
+    return true;
+  }
+
+  /** tex.web scan_keyword: the letters of `word`, either case, after any spaces. Nothing is read when it is not there. */
+  bool keyword(const char* word) {
+    std::vector<ExpToken> seen;
+    ExpToken t = nextExpanded();
+    while (t.tok.kind == TokKind::space) {
+      seen.push_back(std::move(t));
+      t = nextExpanded();
+    }
+    for (const char* w = word; *w != '\0'; w++) {
+      const bool same = t.tok.kind == TokKind::character && t.tok.cp < 0x80 &&
+                        std::tolower(static_cast<int>(t.tok.cp)) == *w;
+      seen.push_back(std::move(t));
+      if (!same) {
+        // `seen` holds the token that did not match as its last: it goes back with the rest.
+        giveBack(seen);
+        return false;
+      }
+      if (*(w + 1) != '\0') t = nextExpanded();
+    }
+    return true;  // the matching tokens are used up
+  }
+
+  /** The unit that follows a number (`true` before it is ignored, as it is for a grob of one size); empty when none is there.
+   *  With `allowFil`, `fil`, `fill` and `filll` are units too, and `order` says which. */
+  std::string readUnit(bool allowFil, int& order) {
+    order = 0;
+    (void)keyword("true");
+    if (allowFil && keyword("fil")) {
+      order = 1;
+      while (order < 3 && keyword("l")) order++;
+      return "pt";
+    }
+    static const char* const kUnits[] = {"pt", "pc", "in", "bp", "cm", "mm", "dd", "cc", "sp", "em", "ex", "mu"};
+    for (const char* u : kUnits) {
+      if (keyword(u)) return u;
+    }
+    return {};
+  }
+
+  /** tex.web scan_dimen: an optionally signed decimal and a unit, then the one optional space. False, with nothing read,
+   *  when there is none (a register of ours is read as the value it prints). An absolute unit is worked out as TeX does
+   *  (sections 102 and 458), so that `1cm` is 28.45274pt to the last scaled point. */
+  bool tryDim(Dim& value, bool allowFil = false, int* fil = nullptr) {
+    ScanGuard guard(*this);
+    std::vector<ExpToken> seen;
+    ExpToken t = nextNonSpaceExpanded();
+    bool negative = false;
+    while (isChar(t, '+') || isChar(t, '-')) {
+      if (isChar(t, '-')) negative = !negative;
+      seen.push_back(std::move(t));
+      t = nextNonSpaceExpanded();
+    }
+    if (t.tok.kind == TokKind::controlWord && t.tok.text == "dimexpr" && lookup("dimexpr") == nullptr) {
+      Val v;
+      if (exprValue('d', v)) {
+        value = negative ? -v.d : v.d;
+        return true;
+      }
+      unread(std::move(t));
+      giveBack(seen);
+      return false;
+    }
+    std::int64_t whole = 0;
+    std::vector<int> digits;
+    bool any = false;
+    int d = 0;
+    struct Keep {
+      bool& flag;
+      ~Keep() { flag = false; }
+    } keep{keepRegisterTokens};
+    while (isDigitOf(t, 10, d)) {
+      whole = std::min<std::int64_t>(whole * 10 + d, 1073741823LL);
+      any = true;
+      keepRegisterTokens = true;
+      seen.push_back(std::move(t));
+      t = nextExpanded();
+    }
+    if (isChar(t, '.') || isChar(t, ',')) {
+      seen.push_back(std::move(t));
+      t = nextExpanded();
+      while (isDigitOf(t, 10, d)) {
+        if (digits.size() < 17) digits.push_back(d);
+        any = true;
+        keepRegisterTokens = true;
+        seen.push_back(std::move(t));
+        t = nextExpanded();
+      }
+    }
+    keepRegisterTokens = true;
+    unread(std::move(t));
+    if (!any) {
+      giveBack(seen);
+      return false;
+    }
+    // the fraction as sixteen bits (tex.web 102, round_decimals)
+    std::int64_t fraction = 0;
+    {
+      std::int64_t a = 0;
+      for (std::size_t k = digits.size(); k > 0;) {
+        --k;
+        a = (a + digits[k] * 131072LL) / 10;
+      }
+      fraction = (a + 1) / 2;
+    }
+    const double factor = static_cast<double>(whole) + static_cast<double>(fraction) / 65536.0;
+    {
+      // a register after the factor is the factor times it: `2\gap`
+      ExpToken r = raw();
+      if (r.tok.kind == TokKind::controlWord && lookup(r.tok.text) == nullptr &&
+          (regNames.count(r.tok.text) != 0 || registerKind(r.tok.text) != '\0')) {
+        const auto key = registerOf(r);
+        if (key && key->first != 'c' && !regs[*key].unknown) {
+          value = regs[*key].g.natural.scaled(negative ? -factor : factor);
+          return true;
+        }
+        diags.warn(r.tok.span, "a register after a number must be a length");
+      }
+      unread(std::move(r));
+    }
+    keepRegisterTokens = false;
+    int order = 0;
+    const std::string unit = readUnit(allowFil, order);
+    if (unit.empty()) {
+      giveBack(seen);
+      return false;
+    }
+    if (fil != nullptr) *fil = order;
+    value = Dim();
+    if (unit == "em" || unit == "mu") {
+      value.em = (negative ? -factor : factor) / (unit == "mu" ? 18.0 : 1.0);
+    } else if (unit == "ex") {
+      value.ex = negative ? -factor : factor;
+    } else {
+      std::int64_t sp = 0;
+      if (unit == "sp") {
+        sp = whole;
+      } else {
+        // num/denom of each unit in points (tex.web 458)
+        std::int64_t num = 1, denom = 1;
+        if (unit == "pc") num = 12;
+        else if (unit == "in") num = 7227, denom = 100;
+        else if (unit == "bp") num = 7227, denom = 7200;
+        else if (unit == "cm") num = 7227, denom = 254;
+        else if (unit == "mm") num = 7227, denom = 2540;
+        else if (unit == "dd") num = 1238, denom = 1157;
+        else if (unit == "cc") num = 14856, denom = 1157;
+        std::int64_t ip = whole * num / denom;
+        const std::int64_t rem = whole * num % denom;
+        std::int64_t f = (num * fraction + 65536 * rem) / denom;
+        ip += f / 65536;
+        f %= 65536;
+        sp = ip * 65536 + f;
+      }
+      value.pt = static_cast<double>(negative ? -sp : sp) / 65536.0;
+    }
+    // the one optional space after a unit
+    ExpToken sp = raw();
+    if (sp.tok.kind != TokKind::space) unread(std::move(sp));
+    return true;
+  }
+
+  bool tryGlue(Glue& g) {
+    ScanGuard guard(*this);
+    if (!tryDim(g.natural)) return false;
+    g.stretch = g.shrink = Dim();
+    g.stretchOrder = g.shrinkOrder = 0;
+    if (keyword("plus")) {
+      if (!tryDim(g.stretch, true, &g.stretchOrder)) diags.warn({}, "missing number after plus, treated as zero");
+    }
+    if (keyword("minus")) {
+      if (!tryDim(g.shrink, true, &g.shrinkOrder)) diags.warn({}, "missing number after minus, treated as zero");
+    }
+    return true;
+  }
+
+  /** An integer as TeX reads one: signs, digits, and the one space after. */
+  long readNumber(const SourceSpan& at) {
+    std::int64_t v = 0;
+    if (!tryInt(v)) diags.warn(at, "missing number, treated as zero");
+    return static_cast<long>(v);
+  }
+
+  // --- \numexpr and \dimexpr (e-TeX) ---------------------------------------------------------------------------------
+  //
+  // An expression is sums and differences of terms, a term is factors joined by `*` and `/`, a factor is a number (a length for
+  // \dimexpr), a register or an expression in parentheses; the right-hand side of `*` and `/` is always an integer. Division rounds
+  // to the nearest, halves away from zero, and `a*b/c` is worked out in one step so that nothing is lost between the two. A
+  // trailing \relax belongs to the expression.
+
+  struct Val {
+    std::int64_t n = 0;
+    Dim d;
+  };
+
+  /** e-TeX's `/`: the nearest integer, halves away from zero. */
+  static std::int64_t roundDiv(std::int64_t a, std::int64_t b) {
+    if (b == 0) return 0;
+    const bool negative = (a < 0) != (b < 0);
+    const std::uint64_t x = static_cast<std::uint64_t>(a < 0 ? -a : a), y = static_cast<std::uint64_t>(b < 0 ? -b : b);
+    const std::int64_t q = static_cast<std::int64_t>((2 * x + y) / (2 * y));
+    return negative ? -q : q;
+  }
+
+  /** `v` times `mul` over `div`: scaled points (the part in points is held in them) are rounded once, ems and exs follow. */
+  static void scaleVal(char mode, Val& v, std::int64_t mul, std::int64_t div) {
+    if (mode == 'i') {
+      v.n = roundDiv(v.n * mul, div);
+      return;
+    }
+    const std::int64_t sp = std::llround(v.d.pt * 65536.0);
+    v.d.pt = static_cast<double>(roundDiv(sp * mul, div)) / 65536.0;
+    const double f = div == 0 ? 0.0 : static_cast<double>(mul) / static_cast<double>(div);
+    v.d.em *= f;
+    v.d.ex *= f;
+  }
+
+  bool exprFactor(char mode, Val& v) {
+    std::vector<ExpToken> seen;
+    ExpToken t = nextNonSpaceExpanded();
+    bool negative = false;
+    while (isChar(t, '+') || isChar(t, '-')) {
+      if (isChar(t, '-')) negative = !negative;
+      seen.push_back(std::move(t));
+      t = nextNonSpaceExpanded();
+    }
+    if (isChar(t, '(')) {
+      if (!exprSum(mode, v)) {
+        diags.warn(t.tok.span, "missing number in the parentheses, treated as zero");
+        v = Val();
+      }
+      ExpToken close = nextNonSpaceExpanded();
+      if (!isChar(close, ')')) {
+        diags.warn(close.tok.span, "missing ) inserted for an expression");
+        unread(std::move(close));
+      }
+      if (negative) {
+        v.n = -v.n;
+        v.d = -v.d;
+      }
+      return true;
+    }
+    unread(std::move(t));
+    giveBack(seen);
+    return mode == 'i' ? tryInt(v.n) : tryDim(v.d);
+  }
+
+  bool exprTerm(char mode, Val& v) {
+    if (!exprFactor(mode, v)) return false;
+    while (true) {
+      ExpToken op = nextNonSpaceExpanded();
+      if (!isChar(op, '*') && !isChar(op, '/')) {
+        unread(std::move(op));
+        return true;
+      }
+      Val r;
+      if (!exprFactor('i', r)) {
+        diags.warn(op.tok.span, "missing number after an operator, treated as zero");
+        return true;
+      }
+      if (isChar(op, '*')) {
+        // `a*b/c` is one step
+        ExpToken next = nextNonSpaceExpanded();
+        if (isChar(next, '/')) {
+          Val c;
+          if (!exprFactor('i', c)) c.n = 1;
+          scaleVal(mode, v, r.n, c.n);
+        } else {
+          unread(std::move(next));
+          scaleVal(mode, v, r.n, 1);
+        }
+      } else {
+        scaleVal(mode, v, 1, r.n);
+      }
+    }
+  }
+
+  bool exprSum(char mode, Val& v) {
+    if (!exprTerm(mode, v)) return false;
+    while (true) {
+      ExpToken op = nextNonSpaceExpanded();
+      if (!isChar(op, '+') && !isChar(op, '-')) {
+        unread(std::move(op));
+        return true;
+      }
+      Val r;
+      if (!exprTerm(mode, r)) {
+        diags.warn(op.tok.span, "missing number after an operator, treated as zero");
+        return true;
+      }
+      const int sign = isChar(op, '-') ? -1 : 1;
+      v.n += sign * r.n;
+      v.d = sign < 0 ? v.d - r.d : v.d + r.d;
+    }
+  }
+
+  /** The expression after \numexpr (`mode` 'i') or \dimexpr ('d'), and the \relax that ends it. */
+  bool exprValue(char mode, Val& v) {
+    ScanGuard guard(*this);
+    if (!exprSum(mode, v)) return false;
+    ExpToken r = raw();
+    if (!(r.tok.kind == TokKind::controlWord && r.tok.text == "relax")) unread(std::move(r));
+    return true;
+  }
+
+  /** The relation of \ifnum and \ifdim: `<`, `=` or `>`; a missing one is `=` with a warning, as in TeX. */
+  char readRelation(const SourceSpan& at, const char* who) {
+    ExpToken r = nextNonSpaceExpanded();
+    if (isChar(r, '<') || isChar(r, '=') || isChar(r, '>')) return static_cast<char>(r.tok.cp);
+    diags.warn(at, std::string("missing = inserted for ") + who);
+    unread(std::move(r));
+    return '=';
   }
 
   bool ifnum(const SourceSpan& at) {
     const long a = readNumber(at);
-    ExpToken r = nextExpanded();
-    while (r.tok.kind == TokKind::space) r = nextExpanded();
-    char relation = '=';
-    if (isChar(r, '<') || isChar(r, '=') || isChar(r, '>')) {
-      relation = static_cast<char>(r.tok.cp);
-    } else {
-      diags.warn(at, "missing = inserted for \\ifnum");
-      unread(std::move(r));
-    }
+    const char relation = readRelation(at, "\\ifnum");
     const long b = readNumber(at);
     return relation == '<' ? a < b : relation == '>' ? a > b : a == b;
+  }
+
+  /** \ifdim. `ok` is false when a side is not a length the expander can read: the conditional is then left for the parser (as
+   *  before registers, kableExtra's `\ifdim\width>\linewidth` is read there), and what was read goes back. */
+  bool ifdim(const SourceSpan& at, bool& ok) {
+    std::vector<ExpToken> taken;
+    std::vector<ExpToken>* const outer = tape;
+    tape = &taken;
+    Dim a, b;
+    bool good = tryDim(a);
+    char relation = '=';
+    if (good) {
+      ExpToken r = nextNonSpaceExpanded();
+      if (isChar(r, '<') || isChar(r, '=') || isChar(r, '>')) {
+        relation = static_cast<char>(r.tok.cp);
+        good = tryDim(b);
+      } else {
+        unread(std::move(r));
+        good = false;
+      }
+    }
+    tape = outer;
+    ok = good;
+    if (!good) {
+      for (auto it = taken.rbegin(); it != taken.rend(); ++it) {
+        frames.back().pushback.push_back(std::move(*it));
+      }
+      return false;
+    }
+    if (outer != nullptr) outer->insert(outer->end(), taken.begin(), taken.end());
+    (void)at;
+    const std::int64_t x = a.sp(), y = b.sp();
+    return relation == '<' ? x < y : relation == '>' ? x > y : x == y;
+  }
+
+  bool ifodd(const SourceSpan& at) { return readNumber(at) % 2 != 0; }
+
+  static char registerKind(const std::string& name) {
+    return name == "count" ? 'c' : name == "dimen" ? 'd' : name == "skip" ? 's' : name == "toks" ? 't' : '\0';
+  }
+
+  /** The register a token names: one \newcount and the like made, or `\count`, `\dimen`, `\skip` with the number after. */
+  std::optional<RegKey> registerOf(const ExpToken& t) {
+    if (t.tok.kind != TokKind::controlWord) return std::nullopt;
+    const std::string& n = t.tok.text;
+    if (lookup(n) != nullptr) return std::nullopt;
+    const auto named = regNames.find(n);
+    if (named != regNames.end()) return named->second;
+    const char kind = registerKind(n);
+    if (kind == '\0') return std::nullopt;
+    std::int64_t number = 0;
+    if (!tryInt(number)) diags.warn(t.tok.span, "missing number, treated as zero");
+    return RegKey{kind, static_cast<int>(number)};
+  }
+
+  void setRegister(const RegKey& key, const Reg& value, bool global = false) {
+    if (!global && depth > 0) {
+      const auto old = regs.find(key);
+      regUndo.push_back({key, old != regs.end(), old != regs.end() ? old->second : Reg(), depth});
+    }
+    regs[key] = value;
+  }
+
+  /** What a register prints: `\the` gives glue whole; where a length is wanted (`full` false) it is the natural size. */
+  std::string registerText(const RegKey& key, bool full = false) {
+    const Reg& r = regs[key];
+    if (key.first == 'c') return std::to_string(r.n);
+    if (key.first == 't') return r.text;
+    return key.first == 's' && full ? theGlue(r.g) : theDim(r.g.natural);
+  }
+
+  /** Read the value `key`'s kind takes into `value`. */
+  bool readRegisterValue(const RegKey& key, Reg& value) {
+    if (key.first == 'c') return tryInt(value.n);
+    if (key.first == 'd') return tryDim(value.g.natural);
+    return tryGlue(value.g);
+  }
+
+  /** A register token read where TeX would begin an assignment or take an operand. */
+  bool registerToken(const ExpToken& e) {
+    if (keepRegisterTokens) return false;
+    if (expandOnly > 0 && scanDepth == 0) return false;  // an \edef keeps a register's name, as TeX does
+    const bool global = globalPrefix;  // (reading the number of \count5 ends it)
+    const auto key = registerOf(e);
+    if (!key) return false;
+    if (key->first == 't') return toksAssignment(e, *key, global);
+    bool assignment = false;
+    if (scanDepth == 0) {
+      // `\x=5pt` and `\x 5pt` set it; `\x` anywhere else is its value.
+      std::vector<ExpToken> spaces;
+      const ExpToken next = peekNonSpaceKeeping(spaces);
+      int digit = 0;
+      assignment = isChar(next, '=') || isDigitOf(next, 10, digit) || isChar(next, '+') || isChar(next, '-') ||
+                   isChar(next, '.') || isChar(next, ',') || isChar(next, '"') || isChar(next, '\'') || isChar(next, '`');
+    }
+    if (assignment) {
+      ExpToken eq = nextNonSpace();
+      if (!isChar(eq, '=')) unread(std::move(eq));
+      Reg value = regs[*key];
+      value.unknown = false;
+      if (!readRegisterValue(*key, value)) {
+        diags.warn(e.tok.span, "\\" + e.tok.text + ": the value is not one the expander can read; the register is left as it was");
+      } else {
+        setRegister(*key, value, global);
+      }
+      globalPrefix = false;
+      return true;
+    }
+    if (regs[*key].unknown) return false;  // the lowering knows what it is
+    pushExpansion(registerText(*key), e.tok.span, e.atLetter);
+    return true;
+  }
+
+  /** `2\gap`: digits followed by a length register are that many of it (tex.web 448, scan_dimen). The digits are read ahead where
+   *  tokens are handed out, as soon as one is seen; True when they and the register were replaced by the size. */
+  bool factorBeforeRegister(const ExpToken& first) {
+    const auto digitOrDot = [](const ExpToken& t) {
+      return t.tok.kind == TokKind::character && t.tok.cat == Cat::other &&
+             ((t.tok.cp >= '0' && t.tok.cp <= '9') || t.tok.cp == '.');
+    };
+    std::vector<ExpToken> run;
+    std::string number(first.text);
+    ExpToken n = raw();
+    while (digitOrDot(n)) {
+      number += std::string(n.text);
+      run.push_back(std::move(n));
+      n = raw();
+    }
+    if (n.tok.kind == TokKind::controlWord && lookup(n.tok.text) == nullptr) {
+      const auto named = regNames.find(n.tok.text);
+      const char kind = named != regNames.end() ? named->second.first : registerKind(n.tok.text);
+      if (kind == 'd' || kind == 's') {
+        const auto key = registerOf(n);
+        if (key && !regs[*key].unknown) {
+          pushExpansion(theDim(regs[*key].g.natural.scaled(std::atof(number.c_str()))), first.tok.span, first.atLetter);
+          return true;
+        }
+        if (key) unread(std::move(n));
+        for (auto it = run.rbegin(); it != run.rend(); ++it) unread(std::move(*it));
+        return false;
+      }
+    }
+    unread(std::move(n));
+    for (auto it = run.rbegin(); it != run.rend(); ++it) unread(std::move(*it));
+    return false;
+  }
+
+  /** `\x={tokens}`, `\x=\y`, `\x=\expandafter{...}` for a \toks register (tex.web 1226): the tokens are kept as written. A token
+   *  register anywhere else is not an operand (only `\the` gives its tokens), so it stays as it is. */
+  bool toksAssignment(const ExpToken& e, const RegKey& key, bool global) {
+    if (scanDepth > 0) return false;
+    std::vector<ExpToken> spaces;
+    const ExpToken peek = peekNonSpaceKeeping(spaces);
+    // (TeX expands what follows to find the `{`: `\x\expandafter{\the\x ...}` is an assignment)
+    const bool expandable = peek.tok.kind == TokKind::controlWord && !peek.tok.noexpand &&
+                            (lookup(peek.tok.text) != nullptr || isExpandablePrimitive(peek.tok.text) || peek.tok.text == "expandafter");
+    if (!isChar(peek, '=') && !peek.tok.isChar(Cat::beginGroup) && !expandable) return false;
+    ExpToken eq = nextNonSpace();
+    if (!isChar(eq, '=')) unread(std::move(eq));
+    ExpToken t = nextNonSpaceExpanded();
+    Reg r = regs[key];
+    if (t.tok.isChar(Cat::beginGroup)) {
+      r.text = readGroupContent(t);
+      depth--;  // (nextExpanded counted the `{`; the group is read whole, not walked through)
+    } else if (const auto other = registerOf(t); other && other->first == 't') {
+      r.text = regs[*other].text;
+    } else {
+      diags.warn(e.tok.span, "\\" + e.tok.text + ": missing { inserted; the register is left as it was");
+      unread(std::move(t));
+      return true;
+    }
+    setRegister(key, r, global);
+    globalPrefix = false;
+    return true;
+  }
+
+  /** \newcount\x, \newskip\x, \countdef\x=n: `\x` is a register. */
+  void newRegister(const ExpToken& e, char kind, bool numbered) {
+    ExpToken n = nextNonSpace();
+    if (n.tok.kind != TokKind::controlWord) {
+      unread(std::move(n));
+      diags.warn(e.tok.span, "\\" + e.tok.text + ": not followed by a control sequence");
+      return;
+    }
+    const std::string name = n.tok.text;
+    int number = nextRegister++;
+    if (numbered) {
+      ExpToken eq = nextNonSpace();
+      if (!isChar(eq, '=')) unread(std::move(eq));
+      std::int64_t k = 0;
+      if (!tryInt(k)) diags.warn(e.tok.span, "missing number, treated as zero");
+      number = static_cast<int>(k);
+    } else if (meaningOf(name) != "undefined" && meaningOf(name) != meaningOf("relax")) {
+      diags.warn(n.tok.span, "\\" + e.tok.text + ": \\" + name + " is already defined");
+      return;
+    }
+    // the name is a register now, whatever a macro of it was
+    macros.erase(name);
+    regNames[name] = {kind, number};
+  }
+
+  /** \chardef\x=n and \mathchardef: `\x` is that number. */
+  void numberConstant(const ExpToken& e) {
+    ExpToken n = nextNonSpace();
+    if (n.tok.kind != TokKind::controlWord) {
+      unread(std::move(n));
+      diags.warn(e.tok.span, "\\" + e.tok.text + ": not followed by a control sequence");
+      return;
+    }
+    ExpToken eq = nextNonSpace();
+    if (!isChar(eq, '=')) unread(std::move(eq));
+    std::int64_t k = 0;
+    if (!tryInt(k)) diags.warn(e.tok.span, "missing number, treated as zero");
+    MacroDef def;
+    def.alias = false;
+    def.atLetter = atLetterNow();
+    def.body = literal(std::to_string(k));
+    store(n.tok.text, std::move(def));
+  }
+
+  /** \advance\x by v, \multiply\x by n, \divide\x by n (tex.web 1236). */
+  void arithmetic(const ExpToken& e) {
+    const std::string op = e.tok.text;
+    const bool global = globalPrefix;
+    ExpToken t = nextNonSpace();
+    const auto key = registerOf(t);
+    if (!key) {
+      unread(std::move(t));
+      diags.warn(e.tok.span, "\\" + op + ": not followed by a register");
+      return;
+    }
+    (void)keyword("by");
+    Reg r = regs[*key];
+    if (op == "advance") {
+      Reg v;
+      if (!readRegisterValue(*key, v)) {
+        diags.warn(e.tok.span, "\\advance: the value is not one the expander can read; the register is left as it was");
+        return;
+      }
+      if (key->first == 'c') {
+        r.n += v.n;
+      } else {
+        r.g.natural = r.g.natural + v.g.natural;
+        if (key->first == 's') {
+          if (r.g.stretchOrder == v.g.stretchOrder) r.g.stretch = r.g.stretch + v.g.stretch;
+          else if (v.g.stretchOrder > r.g.stretchOrder) r.g.stretch = v.g.stretch, r.g.stretchOrder = v.g.stretchOrder;
+          if (r.g.shrinkOrder == v.g.shrinkOrder) r.g.shrink = r.g.shrink + v.g.shrink;
+          else if (v.g.shrinkOrder > r.g.shrinkOrder) r.g.shrink = v.g.shrink, r.g.shrinkOrder = v.g.shrinkOrder;
+        }
+      }
+    } else {
+      std::int64_t n = 0;
+      if (!tryInt(n)) {
+        diags.warn(e.tok.span, "\\" + op + ": missing number, treated as zero");
+      }
+      if (op == "divide" && n == 0) {
+        diags.warn(e.tok.span, "\\divide: arithmetic overflow (division by zero)");
+        return;
+      }
+      const auto scale = [&](Dim& d) { d = op == "multiply" ? d.scaled(static_cast<double>(n)) : d.scaled(1.0 / static_cast<double>(n)); };
+      if (key->first == 'c') {
+        r.n = op == "multiply" ? r.n * n : r.n / n;
+      } else {
+        scale(r.g.natural);
+        if (key->first == 's') scale(r.g.stretch), scale(r.g.shrink);
+      }
+    }
+    r.unknown = false;
+    setRegister(*key, r, global);
+    globalPrefix = false;
+  }
+
+  /** \the\x, \the\count5: what the register prints. Anything else after \the is the parser's. */
+  bool theCommand(const ExpToken& e) {
+    // (macros and \expandafter between \the and the quantity are expanded, as TeX does; register names are kept)
+    keepRegisterTokens = true;
+    ExpToken t = nextNonSpaceExpanded();
+    keepRegisterTokens = false;
+    if (t.tok.kind == TokKind::controlWord && t.tok.text == "catcode" && lookup("catcode") == nullptr) {
+      std::int64_t code = 0;
+      if (tryInt(code) && code >= 0 && code < 128) {
+        pushExpansion(std::to_string(static_cast<int>(cats.get(static_cast<unsigned char>(code)))), e.tok.span, e.atLetter);
+        return true;
+      }
+      return true;
+    }
+    if (t.tok.kind == TokKind::controlWord && lookup(t.tok.text) == nullptr &&
+        (t.tok.text == "numexpr" || t.tok.text == "dimexpr")) {
+      const bool integer = t.tok.text == "numexpr";
+      unread(std::move(t));
+      std::int64_t n = 0;
+      Dim dim;
+      if (integer ? tryInt(n) : tryDim(dim)) {
+        pushExpansion(integer ? std::to_string(n) : theDim(dim), e.tok.span, e.atLetter);
+      } else {
+        diags.warn(e.tok.span, "\\the: the expression is not one the expander can read");
+      }
+      return true;
+    }
+    const auto key = registerOf(t);
+    if (!key || regs[*key].unknown) {
+      if (key) {
+        unread(std::move(t));  // an unknown register stays as it is
+      } else {
+        unread(std::move(t));
+      }
+      return false;
+    }
+    pushExpansion(registerText(*key, true), e.tok.span, e.atLetter);
+    return true;
+  }
+
+  /** The text of a length the lowering reads, worked out as a glue: expanded, then read to its end. False when it is not one. */
+  bool evalGlue(const std::string& text, const SourceSpan& at, Glue& out) {
+    const std::string expanded = trim(expandBody(text, at, false));
+    if (expanded.empty()) return false;
+    pushExpansion(expanded + "\\gmedefend", at);
+    Glue g;
+    bool ok = tryGlue(g);
+    if (ok) {
+      ExpToken after = nextNonSpaceExpanded();
+      ok = after.tok.kind == TokKind::controlWord && after.tok.text == "gmedefend";
+      if (!ok) unread(std::move(after));
+    }
+    if (!ok) {
+      // drop what is left of the text
+      while (true) {
+        ExpToken t = raw();
+        if (t.tok.kind == TokKind::end || (t.tok.kind == TokKind::controlWord && t.tok.text == "gmedefend")) break;
+      }
+      return false;
+    }
+    out = g;
+    return true;
+  }
+
+  /** \newlength, \setlength and \addtolength: LaTeX's names for a \skip and its assignments. The lowering keeps lengths of its own
+   *  (\parindent and the rest set the text) and must see every command to keep them in step, so each is handed on; this one
+   *  keeps a register beside it, to read the values in conditionals and sums. A value it cannot work out (\linewidth, the
+   *  page's) makes the register `unknown`: its uses stay the name, and the lowering says what it is. */
+  void lengthCommand(const ExpToken& e) {
+    const std::string op = e.tok.text;
+    const std::string who = "\\" + op;
+    const std::string nameText = trim(readArg(who, false));
+    const bool isName = nameText.size() > 1 && nameText[0] == '\\';
+    const std::string name = isName ? nameText.substr(1) : std::string();
+    if (op == "newlength") {
+      if (isName && meaningOf(name) == "undefined") regNames[name] = {'s', nextRegister++};
+      passThrough(who + "{" + nameText + "}", e.tok.span);
+      return;
+    }
+    const std::string valueText = readArg(who, false);
+    const auto named = isName ? regNames.find(name) : regNames.end();
+    // what the lowering is given: the value with the registers in it worked out
+    const std::string given = trim(expandBody(valueText, e.tok.span, false));
+    if (named != regNames.end()) {
+      Reg r = regs[named->second];
+      Glue g;
+      const bool known = !r.unknown || op == "setlength";
+      if (known && evalGlue(given, e.tok.span, g)) {
+        if (op == "setlength") {
+          r.g = g;
+        } else {
+          r.g.natural = r.g.natural + g.natural;
+        }
+        r.unknown = false;
+      } else {
+        r.unknown = true;
+      }
+      setRegister(named->second, r);
+    }
+    passThrough(who + "{" + nameText + "}{" + given + "}", e.tok.span);
+  }
+
+  /** latex.ltx's \settowidth, \settoheight, \settodepth and \settototalheight: a length is made the size of what is set in a box. The
+   *  host's layout measures it (hooks.h), in ems of the body font, so the register holds the size as the lowering will
+   *  read it; with no layout to ask, or a name that is not a length, the length is left as it was and the input is told. */
+  void setToSize(const ExpToken& e) {
+    const std::string who = "\\" + e.tok.text;
+    const std::string nameText = trim(readArg(who, false));
+    // What is set in the box is typeset, so what it does is done (a \the of a register, an assignment), in a group of its own as in
+    // latex.ltx's `\hbox{{#2}}`
+    const std::string text = trim(expandBody("{" + readArg(who, false) + "}", e.tok.span, false, e.atLetter));
+    const auto named = nameText.size() > 1 && nameText[0] == '\\' ? regNames.find(nameText.substr(1)) : regNames.end();
+    if (named == regNames.end() || (named->second.first != 'd' && named->second.first != 's')) {
+      diags.warn(e.tok.span, who + ": " + nameText + " is not a length");
+      return;
+    }
+    const auto& measure = boxMeasurer();
+    const std::optional<BoxSize> size = measure ? measure(text) : std::nullopt;
+    if (!size) {
+      diags.warn(e.tok.span, who + ": the text cannot be measured here; the length is left as it was");
+      return;
+    }
+    const double em = e.tok.text == "settowidth"    ? size->width
+                      : e.tok.text == "settoheight" ? size->height
+                      : e.tok.text == "settodepth"  ? size->depth
+                                                    : size->height + size->depth;
+    Reg r = regs[named->second];
+    // A box's size is a size, not a number of ems of whatever font it is used in (`\hspace{\dimen@}` in a superscript is as wide as the
+    // box was): in points of the page the lengths follow, where the body font's em is 10pt.
+    r.g.natural = Dim{em * kEmPt, 0, 0};
+    r.unknown = false;
+    setRegister(named->second, r);
+  }
+
+  /** Hand a command and its arguments, already expanded, on to the parser as written: its control sequences are not expanded
+   *  again (a register's name in them is a name). */
+  void passThrough(const std::string& text, const SourceSpan& at) {
+    buffers.push_back(text);
+    const std::string_view buf = buffers.back();
+    LexOptions lo = opts.lex;
+    lo.startMidLine = true;
+    lo.atLetter = atLetterNow();
+    Lexer lx(buffers.back(), lo, quiet, cats);
+    std::vector<ExpToken> tokens;
+    while (true) {
+      Token t = lx.next();
+      if (t.kind == TokKind::end) break;
+      ExpToken x;
+      x.lead = std::string(buf.substr(t.leadStart, t.span.offset - t.leadStart));
+      x.text = buf.substr(t.span.offset, t.span.length);
+      x.tok = std::move(t);
+      x.tok.span = at;
+      x.atLetter = lo.atLetter;
+      if (x.tok.isControl()) x.tok.noexpand = true;
+      tokens.push_back(std::move(x));
+    }
+    for (auto it = tokens.rbegin(); it != tokens.rend(); ++it) unread(std::move(*it));
   }
 
   /** Skip what is not read of a conditional, up to the \fi that ends it --
@@ -1978,18 +2983,40 @@ struct Expander::Impl {
 
   /** Begin the conditional `kind` (a primitive's name): read its test, then
    *  the branch it picks. */
-  void conditional(const std::string& kind, bool negate, const SourceSpan& at) {
+  bool conditional(const std::string& kind, bool negate, const SourceSpan& at) {
     bool result = kind == "iftrue";
+    // While a test is read, an \else or \fi of this conditional ends what is read and waits (tex.web 510 inserts a \relax before it):
+    // `\ifnum\z@=`}\fi` reads `} as a number, and the \fi after it is the conditional's, not the number's.
+    struct Testing {
+      std::size_t& depth;
+      bool& on;
+      std::size_t keptDepth;
+      bool keptOn;
+      Testing(std::size_t& d, bool& o, std::size_t now) : depth(d), on(o), keptDepth(d), keptOn(o) { d = now; o = true; }
+      ~Testing() { depth = keptDepth; on = keptOn; }
+    } testing(testDepth, testing_, conds.size());
     if (kind == "ifx") result = ifx();
+    if (kind == "if" || kind == "ifcat") result = ifchar(kind == "ifcat");
     if (kind == "ifdefined") result = ifdefined();
     if (kind == "ifcsname") result = ifcsname(at);
     if (kind == "ifnum") result = ifnum(at);
+    if (kind == "ifodd") result = ifodd(at);
+    if (kind == "ifdim") {
+      bool ok = false;
+      result = ifdim(at, ok);
+      if (!ok) {
+        // a length of the lowering's: the parser reads the conditional, with its \else and \fi
+        conds.push_back('f');
+        return false;
+      }
+    }
     if (negate) result = !result;
     if (result) {
       conds.push_back('t');
     } else if (skipBranch(at, true)) {
       conds.push_back('e');
     }
+    return true;
   }
 
   /** \else: the branch read ends, and the rest is skipped up to the \fi.
@@ -2059,48 +3086,122 @@ struct Expander::Impl {
   /** One argument of a command made by \NewDocumentCommand: an optional one
    *  not there is \NoValue (or its default), a star or token that is there
    *  \BooleanTrue, and one that is not \BooleanFalse. */
+  /** The next token that is not a space, and the spaces before it. They are left where they were: an argument that is
+   *  not there leaves the spaces to whatever follows (checked against xparse in LuaLaTeX: `\f{x} b` keeps its space
+   *  when `\f` ends in an optional argument). */
+  ExpToken peekNonSpaceKeeping(std::vector<ExpToken>& spaces) {
+    ExpToken t = raw();
+    while (t.tok.kind == TokKind::space) {
+      spaces.push_back(std::move(t));
+      t = raw();
+    }
+    ExpToken copy = t;
+    unread(std::move(t));
+    for (auto it = spaces.rbegin(); it != spaces.rend(); ++it) unread(ExpToken(*it));
+    return copy;
+  }
+
+  /** xparse's `>{\SplitList{x}}` and `>{\TrimSpaces}` (xparse-2018-04-12.sty, \__xparse_split_list:nn): the argument as the
+   *  processors leave it. A split argument is its pieces, each in braces, so that it is read as that many arguments. */
+  std::string processed(const XArg& a, std::string arg, const std::string& who) {
+    for (const std::string& code : a.processors) {
+      const std::string c = trim(code);
+      if (c == "\\TrimSpaces") {
+        arg = trim(arg);
+      } else if (c.compare(0, 11, "\\SplitList{") == 0 && c.back() == '}') {
+        const std::string sep = c.substr(11, c.size() - 12);
+        std::string out;
+        int level = 0;
+        std::size_t from = 0, i = 0;
+        const auto flush = [&](std::size_t to) { out += "{" + arg.substr(from, to - from) + "}"; };
+        if (sep.empty()) {
+          out = "{" + arg + "}";
+        } else {
+          for (; i < arg.size(); i++) {
+            if (arg[i] == '{') level++;
+            if (arg[i] == '}') level--;
+            if (level == 0 && arg.compare(i, sep.size(), sep) == 0) {
+              flush(i);
+              i += sep.size() - 1;
+              from = i + 1;
+            }
+          }
+          flush(arg.size());
+        }
+        arg = out;
+      } else {
+        diags.warn({}, who + ": the argument processor " + c + " is not supported and is left out");
+      }
+    }
+    return arg;
+  }
+
   std::string readXArg(const XArg& a, const std::string& who) {
+    std::vector<ExpToken> spaces;
     switch (a.type) {
       case 'o':
       case 'O': {
+        if (!isChar(peekNonSpaceKeeping(spaces), '[')) return a.type == 'o' ? std::string("\\NoValue") : a.deflt;
         const std::optional<std::string> o = readOptional();
         return o ? *o : a.type == 'o' ? std::string("\\NoValue") : a.deflt;
       }
       case 's':
       case 't': {
-        ExpToken t = nextNonSpace();
-        const bool there = a.type == 's' ? isChar(t, '*') : sameToken(t.tok, a.open);
-        if (!there) unread(std::move(t));
+        const ExpToken next = peekNonSpaceKeeping(spaces);
+        const bool there = a.type == 's' ? isChar(next, '*') : sameToken(next.tok, a.open);
+        if (there) nextNonSpace();
         return there ? "\\BooleanTrue" : "\\BooleanFalse";
       }
       case 'g':
       case 'G': {
-        ExpToken t = nextNonSpace();
-        if (t.tok.isChar(Cat::beginGroup)) return readGroupContent(t);
-        unread(std::move(t));
-        return a.type == 'g' ? std::string("\\NoValue") : a.deflt;
+        if (!peekNonSpaceKeeping(spaces).tok.isChar(Cat::beginGroup)) {
+          return a.type == 'g' ? std::string("\\NoValue") : a.deflt;
+        }
+        return readGroupContent(nextNonSpace());
       }
       case 'r':
       case 'R':
       case 'd':
       case 'D': {
         const bool required = a.type == 'r' || a.type == 'R';
-        ExpToken t = nextNonSpace();
-        if (sameToken(t.tok, a.open)) return readUpTo(a.close, t.tok.span, who);
-        if (required) diags.warn(t.tok.span, who + ": missing required argument, which starts with its opening delimiter");
-        unread(std::move(t));
+        const ExpToken next = peekNonSpaceKeeping(spaces);
+        if (sameToken(next.tok, a.open)) {
+          const ExpToken open = nextNonSpace();
+          return readUpTo(a.close, open.tok.span, who);
+        }
+        if (required) diags.warn(next.tok.span, who + ": missing required argument, which starts with its opening delimiter");
         return a.type == 'd' || a.type == 'r' ? std::string("\\NoValue") : a.deflt;
+      }
+      case 'l': {
+        // up to the first `{` at brace depth 0, which is not part of it (TeX's `#1#{`)
+        std::string s;
+        while (true) {
+          ExpToken t = raw();
+          if (t.tok.kind == TokKind::end || t.tok.kind == TokKind::par || t.tok.isChar(Cat::beginGroup) ||
+              t.tok.isChar(Cat::endGroup)) {
+            unread(std::move(t));
+            return s;
+          }
+          s += t.lead;
+          s.append(t.text);
+        }
+      }
+      case 'u': {
+        const std::string s = readUntil(a.delim, who);
+        abandoned = false;
+        return s;
       }
       default:
         return readArg(who);
     }
   }
 
-  /** The arguments a \NewDocumentCommand spec names: m o O s t r R d D g G,
+  /** The arguments a \NewDocumentCommand spec names: m o O s t r R d D g G l u,
    *  with + and ! read and ignored. `problem` says why, when it cannot be
    *  read. */
   std::vector<XArg> parseSpec(const std::string& spec, std::string& problem) {
     std::vector<XArg> out;
+    std::vector<std::string> pending;
     LexOptions lo = opts.lex;
     lo.startMidLine = true;
     Lexer lx(spec, lo, quiet, cats);
@@ -2138,7 +3239,12 @@ struct Expander::Impl {
       }
       XArg a;
       a.type = static_cast<char>(t.cp);
+      a.processors = pending;
       switch (a.type) {
+        case '>':
+          // a processor: the code is kept for the argument that follows
+          pending.push_back(group());
+          continue;
         case '+':
         case '!':
           continue;
@@ -2165,11 +3271,30 @@ struct Expander::Impl {
           a.close = next();
           a.deflt = group();
           break;
+        case 'l':
+          break;
+        case 'u': {
+          // u{<tokens>}: the argument is what comes before them
+          if (!next().isChar(Cat::beginGroup)) {
+            problem = "the argument type u must be followed by its delimiter in braces";
+            break;
+          }
+          int open = 1;
+          while (true) {
+            const Token t = lx.next();
+            if (t.kind == TokKind::end) {
+              problem = "the delimiter of u is missing its closing brace";
+              break;
+            }
+            if (t.isChar(Cat::beginGroup)) open++;
+            if (t.isChar(Cat::endGroup) && --open == 0) break;
+            a.delim.push_back(t);
+          }
+          break;
+        }
         case 'e':
         case 'E':
         case 'b':
-        case 'u':
-        case 'l':
         case 'v':
           problem = std::string("the argument type ") + a.type + " is not supported";
           break;
@@ -2179,7 +3304,10 @@ struct Expander::Impl {
       const bool bare = (a.type == 't' || a.type == 'r' || a.type == 'R' || a.type == 'd' || a.type == 'D') &&
                         (a.open.kind == TokKind::end || (a.type != 't' && a.close.kind == TokKind::end));
       if (bare && problem.empty()) problem = std::string("the argument type ") + a.type + " is missing its delimiters";
-      if (problem.empty()) out.push_back(std::move(a));
+      if (problem.empty()) {
+        out.push_back(std::move(a));
+        pending.clear();
+      }
     }
     if (problem.empty() && out.size() > 9) problem = "a command can have nine arguments at most";
     return out;
@@ -2312,13 +3440,20 @@ struct Expander::Impl {
 
   /** The text `body` expands to, as \edef makes a macro's: everything that expands
    *  does, and \noexpand's token and the parameters are left alone. */
-  std::string expandBody(const std::string& body, const SourceSpan& at) {
+  std::string expandBody(const std::string& body, const SourceSpan& at, bool onlyWhatExpands = true, bool atLetter = false) {
+    struct Only {
+      int& n;
+      bool on;
+      Only(int& count, bool enable) : n(count), on(enable) { if (on) n++; }
+      ~Only() { if (on) n--; }
+    } only(expandOnly, onlyWhatExpands);
     std::string saved = std::move(out), savedCarry = std::move(carry);
     const bool savedLast = lastControlWord;
     out.clear();
     carry.clear();
     lastControlWord = false;
-    pushExpansion(body + "\\gmedefend ", at);
+    // (no space after the name: it would end up as the lead of whatever is read after the expansion)
+    pushExpansion(body + "\\gmedefend", at, atLetter);
     while (true) {
       ExpToken t = nextExpanded();
       if (t.tok.kind == TokKind::end || (t.tok.kind == TokKind::controlWord && t.tok.text == "gmedefend")) break;
@@ -2374,14 +3509,6 @@ struct Expander::Impl {
       defineCommand(e, name);
       return true;
     }
-    if (name == "DeclareMathOperator") {
-      declareOperator();
-      return true;
-    }
-    if (name == "DeclarePairedDelimiter") {
-      declarePairedDelimiter(e);
-      return true;
-    }
     if ((name == "ce" || name == "pu") && unshadowed()) {
       chemCommand(e);
       return true;
@@ -2391,24 +3518,20 @@ struct Expander::Impl {
       return true;
     }
     if (isModelColourCommand(name) && unshadowed()) return colourModelCommand(e);
-    if (name == "newtheorem") {
-      declareTheorem(e);
+    if ((name == "MakeUppercase" || name == "MakeLowercase") && unshadowed()) {
+      changeCase(e);
       return true;
     }
-    if ((name == "tikzset" || name == "tikzstyle" || name == "tikzcdset") && unshadowed()) {
-      tikzStyleCommand(e);
+    if (name == "gmprepend") {
+      // `\gmprepend{env}{text}`: `text`, as written, goes in front of the body of every `env` from here on. A package that
+      // keeps statements for its environments (tikz's styles) says it so; nothing is drawn here.
+      const auto target = readGroupText();
+      const std::string text = readArg("\\gmprepend");
+      if (target) prepended[trim(*target)] += text;
       return true;
     }
     if ((name == "DefineVerbatimEnvironment" || name == "RecustomVerbatimEnvironment") && unshadowed()) {
       defineVerbatimEnvironment(e);
-      return true;
-    }
-    if ((name == "newfontfamily" || name == "newfontface") && unshadowed()) {
-      declareFontFamily();
-      return true;
-    }
-    if (name == "theoremstyle") {
-      if (const auto style = readGroupText()) theoremStyle = *style;
       return true;
     }
     if (name == "def" || name == "gdef" || name == "edef" || name == "xdef") {
@@ -2431,6 +3554,56 @@ struct Expander::Impl {
       ExpToken t = raw();
       t.tok.noexpand = true;
       unread(std::move(t));
+      return true;
+    }
+    if (name == "gmcolourmodel") {
+      // `\gmcolourmodel{a,b}`: these commands take xcolor's optional colour model, `\a[rgb]{.2,.4,.6}`.
+      if (const auto names = readGroupText()) {
+        std::size_t from = 0;
+        while (from <= names->size()) {
+          const std::size_t comma = std::min(names->find(',', from), names->size());
+          if (const std::string one = trim(names->substr(from, comma - from)); !one.empty()) colourModel.insert(one);
+          from = comma + 1;
+        }
+      }
+      return true;
+    }
+    if (name == "gmenvironmentkind") {
+      declareEnvironmentKind(e);
+      return true;
+    }
+    if (name == "gmdeclare") {
+      // `\gmdeclare{table}{key}{value}`: data a package gives the lowering (cleveref's names), the last word standing.
+      const auto table = readGroupText();
+      const auto key = table ? readGroupText() : std::nullopt;
+      const auto value = key ? readGroupText() : std::nullopt;
+      if (value) declared[trim(*table) + "\x1f" + trim(*key)] = *value;
+      return true;
+    }
+    if ((name == "settowidth" || name == "settoheight" || name == "settodepth" || name == "settototalheight") && unshadowed()) {
+      setToSize(e);
+      return true;
+    }
+    if (name == "gmwarning") {
+      // `\gmwarning{text}`: what \PackageWarning and \PackageError say (ltkernel.sty), as a warning at the line and column of the call.
+      if (const auto text = readGroupText()) {
+        std::string said;
+        for (const char c : trim(expandBody(*text, e.tok.span, true, e.atLetter))) {
+          if (std::isspace(static_cast<unsigned char>(c))) {
+            if (!said.empty() && said.back() != ' ') said += ' ';
+          } else {
+            said += c;
+          }
+        }
+        diags.warn(e.tok.span, said);
+      }
+      return true;
+    }
+    if (name == "ignorespaces" && unshadowed()) {
+      // TeX expands what follows until a token that is not a space.
+      ExpToken t = nextExpanded();
+      while (t.tok.kind == TokKind::space) t = nextExpanded();
+      if (t.tok.kind != TokKind::end) unread(std::move(t));
       return true;
     }
     if (name == "futurelet" && unshadowed()) {
@@ -2471,10 +3644,87 @@ struct Expander::Impl {
     }
     // The TeX a package file is written in.
     if (name == "relax" && unshadowed()) return true;
-    if (isCondPrimitive(name) && unshadowed()) {
-      conditional(name, false, e.tok.span);
+    if (unshadowed() && (regNames.count(name) != 0 || registerKind(name) != '\0')) return registerToken(e);
+    if ((name == "newcount" || name == "newdimen" || name == "newskip" || name == "newtoks") && unshadowed()) {
+      newRegister(e, name == "newcount" ? 'c' : name == "newdimen" ? 'd' : name == "newskip" ? 's' : 't', false);
       return true;
     }
+    if ((name == "countdef" || name == "dimendef" || name == "skipdef" || name == "toksdef") && unshadowed()) {
+      newRegister(e, name == "countdef" ? 'c' : name == "dimendef" ? 'd' : name == "skipdef" ? 's' : 't', true);
+      return true;
+    }
+    if ((name == "chardef" || name == "mathchardef") && unshadowed()) {
+      numberConstant(e);
+      return true;
+    }
+    if (name == "catcode" && unshadowed()) {
+      // \catcode<number>=<number>: from here on, in this group
+      const bool global = globalPrefix;
+      std::int64_t code = 0, cat = 0;
+      if (!tryInt(code)) diags.warn(e.tok.span, "missing number, treated as zero");
+      ExpToken eq = nextNonSpace();
+      if (!isChar(eq, '=')) unread(std::move(eq));
+      if (!tryInt(cat)) diags.warn(e.tok.span, "missing number, treated as zero");
+      if (code < 0 || code > 127 || cat < 0 || cat > 15) {
+        diags.warn(e.tok.span, "\\catcode: the character code must be 0 to 127 and the category 0 to 15");
+        return true;
+      }
+      if (!global && depth > 0) {
+        Reg old;
+        old.n = static_cast<std::int64_t>(cats.get(static_cast<unsigned char>(code)));
+        regUndo.push_back({{'k', static_cast<int>(code)}, true, old, depth});
+      }
+      cats.set(static_cast<unsigned char>(code), static_cast<Cat>(cat));
+      globalPrefix = false;
+      return true;
+    }
+    if ((name == "advance" || name == "multiply" || name == "divide") && unshadowed()) {
+      arithmetic(e);
+      return true;
+    }
+    if (name == "aftergroup" && unshadowed()) {
+      ExpToken t = raw();
+      if (t.tok.kind == TokKind::end) {
+        unread(std::move(t));
+      } else {
+        t.tok.noexpand = false;
+        afterGroup.emplace_back(std::move(t), depth);
+      }
+      return true;
+    }
+    if (name == "the" && unshadowed()) return theCommand(e);
+    if (name == "string" && unshadowed()) {
+      // tex.web conv_toks: the characters of the next token, a control sequence's with its escape character. A backslash that is a
+      // character cannot be written in text that is read again, so it is U+E000 here, and a name made of it (\csname) or a place
+      // it ends up in (the output) turns it into the backslash.
+      ExpToken u = raw();
+      if (u.tok.kind == TokKind::end) {
+        unread(std::move(u));
+        return true;
+      }
+      // the escape character is \escapechar's (none when it is not a character code)
+      std::string escape = "\xEE\x80\x80";
+      if (const auto ec = regNames.find("escapechar"); ec != regNames.end()) {
+        const std::int64_t code = regs[ec->second].n;
+        escape = code == 92 ? escape : code >= 0 && code < 128 ? std::string(1, static_cast<char>(code)) : std::string();
+      }
+      const std::string text = u.tok.isControl() ? escape + u.tok.text : u.tok.kind == TokKind::space
+                                                                                          ? std::string(" ")
+                                                                                          : std::string(u.text);
+      pushExpansion(text, e.tok.span, e.atLetter);
+      return true;
+    }
+    if (name == "number" && unshadowed()) {
+      std::int64_t v = 0;
+      if (!tryInt(v)) return false;
+      pushExpansion(std::to_string(v), e.tok.span, e.atLetter);
+      return true;
+    }
+    if ((name == "newlength" || name == "setlength" || name == "addtolength") && unshadowed()) {
+      lengthCommand(e);
+      return true;
+    }
+    if (isCondPrimitive(name) && unshadowed()) return conditional(name, false, e.tok.span);
     if (name == "unless" && unshadowed()) {
       ExpToken t = raw();
       const std::string kind = t.tok.kind == TokKind::controlWord ? primitiveOf(t.tok.text) : std::string();
@@ -2482,7 +3732,7 @@ struct Expander::Impl {
         unread(std::move(t));
         fail("unless", "\\unless: not followed by a conditional");
       }
-      conditional(kind, true, e.tok.span);
+      if (!conditional(kind, true, e.tok.span)) passThrough("\\unless\\" + kind, e.tok.span);
       return true;
     }
     if (isForeignCond(name) && unshadowed()) {
@@ -2566,6 +3816,17 @@ struct Expander::Impl {
    *  which the caller carries on to the next token. */
   bool process(const ExpToken& e) {
     if (e.tok.kind == TokKind::controlWord) {
+      // While a number or a length is being read ahead (the `plus` of a skip, the unit of a length), only what TeX expands is
+      // expanded: a command that does something (\newdimen, \advance, \def) ends the reading and is run in its turn.
+      if (testing_ && conds.size() == testDepth && (e.tok.text == "fi" || e.tok.text == "else") && lookup(e.tok.text) == nullptr) {
+        return false;
+      }
+      if ((scanDepth > 0 || expandOnly > 0) && !isExpandablePrimitive(e.tok.text) && e.tok.text != "the" &&
+          e.tok.text != "number" && e.tok.text != "noexpand" && e.tok.text != "expandafter" && e.tok.text != "string" &&
+          regNames.count(e.tok.text) == 0 && registerKind(e.tok.text) == '\0' && lookup(e.tok.text) == nullptr &&
+          isPrimitiveName(e.tok.text)) {
+        return false;
+      }
       if (const auto done = primitive(e, false)) return *done;
     }
     return expandMacro(e);
@@ -2600,7 +3861,8 @@ struct Expander::Impl {
     if (e.tok.kind == TokKind::controlWord) {
       const std::string& n = e.tok.text;
       if (n == "global" || n == "def" || n == "gdef" || n == "edef" || n == "xdef" || n == "let" ||
-          n == "futurelet" || n == "expandafter") {
+          n == "futurelet" || n == "expandafter" || n == "advance" || n == "multiply" || n == "divide" || n == "count" ||
+          n == "dimen" || n == "skip" || regNames.count(n) != 0) {
         return;
       }
     }
@@ -2608,6 +3870,30 @@ struct Expander::Impl {
   }
 
   /** The next token after expansion. */
+  /** Where in the arguments of a key=value environment the tokens that pass are (see `keyArgs`). */
+  void followKeyArguments(const ExpToken& e) {
+    if (e.tok.kind == TokKind::end || e.tok.kind == TokKind::par) {
+      keyArgs = 0;
+    } else if (keyArgs == 4) {
+      if (e.tok.isChar(Cat::endGroup) && depth == keyArgsAt) keyArgs = 1;  // the environment's name is past
+    } else if (keyArgs == 1) {
+      if (e.tok.kind == TokKind::space) return;
+      if (e.tok.isChar(Cat::other) && e.text == "[") {
+        keyArgs = 2;
+        keyArgsAt = depth;
+      } else if (e.tok.isChar(Cat::beginGroup)) {
+        keyArgs = 3;
+        keyArgsAt = depth;  // already counted
+      } else {
+        keyArgs = 0;
+      }
+    } else if (keyArgs == 2) {
+      if (e.tok.isChar(Cat::other) && e.text == "]" && depth == keyArgsAt) keyArgs = 1;
+    } else if (e.tok.isChar(Cat::endGroup) && depth < keyArgsAt) {
+      keyArgs = --keyArgsLeft > 0 ? 1 : 0;
+    }
+  }
+
   ExpToken nextExpanded() {
     while (true) {
       ExpToken e = raw();
@@ -2635,17 +3921,39 @@ struct Expander::Impl {
         e = raw();
       }
       if (e.tok.isChar(Cat::endGroup) && !openEnvs.empty() && !halted &&
-          depth == openEnvs.back().depth + 1) {
+          depth - leftOpen == openEnvs.back().depth + 1) {
         // This `}` closes the group the environment began in: the
         // environment ends first, and the `}` is read again after it.
         unread(std::move(e));
         closeOpenEnvironment();
         continue;
       }
-      if (e.tok.isChar(Cat::beginGroup)) depth++;
-      if (e.tok.isChar(Cat::endGroup)) {
+      // The groups TeX has besides braces: \bgroup and \egroup are braces, and \left ... \right is a group too (tex.web 1191, 1191:
+      // math_left_group), which ends with the delimiter that follows \right. A name the input made its own is its own.
+      // (a \let alias of the builtin is handed on marked noexpand, and is the builtin even after the name was made a macro:
+      // mleftright makes \left its own and still sets the original)
+      const bool named = e.tok.kind == TokKind::controlWord && (e.tok.noexpand || lookup(e.tok.text) == nullptr);
+      if (rightPending && e.tok.kind != TokKind::space && !e.tok.isChar(Cat::comment)) {
+        rightPending = false;  // `e` is the delimiter after \right: the group ends with it
+        depth--;
+        if (leftOpen > 0) leftOpen--;
+        endLocalGroup();
+        releaseAfterGroup();
+      } else if (named && e.tok.text == "right") {
+        rightPending = true;
+      }
+      if (named && e.tok.text == "left") leftOpen++;
+      if (e.tok.isChar(Cat::beginGroup) || (named && (e.tok.text == "bgroup" || e.tok.text == "left"))) depth++;
+      if (e.tok.isChar(Cat::endGroup) || (named && e.tok.text == "egroup")) {
         depth--;
         endLocalGroup();
+        releaseAfterGroup();  // \aftergroup's tokens come right after the `}` of the group they were saved in (tex.web 1063)
+      }
+      if (keyArgs != 0) followKeyArguments(e);
+      if (scanDepth == 0 && !regNames.empty() && e.tok.kind == TokKind::character && e.tok.cat == Cat::other &&
+          ((e.tok.cp >= '0' && e.tok.cp <= '9') || e.tok.cp == '.') && factorBeforeRegister(e)) {
+        carry += e.lead;
+        continue;
       }
       if (!carry.empty()) {
         e.lead = carry + e.lead;
@@ -2712,7 +4020,10 @@ std::vector<std::string> preludeTransparentEnvironmentNames() {
   std::vector<std::string> names;
   for (const auto& kv : Expander::Impl::snapshot().envs) {
     // The same test that marks the group transparent when one is expanded.
-    if ((kv.second.body.empty() && kv.second.endBody.empty()) || isBlockEnvironment(kv.first)) {
+    const auto kind = Expander::Impl::snapshot().kinds.find(kv.first);
+    const bool block = kind != Expander::Impl::snapshot().kinds.end() &&
+                       (kind->second & (EnvironmentKind::block | EnvironmentKind::floating)) != 0;
+    if ((kv.second.body.empty() && kv.second.endBody.empty()) || block) {
       names.push_back(kv.first);
     }
   }
@@ -2724,12 +4035,10 @@ ExpandedToken Expander::next() {
   return {std::move(e.tok), std::move(e.lead), std::string(e.text)};
 }
 
-const std::string& Expander::tikzStyles() const {
-  return _impl->tikzStyles;
-}
-
-const std::string& Expander::tikzcdSets() const {
-  return _impl->tikzcdSets;
+const std::string& Expander::prepended(const std::string& environment) const {
+  static const std::string none;
+  const auto it = _impl->prepended.find(environment);
+  return it == _impl->prepended.end() ? none : it->second;
 }
 
 bool Expander::verbatimEnvironment(const std::string& name, std::string& base, std::string& options) const {
@@ -2738,6 +4047,31 @@ bool Expander::verbatimEnvironment(const std::string& name, std::string& base, s
   base = it->second.first;
   options = it->second.second;
   return true;
+}
+
+bool Expander::keyValueEnvironment(const std::string& name) const {
+  return _impl->isKeyEnvironment(name);
+}
+
+std::unordered_map<std::string, std::uint8_t> Expander::environmentKinds() const {
+  std::unordered_map<std::string, std::uint8_t> all;
+  if (_impl->shared != nullptr) all = _impl->shared->kinds;
+  for (const auto& [name, kind] : _impl->kinds) all[name] |= kind;
+  return all;
+}
+
+std::map<std::string, std::string> Expander::declared() const {
+  std::map<std::string, std::string> all;
+  if (_impl->shared != nullptr) all = _impl->shared->declared;
+  for (const auto& [key, value] : _impl->declared) all[key] = value;
+  return all;
+}
+
+std::shared_ptr<const UserScope> Expander::userScope() const {
+  auto scope = std::make_shared<UserScope>();
+  scope->macros = _impl->macros;
+  scope->envs = _impl->envs;
+  return scope;
 }
 
 void Expander::endInputAt(std::uint32_t offset) {

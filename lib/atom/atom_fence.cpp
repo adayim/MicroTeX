@@ -64,10 +64,19 @@ sptr<Box> FencedAtom::createBox(Env& env) {
   };
 
   const auto base = _base->createBox(env);
-  if (!_fractionDelims) center(base);
   // (a fraction's delimiter is the first variant at least that size, as TeX's var_delimiter has it: no rounding; the sizes are LuaTeX's \Umathfractiondelsize for an OpenType math font, which the MATH table does not
   // carry: 2.4em in display style, 1.01em otherwise, the same for Latin Modern Math and STIX Two Math)
-  const auto h = _fractionDelims ? (env.style() < TexStyle::text ? 2.4f : 1.01f) * env.em() : base->vlen();
+  //
+  // Otherwise tex.web 762 (make_left_right): the contents stay on their baseline and the delimiters, centred on the axis, are
+  // as tall as twice the larger reach of the contents above and below it, at least \delimiterfactor/1000 (901) of that, or that
+  // less \delimitershortfall (5pt): `\left( x^2 \right)` has taller parentheses than `(x^2)`, whose height is not what counts.
+  float h;
+  if (_fractionDelims) {
+    h = (env.style() < TexStyle::text ? 2.4f : 1.01f) * env.em();
+  } else {
+    const auto reach = std::max(base->_height - base->_shift - axis, base->_depth + base->_shift + axis);
+    h = std::max(0.901f * 2.f * reach, 2.f * reach - Units::fsize(UnitType::pt, 5.f, env));
+  }
 
   for (const auto& m : _m) {
     m->_height = h;
