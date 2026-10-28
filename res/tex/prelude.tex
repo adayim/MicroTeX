@@ -103,8 +103,15 @@
 \newcommand{\leavevmode}{}
 % latex.ltx: \mathpalette hands its first argument each of the four styles.
 \newcommand{\mathpalette}[2]{\mathchoice{#1\displaystyle{#2}}{#1\textstyle{#2}}{#1\scriptstyle{#2}}{#1\scriptscriptstyle{#2}}}
-\newcommand{\ldots}{\ensuremath{\mathinner{\mathpunct{.}\mathpunct{.}\mathpunct{.}}}}
-\newcommand{\cdots}{\ensuremath{\mathinner{\mathpunct{\cdot}\mathpunct{\cdot}\mathpunct{\cdot}}}}
+% amsmath's \colon (a typed `:` is a relation, as TeX has it): 2mu, an empty punctuation atom, back 3mu, the colon as an ordinary
+% symbol, 6mu. `f\colon A \to B` is 1.1pt narrower than `f: A \to B` (LuaLaTeX).
+\newcommand{\colon}{\mkern2mu\mathpunct{}\mkern-3mu{:}\mkern6mu}
+% unicode-math makes the ellipses single glyphs (U+2026 and U+22EF), inner atoms: LuaLaTeX's `\ldots` is 8.37pt and `\cdots` 7.76,
+% against the 11.1pt of three dots with thin spaces between
+\newcommand{\ldots}{\ensuremath{\mathinner{\unicodeellipsis}}}
+\newcommand{\cdots}{\ensuremath{\mathinner{\unicodecdots}}}
+% amsmath's \dots (and only it) looks at what follows: centred before a binary operator, a relation or a large operator
+\newcommand{\dots}{\ensuremath{\gmdots}}
 \newcommand{\arraystretch}{1}
 \newcommand{\strut}{\rule[-0.36em]{0pt}{1.2em}}
 \newcommand{\enspace}{\hspace{0.5em}}
@@ -222,7 +229,9 @@
 \newcommand{\gmmakeboxc}[2]{{\setlength{\gmmbw}{#1}\hspace*{0.5\gmmbw}\clap{#2}\hspace*{0.5\gmmbw}}}
 \newcommand{\gmmakeboxs}[2]{\gmmakeboxc{#1}{#2}}
 \NewDocumentCommand{\makebox}{oom}{\IfNoValueTF{#1}{\mbox{#3}}{\IfNoValueTF{#2}{\gmmakeboxc{#1}{#3}}{\csname gmmakebox#2\endcsname{#1}{#3}}}}
-\NewDocumentCommand{\framebox}{oom}{\IfNoValueTF{#1}{\fbox{#3}}{\IfNoValueTF{#2}{\fbox{\makebox[#1]{#3}}}{\fbox{\makebox[#1][#2]{#3}}}}}
+% latex.ltx \@iframebox: the width is the frame's, 3cm in all (\framebox[3cm]{x} is 85.36pt wide, not 3cm and two frames)
+\newcommand{\gmframeboxw}[3]{{\setlength{\gmmbw}{#1}\addtolength{\gmmbw}{-2\fboxsep}\addtolength{\gmmbw}{-2\fboxrule}\fbox{\makebox[\gmmbw][#2]{#3}}}}
+\NewDocumentCommand{\framebox}{oom}{\IfNoValueTF{#1}{\fbox{#3}}{\IfNoValueTF{#2}{\gmframeboxw{#1}{c}{#3}}{\gmframeboxw{#1}{#2}{#3}}}}
 
 % \newcounter{c}[within]: makes the counter and its \thec; the lowering keeps
 % the value. \refstepcounter steps it and names it for the next \label.

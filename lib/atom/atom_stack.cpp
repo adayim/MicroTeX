@@ -23,6 +23,14 @@ sptr<Box> StackAtom::createBox(Env& env) {
 StackResult StackAtom::createStack(Env& env) {
   // The widest of this pass: an arrow that is as long as its label is, read again by the next, grew with each.
   _maxWidth = 0.f;
+  // The base's italic correction: tex.web 749 keeps it in the width of an operator with limits (`\int\limits_0^1` is as wide as
+  // the integral sign with its correction), puts the limits half of it off the middle and the sign itself half of it the other way.
+  auto delta = 0.f;
+  if (auto cs = dynamic_cast<CharSymbol*>(_base.get()); cs != nullptr) {
+    delta = cs->getChar(env).italic();
+  } else if (auto pa = dynamic_cast<PlaceholderAtom*>(_base.get()); pa != nullptr) {
+    delta = pa->italic();
+  }
   // over and under
   sptr<Box> o, u, b;
   const auto createOverUnder = [&](const StackArgs& args, TexStyle style) -> sptr<Box> {
@@ -38,16 +46,18 @@ StackResult StackAtom::createStack(Env& env) {
       case StackElement::under: u = createOverUnder(_under, env.subStyle()); break;
       case StackElement::base:
         b = _base == nullptr ? StrutBox::empty() : _base->createBox(env);
-        _maxWidth = std::max(_maxWidth, b->_width);
+        // (the glyph the base was set with, a larger variant of the sign in a display, has its own correction)
+        for (const Box* box = b.get(); box != nullptr;) {
+          if (const auto* ch = dynamic_cast<const CharBox*>(box)) {
+            delta = ch->italic();
+            break;
+          }
+          const auto* group = dynamic_cast<const BoxGroup*>(box);
+          box = group != nullptr && group->size() == 1 ? group->_children[0].get() : nullptr;
+        }
+        _maxWidth = std::max(_maxWidth, b->_width + delta);
         break;
     }
-  }
-
-  auto delta = 0.f;
-  if (auto cs = dynamic_cast<CharSymbol*>(_base.get()); cs != nullptr) {
-    delta = cs->getChar(env).italic();
-  } else if (auto pa = dynamic_cast<PlaceholderAtom*>(_base.get()); pa != nullptr) {
-    delta = pa->italic();
   }
 
   const auto wrap = [&](const sptr<Box>& box, float bias) -> sptr<Box> {
@@ -82,7 +92,7 @@ StackResult StackAtom::createStack(Env& env) {
   }
 
   // base
-  auto center = wrap(b, 0.f);
+  auto center = wrap(b, -delta / 2);
   vbox->add(center);
 
   // calculate future height of the vertical box, to make sure that the
@@ -109,6 +119,8 @@ StackResult StackAtom::createStack(Env& env) {
   // calculate height and depth
   vbox->_depth = vbox->_height + vbox->_depth - h;
   vbox->_height = h;
+  // as wide as the widest, the base with its italic correction included (it is empty space after the sign, to no box's width)
+  vbox->_width = std::max(vbox->_width, _maxWidth);
 
   // if is under accent, adjust with kerning
   if (_adjustBottom) {

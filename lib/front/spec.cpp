@@ -243,7 +243,7 @@ struct Table {
     add({"kern", "mkern", "hskip", "mskip"}, "", Shape::prefix, Bare::dimen);
     add({"char"}, "", Shape::prefix, Bare::number);
     add({"roman", "Roman"}, "r");
-    add({"surd", "lmoustache", "rmoustache", "-", "nbsp", "joinrel", "underscore",
+    add({"surd", "lmoustache", "rmoustache", "-", "nbsp", "gmdots", "joinrel", "underscore",
          "sp@breve", "nokern"},
         "");
     add({"st"}, "c");

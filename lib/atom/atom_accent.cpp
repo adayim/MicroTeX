@@ -1,5 +1,7 @@
 #include "atom/atom_accent.h"
 
+#include "atom/atom_row.h"
+
 #include "box/box_group.h"
 #include "box/box_single.h"
 #include "env/env.h"
@@ -42,7 +44,7 @@ sptr<Box> AccentedAtom::createBox(Env& env) {
   auto accentee = (
     _accentee == nullptr
     ? StrutBox::empty()
-    : env.withStyle(env.crampStyle(), [&](Env& cramp) { return _accentee->createBox(cramp); })
+    : env.withStyle(env.crampStyle(), [&](Env& cramp) { return RowAtom::withItalic(_accentee)->createBox(cramp); })
   );
   // clang-format on
 
@@ -110,6 +112,9 @@ sptr<Box> AccentedAtom::createBox(Env& env) {
   // set height and depth of the vertical box
   vbox->_height = vbox->vlen() - accentee->_depth;
   vbox->_depth = accentee->_depth;
+  // An accent hangs over its base without widening it (tex.web 738: the box is as wide as the base), as far as the accent is a
+  // glyph put over a base; a fake accent (a text one) is drawn whole.
+  if (!_fakeAccent && accenter->_depth <= 0) vbox->_width = accentee->_width;
 
   // add extra space to make sure the box is tall enough to wrap all children
   if (sigma > PREC) {

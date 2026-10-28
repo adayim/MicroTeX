@@ -21,7 +21,7 @@ const map<c32, string> Formula::_charToSymbol{
   {'!', "exclam"},
   {'?', "question"},
   {'|', "vert"},
-  {':', "colon"},
+  {':', "colonrel"},
   {'=', "equal"},
   {'>', "greater"},
   {'<', "less"},
@@ -32,7 +32,6 @@ map<string, string> Formula::_predefFormulaStrs{
   {" ",                "\\nbsp"},
   // region dots
   {"dotsc",            "\\ldots"},
-  {"dots",             "\\ldots"},
   {"dotsb",            "\\cdots"},
   {"dotso",            "\\ldots"},
   {"dotsi",            "\\!\\cdots"},

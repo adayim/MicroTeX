@@ -93,6 +93,9 @@ struct ExpanderOptions {
   /** Is `name` a symbol or a predefined formula, which the parser knows
    *  without its being a command? \ifdefined and \ifx ask. */
   std::function<bool(const std::string&)> isKnownName;
+  /** Is `name` a length the lowering keeps (\fboxsep)? An assignment to its register (`\fboxsep=0pt`, `\advance`) is handed to the
+   *  lowering as a \setlength, as \setlength itself is. */
+  std::function<bool(const std::string&)> isLoweringLength;
   LexOptions lex;
   /** TeX stops runaway recursion with its capacity limits; these are ours.
    *  The bytes are all the expansions of one parse together, and reading

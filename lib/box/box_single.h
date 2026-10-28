@@ -85,6 +85,9 @@ public:
 
   inline bool slanted() const { return _chr.isSlanted(); }
 
+  /** The code point of the glyph drawn (the mapped one, in a math alphabet's block). */
+  inline c32 mappedCode() const { return _chr.mappedCode; }
+
   void draw(Graphics2D& g2, float x, float y) override;
 
   int lastFontId() override;

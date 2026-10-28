@@ -1,4 +1,5 @@
 #include "atom/atom_delim.h"
+#include "atom/atom_row.h"
 
 #include "atom/atom_basic.h"
 
@@ -41,37 +42,34 @@ sptr<Box> OverUnderBar::createBox(Env& env) {
 }
 
 sptr<Box> OverUnderDelimiter::createBox(Env& env) {
-  const auto base = _base->createBox(env);
-  // LaTeX's are never shorter than the glyphs they are built of: a brace is 18pt (1.8em) over one letter, an arrow
-  // the width of \rightarrow (pdflatex, \underbrace{a}, \overrightarrow{a}, \overleftrightarrow{a}).
-  const bool brace = _delim == "overbrace" || _delim == "underbrace";
-  const bool arrow = _delim == "overrightarrow" || _delim == "overleftarrow" || _delim == "underrightarrow" ||
-                     _delim == "underleftarrow";
-  const bool both = _delim == "overleftrightarrow" || _delim == "underleftrightarrow";
-  const float least = brace ? 1.8f : both ? 1.222f : arrow ? 1.f : 0.f;
-  const auto delim = microtex::createHDelim(
-    _delim, env, std::max(base->_width, least * Units::fsize(UnitType::em, 1.f, env)));
-  base->_shift = (delim->_width - base->_width) / 2;
+  // (a lone letter has the italic correction TeX sets after it, as clean_box takes it)
+  const auto base = RowAtom::withItalic(_base)->createBox(env);
+  // A brace, a parenthesis or an arrow over or under a base is a stretched accent: LuaLaTeX with unicode-math (\mathover and
+  // \mathunder) makes it as long as the base and as wide as the base too, however short that is (`\overbrace{a}` is as wide as
+  // `a`, where pdflatex's brace is 18pt), the glyph hanging over the sides.
+  const auto delim = microtex::createHDelim(_delim, env, base->_width);
+  delim->_shift = (base->_width - delim->_width) / 2;
 
   const auto vbox = sptrOf<VBox>();
   if (_over) {
     vbox->add(delim);
-    // Set off from the base as pdflatex does it: the ink of \overbrace, \underbrace and the arrows round `abc`, within
-    // half a point (the braces and arrow heads are taller in Latin Modern's own assembly, so a centre is matched).
-    const auto kern = SpaceAtom(UnitType::ex, 0.f, -0.8f, 0.f).createBox(env);
+    // The glyph sits on the base as an accent does: 4.5pt of its height are in front of the base's top (measured against LuaLaTeX
+    // for braces, parentheses and arrows round `abc`, `x` and a fraction, within 0.1pt)
+    const auto kern = SpaceAtom(UnitType::em, 0.f, -0.45f, 0.f).createBox(env);
     vbox->add(kern);
     vbox->add(base);
     const auto h = vbox->_height + vbox->_depth;
     vbox->_depth = base->_depth;
     vbox->_height = h - vbox->_depth;
   } else {
+    // and under it, with nothing between
     vbox->add(base);
-    vbox->add(SpaceAtom(UnitType::ex, 0.f, brace ? 0.27f : 0.15f, 0.f).createBox(env));
     vbox->add(delim);
     const auto h = vbox->_height + vbox->_depth;
     vbox->_height = base->_height;
     vbox->_depth = h - vbox->_height;
   }
+  vbox->_width = base->_width;
 
   return vbox;
 }

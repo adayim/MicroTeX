@@ -3,6 +3,7 @@
 #include "atom/atom_basic.h"
 #include "atom/atom_char.h"
 #include "atom/atom_font.h"
+#include "atom/atom_misc.h"
 #include "atom/atom_space.h"
 #include "atom/atom_text.h"
 #include "box/box_group.h"
@@ -273,8 +274,31 @@ void RowAtom::assignBidiLevels(const std::vector<std::uint8_t>& lv, std::size_t&
   _bidiLevel = subtreeLevel(lv, start, cursor);
 }
 
+// A letter or digit of the upright alphabets (ASCII, bold, sans-serif, monospace): LuaLaTeX with unicode-math sets no italic
+// correction after one (`\mathrm{ff}` is two f's of 3.06pt), where the slanted letters, script, fraktur and double-struck ones keep it.
+static bool uprightLetter(const CharBox& cb) {
+  if (cb.slanted()) return false;
+  const c32 u = cb.mappedCode();
+  return u < 0x80 || (u >= 0x1D400 && u <= 0x1D433) || (u >= 0x1D5A0 && u <= 0x1D607) || (u >= 0x1D670 && u <= 0x1D6A3) ||
+         (u >= 0x1D7CE && u <= 0x1D7FF);
+}
+
 sptr<Box> RowAtom::createBox(Env& env) {
   auto hbox = sptrOf<HBox>();
+
+  // \dots is set once the atom after it is known (amsmath looks at the next token): the first that is not a space
+  for (std::size_t i = 0; i < _elements.size(); i++) {
+    const auto* dots = dynamic_cast<const DotsAtom*>(_elements[i].get());
+    if (dots == nullptr) continue;
+    sptr<Atom> next;
+    for (std::size_t j = i + 1; j < _elements.size(); j++) {
+      const auto& el = _elements[j];
+      if (dynamic_cast<const SpaceAtom*>(el.get()) != nullptr || dynamic_cast<const BreakMarkAtom*>(el.get()) != nullptr) continue;
+      next = el;
+      break;
+    }
+    _elements[i] = dots->pick(next);
+  }
 
   // Bidirectional levels were resolved once for the whole formula, before
   // any box was built -- see the pre-pass in src/parse_latex.cpp. They are
@@ -436,8 +460,11 @@ sptr<Box> RowAtom::createBox(Env& env) {
     // correction itself.
     curr->setPreviousAtom(_previousAtom);
     auto box = curr->createBox(env);
+    // (LuaLaTeX with unicode-math sets it after a slanted letter only: \mathrm{ff} is 6.12pt, two upright f's with no correction,
+    // where it was 7.63 here. \mathit is the default italic here, so a word in it is set as the bare letters; LuaLaTeX's own
+    // \mathit{ff} is 9.44pt against 11.60 for ff.)
     if (auto cb = dynamic_cast<CharBox*>(box.get());
-        cb != nullptr && (curr->isMathMode() || (curr->isWrappedMathChar() && cb->slanted()))) {
+        cb != nullptr && !uprightLetter(*cb) && (curr->isMathMode() || (curr->isWrappedMathChar() && cb->slanted()))) {
       kern += cb->italic();
     }
 

@@ -637,12 +637,22 @@ TEST(math_substack_and_subarray_are_as_wide_as_their_rows_with_no_padding) {
   CHECK(std::fabs(subX(R"(\textstyle\sum_{\begin{subarray}{c}i\\j\end{subarray}})") - plain) <= 0.02f * plain + 0.02f);
 }
 
-TEST(math_ldots_and_cdots_are_three_spaced_dots_as_texs_are) {
-  // Three periods and the two thin spaces between them: about 1.1 em.
-  for (const char* tex : {R"(\textstyle\ldots)", R"(\textstyle\cdots)"}) {
-    CHECK(std::fabs(rec(tex).width / 20.0 - 1.1) <= 0.25 * 1.1);
-  }
+TEST(math_ldots_and_cdots_are_the_single_glyphs_of_unicode_math) {
+  // LuaLaTeX with unicode-math: \ldots is U+2026 (8.37pt) and \cdots U+22EF (7.76), inner atoms; not the 11.1pt of three periods
+  // and two thin spaces.
+  SAME(R"(\textstyle\ldots)", R"(\textstyle\mathinner{\unicodeellipsis})");
+  SAME(R"(\textstyle\cdots)", R"(\textstyle\mathinner{\unicodecdots})");
   CHECK(quiet(R"(\text{a\ldots b}\; x_1,\ldots,x_n)"));
+}
+
+// amsmath's \dots looks at what follows: centred dots before a binary operator, a relation or a large operator, dots on the baseline
+// otherwise (LuaLaTeX: `a+\dots+b` is 41.93pt wide with the centred dots, as `a+\cdots+b`).
+TEST(math_dots_are_centred_before_an_operator_and_low_otherwise) {
+  SAME(R"(a+\dots+b)", R"(a+\cdots+b)");
+  SAME(R"(a=\dots=b)", R"(a=\cdots=b)");
+  SAME(R"(a,\dots,b)", R"(a,\ldots,b)");
+  SAME(R"(a\dots b)", R"(a\ldots b)");
+  SAME(R"(\dots\sum x)", R"(\cdots\sum x)");
 }
 
 TEST(math_a_dimension_ends_where_its_unit_does) {
@@ -833,15 +843,17 @@ TEST(math_the_cells_of_an_array_are_in_text_style_and_those_of_an_alignment_in_d
   CHECK_EQ(check::render(R"(\begin{array}{>{\displaystyle}c}\frac{x}{x}\end{array})", display).height, height("aligned"));
 }
 
-TEST(math_braces_and_arrows_over_a_letter_are_as_wide_as_the_glyphs_they_are_made_of) {
-  // pdflatex, 10pt: \underbrace{a} and \overbrace{a} 18pt, \overrightarrow{a} 10pt, \overleftrightarrow{a} 12.2pt,
-  // \xLeftarrow{a} 12.2pt, \xLeftrightarrow{a} 15.6pt (a render's size is whole pixels).
+TEST(math_braces_and_arrows_over_a_letter_are_as_wide_as_the_letter_and_x_arrows_as_their_glyphs) {
+  // LuaLaTeX with unicode-math (\mathover, \mathunder): \underbrace{a} and \overbrace{a} are as wide as `a` (5.29pt; pdflatex's
+  // are 18pt), the glyph hanging over its sides. The extensible arrows of amsmath keep their glyphs' length: \xLeftarrow{a}
+  // 12.2pt, \xLeftrightarrow{a} 15.6pt (a render's size is whole pixels).
   Options opt(InputMode::math);
   opt.path = false;
   opt.textSize = 10;
   const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
-  CHECK(width(R"(\underbrace{a})") >= 18);
-  CHECK(width(R"(\overbrace{a})") >= 18);
+  CHECK(width(R"(\underbrace{a})") <= width("a") + 1);
+  CHECK(width(R"(\overbrace{a})") <= width("a") + 1);
+  CHECK(width(R"(\overrightarrow{a})") <= width("a") + 1);
   // (The arrows of the test font cannot be stretched, so only the drawn ones are asked: a pixel or two is allowed.)
   CHECK(width(R"(\xLeftarrow{a})") >= 11);
   CHECK(width(R"(\xLeftrightarrow{a})") >= 14);
@@ -1028,6 +1040,9 @@ TEST(math_a_letter_in_a_font_command_is_set_as_a_character_is) {
   const auto width = [&](const std::string& tex) { return check::render(tex, opt).width; };
   CHECK(width(R"(\mathit{ff})") == width(R"(ff)"));
   CHECK(width(R"(\mathrm{f})") == width(R"({\mathrm{f}})"));
+  // and no correction between the letters of an upright word (LuaLaTeX, plain unicode-math: \mathrm{ff} 6.12pt = two f's of 3.06)
+  CHECK(width(R"(\mathrm{ff})") == width(R"(\mathrm{f}\mathrm{f})"));
+  CHECK(width(R"(\mathrm{rf})") == width(R"(\mathrm{r}\mathrm{f})"));
 }
 
 // unicode-math's names for the alphabets are the engine's: \symbf keeps the slant of small Greek (LuaLaTeX: `\symbf{b}` and

@@ -10,6 +10,7 @@
 #include "atom/diagram_atom.h"
 #include "core/formula.h"
 #include "core/split.h"
+#include "front/lower.h"
 #include "graphic/graphic.h"
 #include "macro/macro.h"
 #include "macro/macro_decl.h"
@@ -93,6 +94,11 @@ inline cmdmacro(underscore) {
 
 inline cmdmacro(nbsp) {
   return sptrOf<SpaceAtom>();
+}
+
+// \dots (prelude.tex), which RowAtom sets as \ldots or \cdots by what follows
+inline cmdmacro(gmdots) {
+  return sptrOf<DotsAtom>(front::buildFragment("\\ldots"), front::buildFragment("\\cdots"));
 }
 
 inline cmdmacro(joinrel) {

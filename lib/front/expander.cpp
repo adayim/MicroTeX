@@ -2628,6 +2628,7 @@ struct Expander::Impl {
         diags.warn(e.tok.span, "\\" + e.tok.text + ": the value is not one the expander can read; the register is left as it was");
       } else {
         setRegister(*key, value, global);
+        syncLowering(*key, e.tok.span);
       }
       globalPrefix = false;
       return true;
@@ -2793,7 +2794,18 @@ struct Expander::Impl {
     }
     r.unknown = false;
     setRegister(*key, r, global);
+    syncLowering(*key, e.tok.span);
     globalPrefix = false;
+  }
+
+  /** A length the lowering keeps was set by a register assignment: tell it, as \setlength would. */
+  void syncLowering(const RegKey& key, const SourceSpan& at) {
+    if (!opts.isLoweringLength || (key.first != 'd' && key.first != 's') || regs[key].unknown) return;
+    for (const auto& [name, k] : regNames) {
+      if (k != key) continue;
+      if (opts.isLoweringLength(name)) passThrough("\\setlength{\\" + name + "}{" + theDim(regs[key].g.natural) + "}", at);
+      return;
+    }
   }
 
   /** \the\x, \the\count5: what the register prints. Anything else after \the is the parser's. */
@@ -2894,6 +2906,12 @@ struct Expander::Impl {
         r.unknown = true;
       }
       setRegister(named->second, r);
+    }
+    // A sum the expander worked out is handed on as the length it is: the lowering's lengths have one unit, and cannot be added
+    // to in another (`\addtolength{\len}{-2\fboxsep}` to a length in cm).
+    if (named != regNames.end() && op == "addtolength" && !regs[named->second].unknown) {
+      passThrough("\\setlength{" + nameText + "}{" + theDim(regs[named->second].g.natural) + "}", e.tok.span);
+      return;
     }
     passThrough(who + "{" + nameText + "}{" + given + "}", e.tok.span);
   }

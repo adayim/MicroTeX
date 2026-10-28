@@ -535,6 +535,7 @@ const Symbol _symbols[]{
   {0x0003A, puc,     "colon"},
   {0x02254, rel,     "coloneq"},
   {0x02254, rel,     "coloneqq"},
+  {0x0003A, rel,     "colonrel"},
   {0x0002C, puc,     "comma"},
   {0x02A29, bin,     "commaminus"},
   {0x02A3E, bin,     "comp"},

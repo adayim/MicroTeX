@@ -743,7 +743,7 @@ private:
         if (atom != nullptr) atom->_type = AtomType::ordinary;
         // tex.web 1186: `{...}` in math is one Ord atom whatever it holds, so `a{-b}` has no space after a and `a{\to b}` none
         // before the arrow; a row that is only the group's content would take the type of its first and last atoms.
-        if (atom != nullptr && x.mode == Mode::math && dynamic_cast<RowAtom*>(atom.get()) != nullptr) {
+        if (atom != nullptr && x.mode == Mode::math && dynamic_cast<CharSymbol*>(atom.get()) == nullptr) {
           atom = sptrOf<TypedAtom>(AtomType::ordinary, AtomType::ordinary, atom);
         }
         f.add(atom);

@@ -1518,7 +1518,8 @@ SpaceAtom MultlineAtom::_vsep_in(UnitType::ex, 0.f, 1.f, 0.f);
 sptr<Box> MultlineAtom::createBox(Env& env) {
   float tw = env.textWidth();
   if (tw == POS_INF || _lineType == MultiLineType::gathered) {
-    MatrixAtom lines(_isPartial, _column, "");
+    // amsmath's gathered: one centred column and no padding at its sides (an array column has \arraycolsep at each)
+    MatrixAtom lines(_isPartial, _column, MatrixType::matrix);
     lines.setRowSpacing(RowSpacing::jot);
     return lines.createBox(env);
   }

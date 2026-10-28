@@ -12,13 +12,19 @@ using namespace std;
 
 namespace microtex {
 
+// amsmath's \frac, \binom and \genfrac are a group round the fraction, `{... \over ...}`: an ordinary atom to the spacing, not
+// the inner one of a bare \over (LuaLaTeX: `\frac{1}{2}x` is 12.10pt wide, with no space between them).
+static sptr<Atom> ordinaryGroup(const sptr<Atom>& atom) {
+  return sptrOf<TypedAtom>(AtomType::ordinary, AtomType::ordinary, atom);
+}
+
 cmdmacro(binom) {
   const auto num = args.formula(1);
   const auto den = args.formula(2);
   if (num == nullptr || den == nullptr)
     throw ex_parse("Both binomial coefficients must be not empty!");
   auto f = sptrOf<FracAtom>(num, den, false);
-  return FracAtom::fence(f, "lparen", "rparen");
+  return ordinaryGroup(FracAtom::fence(f, "lparen", "rparen"));
 }
 
 cmdmacro(frac) {
@@ -26,7 +32,7 @@ cmdmacro(frac) {
   const auto den = args.formula(2);
   if (num == nullptr || den == nullptr)
     throw ex_parse("Both numerator and denominator of a fraction can't be empty!");
-  return sptrOf<FracAtom>(num, den, true);
+  return ordinaryGroup(sptrOf<FracAtom>(num, den, true));
 }
 
 cmdmacro(cfrac) {
@@ -50,7 +56,7 @@ cmdmacro(cfrac) {
   const auto row = sptrOf<RowAtom>();
   row->add(sptrOf<StyleAtom>(TexStyle::display, f));
   row->add(sptrOf<SpaceAtom>(UnitType::pt, -1.2f, 0.f, 0.f));
-  return row;
+  return ordinaryGroup(row);
 }
 
 // \genfrac{left}{right}{thickness}{style}{numerator}{denominator}, as amsmath reads it: an empty
@@ -80,7 +86,7 @@ cmdmacro(genfrac) {
   }
   ra->add(f);
 
-  return ra;
+  return ordinaryGroup(ra);
 }
 
 }  // namespace microtex

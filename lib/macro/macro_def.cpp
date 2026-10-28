@@ -320,6 +320,7 @@ map<string, MacroInfo*> MacroInfo::_commands{
   mac(1, macro_uline, "uline"),
   mac(6, macro_zstack, "stackinset"),
   mac(0, macro_nbsp, "nbsp"),
+  mac(0, macro_gmdots, "gmdots"),
   mac(1, macro_sqrt, "sqrtsign"),
   mac(0, macro_joinrel, "joinrel"),
   mac(1, macro_hvspace, "hspace"),

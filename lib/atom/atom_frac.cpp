@@ -39,6 +39,7 @@ sptr<Box> FracAtom::createBox(Env& env) {
 
   const auto isDisplay = env.style() < TexStyle::text;
 
+  // The font's constants are those of its full size; a fraction in a script is set with the script size's, 0.7 of them
   auto u = 0.f, v = 0.f;
   if (isDisplay) {
     u = _rule ? math.fractionNumeratorDisplayStyleShiftUp() : math.stackTopDisplayStyleShiftUp();
@@ -48,10 +49,12 @@ sptr<Box> FracAtom::createBox(Env& env) {
     u = _rule ? math.fractionNumeratorShiftUp() : math.stackTopShiftUp();
     v = _rule ? math.fractionDenominatorShiftDown() : math.stackBottomShiftDown();
   }
+  u *= env.scale();
+  v *= env.scale();
 
   const auto axis = math.axisHeight() * env.scale();
   if (!_rule) {
-    const auto phi = isDisplay ? math.stackDisplayStyleGapMin() : math.stackGapMin();
+    const auto phi = (isDisplay ? math.stackDisplayStyleGapMin() : math.stackGapMin()) * env.scale();
     const auto psi = (u - x->_depth) - (z->_depth - v);
     if (psi < phi) {
       u += (phi - psi) / 2;
@@ -61,14 +64,14 @@ sptr<Box> FracAtom::createBox(Env& env) {
     // TeX's gaps are a multiple of the rule's own thickness (rule 15d), the font's constants those of its default one
     const auto fixed = math.fractionRuleThickness() * env.scale();
     const auto grow = _thickness.isValid() && fixed > 0.f ? theta / fixed : 1.f;
-    const auto phi = grow * (isDisplay ? math.fractionNumeratorDisplayStyleGapMin()
-                                       : math.fractionNumeratorGapMin());
+    const auto phi = grow * env.scale() * (isDisplay ? math.fractionNumeratorDisplayStyleGapMin()
+                                                      : math.fractionNumeratorGapMin());
     const auto d = (u - x->_depth) - (axis + theta / 2);
     if (d < phi) {
       u += phi - d;
     }
-    const auto rho = grow * (isDisplay ? math.fractionDenominatorDisplayStyleGapMin()
-                                       : math.fractionDenominatorGapMin());
+    const auto rho = grow * env.scale() * (isDisplay ? math.fractionDenominatorDisplayStyleGapMin()
+                                                      : math.fractionDenominatorGapMin());
     const auto f = (axis - theta / 2) - (z->_height - v);
     if (f < rho) {
       v += rho - f;

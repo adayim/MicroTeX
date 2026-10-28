@@ -48,6 +48,12 @@ public:
 
   bool known(const std::string& name) const { return _values.count(name) > 0; }
 
+  /** Is `name` one of the lengths a document starts with (\parindent, \fboxsep...), as against one it makes? */
+  static bool builtin(const std::string& name) {
+    static const Lengths defaults;
+    return defaults.known(name);
+  }
+
   /** \newlength: a length of zero; global, so not logged. */
   void define(const std::string& name) { _values.emplace(name, Dimen{0.f, UnitType::pt}); }
 

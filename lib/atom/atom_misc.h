@@ -216,6 +216,34 @@ private:
   const sptr<Atom>& pick() const { return _choice[1] != nullptr ? _choice[1] : _choice[0]; }
 };
 
+/**
+ * amsmath's \dots: centred dots when a binary operator, a relation or a large operator follows (`x_1 + \dots + x_n`), dots on the
+ * baseline otherwise. The row it sits in picks (RowAtom::createBox), as it is the next atom that decides.
+ */
+class DotsAtom : public Atom {
+private:
+  sptr<Atom> _low, _centred;
+
+public:
+  DotsAtom() = delete;
+
+  DotsAtom(const sptr<Atom>& low, const sptr<Atom>& centred) : _low(low), _centred(centred) { _type = AtomType::inner; }
+
+  /** What stands for the dots when `next`, the atom after them (null for none), is known. */
+  const sptr<Atom>& pick(const sptr<Atom>& next) const {
+    if (next == nullptr) return _low;
+    const auto type = next->leftType();
+    const bool centred = type == AtomType::binaryOperator || type == AtomType::relation || type == AtomType::bigOperator;
+    return centred ? _centred : _low;
+  }
+
+  AtomType leftType() const override { return _low->leftType(); }
+
+  AtomType rightType() const override { return _low->rightType(); }
+
+  sptr<Box> createBox(Env& env) override { return _low->createBox(env); }
+};
+
 /** An atom representing long division */
 class LongDivAtom : public VRowAtom {
 private:

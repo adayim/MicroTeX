@@ -8,6 +8,7 @@
 #include "front/diagnostics.h"
 #include "front/expander.h"
 #include "front/hooks.h"
+#include "front/lengths.h"
 #include "front/lower.h"
 #include "front/parser.h"
 #include "front/spec.h"
@@ -34,6 +35,7 @@ Ast parseLatex(const std::string& latex, Mode mode, Diagnostics& diagnostics, bo
   eo.isKnownName = [](const std::string& name) {
     return Symbol::get(name.c_str()) != nullptr || Formula::isPredefined(name);
   };
+  eo.isLoweringLength = [](const std::string& name) { return Lengths::builtin(name); };
   Expander expander(latex, std::move(eo), diagnostics);
   ParserOptions po;
   po.startMode = mode;

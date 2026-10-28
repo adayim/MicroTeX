@@ -1035,7 +1035,9 @@ TEST(docmode_a_length_set_in_a_group_is_what_it_was_after_the_group) {
 TEST(docmode_a_length_that_is_not_defined_or_not_a_length_warns) {
   CHECK(check::warns(rec("\\setlength{\\nosuch}{1em}"), "length `\\nosuch' is not defined"));
   CHECK(check::warns(rec("\\setlength{\\parindent}{many}"), "`many' is not a length"));
-  CHECK(check::warns(rec("\\addtolength{\\parindent}{3pt}"), "cannot add 3pt to 1.5em"));
+  // (a sum the expander can work out, 1.5em + 3pt, is set as the length it is; one with the page's width in it is not)
+  CHECK(rec("\\addtolength{\\parindent}{3pt}").warnings.empty());
+  CHECK(check::warns(rec("\\addtolength{\\parindent}{\\linewidth}"), "cannot add"));
   CHECK(rec("\\newlength{\\x}\\setlength{\\x}{3pt}").warnings.empty());
 }
 
@@ -1935,6 +1937,46 @@ TEST(docmode_a_smallmatrix_is_centred_on_the_axis_of_its_surroundings) {
   // (height is the whole box; baseline the share of it above the baseline: the reach above less the reach below is twice the axis)
   const auto skew = [](const check::Layout& l) { return l.height * l.baseline - (l.height - l.height * l.baseline); };
   CHECK(std::fabs(skew(small) - skew(plain)) < 1.5f);
+}
+
+// LuaLaTeX, found by probing common constructs: a fraction in a script is set with the script size's constants, not the text size's
+// (`x^{\frac{a}{b}}` 8.60pt high, ours was 10.74), a typed `:` is a relation (`a:b` 18.06pt, ours 14.15), `\colon` is amsmath's
+// 2mu, an empty punctuation atom, back 3mu, `{:}`, 6mu (16.94), gathered has no padding at its sides (`a` over `b` is as wide as
+// `a`), an accent does not widen its base (`\hat{x}` is as wide as `x` with its italic correction), and `\int\limits_0` is as wide
+// as the sign and its italic correction.
+TEST(docmode_common_math_constructs_are_set_as_luatex_sets_them) {
+  check::Options opt;
+  opt.textSize = 100;
+  const auto set = [&](const std::string& tex) { return check::render(tex, opt); };
+  const auto scriptFrac = set("\\scriptstyle\\frac{a}{b}").height;
+  const auto scriptScriptFrac = set("\\scriptscriptstyle\\frac{a}{b}").height;
+  const auto textFrac = set("\\textstyle\\frac{a}{b}").height;
+  CHECK(scriptScriptFrac < scriptFrac && scriptFrac < textFrac);
+  CHECK(set("x^{\\frac{a}{b}}").height < set("x^{\\textstyle\\frac{a}{b}}").height);
+  CHECK(check::sameInk(set("a:b"), set("a\\mathrel{:}b")));
+  CHECK_EQ(set("a\\colon b").width, set("a\\mathbin{:}b").width);
+  CHECK(set("\\begin{gathered}a\\\\b\\end{gathered}").width <= set("a").width + 2);
+  CHECK(std::abs(set("\\hat{x}").width - set("x").width) <= 2);
+  CHECK(set("\\int\\limits_0").width > set("\\int").width + 5);
+  // \frac, \binom and \genfrac are a group round the fraction, so an ordinary atom (`\frac{1}{2}x` 12.10pt, no space between), as
+  // `{a\over b}` is; and the dots look at what follows (`a+\dots+b` is `a+\cdots+b`)
+  CHECK_EQ(set("\\frac{a}{b}x").width, set("{\\frac{a}{b}}x").width);
+  CHECK_EQ(set("\\binom{n}{k}x").width, set("{\\binom{n}{k}}x").width);
+  CHECK_EQ(set("x{a\\over b}").width, set("x\\frac{a}{b}").width);
+  CHECK(check::sameInk(set("a+\\dots+b"), set("a+\\cdots+b")));
+  // upright letters carry no italic correction between them: \mathrm{ff} is two f's
+  CHECK_EQ(set("\\mathrm{ff}").width, set("\\mathrm{f}\\mathrm{f}").width);
+}
+
+// latex.ltx \@iframebox: \framebox[w] is w wide in all, frame included (LuaLaTeX: 85.36pt for 3cm, as \makebox[3cm]); and a length
+// the lowering keeps, set as TeX sets a register (`\fboxsep=0pt`, `\advance`), is set (LuaLaTeX: `\fbox{x}` 6.08pt wide, was 12.45).
+TEST(docmode_framebox_width_is_the_frames_and_a_register_assignment_sets_a_length) {
+  const auto set = [](const std::string& tex) { return check::render(tex, InputMode::mixed); };
+  CHECK_EQ(set("\\framebox[60pt]{c}").width, set("\\makebox[60pt]{c}").width);
+  CHECK_EQ(set("\\framebox[60pt][l]{c}").width, set("\\makebox[60pt]{c}").width);
+  CHECK(check::sameInk(set("\\fboxsep=0pt \\fbox{x}"), set("\\setlength{\\fboxsep}{0pt}\\fbox{x}")));
+  CHECK(check::sameInk(set("\\fboxsep=2pt \\advance\\fboxsep by 1pt \\fbox{x}"), set("\\setlength{\\fboxsep}{3pt}\\fbox{x}")));
+  CHECK(set("\\fboxsep=0pt \\fbox{x}").width < set("\\fbox{x}").width);
 }
 
 // tex.web 1151: a \mathchoice is replaced by the list it picks before the spaces are set, so a relation in it is spaced as one:
